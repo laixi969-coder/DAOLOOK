@@ -11,18 +11,37 @@ def submit(user, project, kind, payload):
 
 def submit_many(user, project, kind, payloads):
     cost = setting("rules").get(kind)
-    if cost is None:
-        raise ValueError("未知任务")
+    if type(cost) is not int or cost < 0:
+        raise ValueError("任务计费配置无效")
     ids = [uid() for _ in payloads]
     total = cost * len(payloads)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
+        if not c.execute(
+            "SELECT 1 FROM projects WHERE id=? AND user_id=?", (project, user)
+        ).fetchone():
+            raise ValueError("项目不存在或无访问权限")
         if not c.execute(
             "UPDATE credit_accounts SET balance=balance-?,frozen=frozen+? WHERE user_id=? AND balance>=?",
             (total, total, user, total),
         ).rowcount:
             raise ValueError("积分不足，请联系管理员补充积分")
         for ident, payload in zip(ids, payloads):
+            payload = dict(payload)
+            payload["execution_mode"] = setting("mode")
+            if kind == "create":
+                wanted = payload.get("assets", [])
+                rows = [
+                    dict(r)
+                    for r in c.execute(
+                        "SELECT id,name,kind,content FROM assets WHERE project_id=?",
+                        (project,),
+                    )
+                    if r["id"] in wanted
+                ]
+                if set(wanted) != {r["id"] for r in rows}:
+                    raise ValueError("所选资料已删除或不属于当前项目")
+                payload["asset_snapshot"] = rows
             c.execute(
                 "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -92,12 +111,16 @@ def fail(ident, error):
 
 def run(ident):
     with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        if not c.execute(
+            "UPDATE tasks SET state='PROCESSING',updated_at=? WHERE id=? AND state='PENDING'",
+            (now(), ident),
+        ).rowcount:
+            return
         t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (ident,)).fetchone())
-    if t["state"] != "PENDING":
-        return
     payload = json.loads(t["payload"])
     kind = t["kind"]
-    demo = setting("mode") == "demo"
+    demo = payload.get("execution_mode", setting("mode")) == "demo"
     p = payload.get("platform", "xhs")
     version = None
     model = "demo"
@@ -155,8 +178,8 @@ def run(ident):
         state(ident, "ANALYZING")
         for content in contents:
             analysis, model = adapters.analyze(content, version["prompt"])
-            if "source" in analysis:
-                content.update(analysis.pop("source"))
+            # Model prose must never overwrite platform metrics, identity or demo provenance.
+            analysis.pop("source", None)
             content["origin"] = {
                 "entry": payload.get("entry", "single"),
                 "query": payload["text"] if payload.get("entry") == "keyword" else "",
@@ -183,6 +206,7 @@ def run(ident):
                 // 3
                 + 1
             )
+        assets = payload.get("asset_snapshot", assets)
         if payload.get("temporary"):
             assets.append({"name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
@@ -207,11 +231,20 @@ def run(ident):
         model = "demo-svg" if image["demo"] else image.get("model", "image")
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
-        if (
-            c.execute("SELECT state FROM tasks WHERE id=?", (ident,)).fetchone()[0]
-            == "CANCELLED"
+        if c.execute("SELECT state FROM tasks WHERE id=?", (ident,)).fetchone()[0] in (
+            "CANCELLED",
+            "FAILED",
+            "SUCCEEDED",
         ):
             return
+        if (
+            image
+            and not c.execute(
+                "SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL",
+                (payload["creation_id"], t["project_id"]),
+            ).fetchone()
+        ):
+            raise ValueError("稿件已删除，封面任务已终止")
         result = {}
         version_id = (
             version["id"] if version else (image.get("renderer") if image else None)

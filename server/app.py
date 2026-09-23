@@ -10,6 +10,10 @@ ROOT = Path(__file__).resolve().parent.parent
 RATE = {}
 
 
+def reject_nonfinite_json(value):
+    raise ValueError("JSON 数字必须有限")
+
+
 def password_hash(password, salt=None):
     salt = salt or secrets.token_hex(16)
     return (
@@ -158,7 +162,12 @@ class Handler(BaseHTTPRequestHandler):
                 if length > 3_000_000:
                     raise Error("文件过大，请控制在 2 MB 以内", 413)
                 if length:
-                    data = json.loads(self.rfile.read(length))
+                    data = json.loads(
+                        self.rfile.read(length),
+                        parse_constant=reject_nonfinite_json,
+                    )
+                    if not isinstance(data, dict):
+                        raise Error("请求内容必须是 JSON 对象")
             if path.startswith("/api/"):
                 return self.api(method, path, query, data)
             if method != "GET":
@@ -408,6 +417,12 @@ class Handler(BaseHTTPRequestHandler):
                 ).fetchone()
             if not source:
                 raise Error("请先选择参考内容", 404)
+            for field in ("requirements", "temporary"):
+                if (
+                    not isinstance(data.get(field, ""), str)
+                    or len(data.get(field, "")) > 100000
+                ):
+                    raise Error("创作要求与临时资料必须是最多 100000 字的文本")
             selected = data.get("assets", [])
             if not isinstance(selected, list) or any(
                 not isinstance(x, str) for x in selected
@@ -818,18 +833,28 @@ class Handler(BaseHTTPRequestHandler):
                     "ranking",
                 ):
                     raise Error("不支持的配置项")
+                if key != "mode" and not isinstance(value, dict):
+                    raise Error("配置项必须为 JSON 对象")
                 if key == "mode" and value not in ("demo", "live"):
                     raise Error("模式无效")
                 if key == "rules" and (
                     set(value) != {"analyze", "create", "cover"}
                     or any(
-                        not isinstance(v, int) or v < 0 or v > 10000
-                        for v in value.values()
+                        type(v) is not int or v < 0 or v > 10000 for v in value.values()
                     )
                 ):
                     raise Error("积分规则无效")
                 if key == "limits" and (
-                    not 1 <= value.get("batch", 0) <= 50
+                    any(
+                        type(value.get(k, default)) is not int
+                        for k, default in (
+                            ("batch", 0),
+                            ("timeout", 0),
+                            ("retries", 1),
+                            ("temporary_ttl_hours", 24),
+                        )
+                    )
+                    or not 1 <= value.get("batch", 0) <= 50
                     or not 1 <= value.get("timeout", 0) <= 180
                     or not 0 <= value.get("retries", 1) <= 2
                     or not 1 <= value.get("temporary_ttl_hours", 24) <= 168

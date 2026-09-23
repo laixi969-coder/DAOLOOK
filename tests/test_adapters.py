@@ -4,6 +4,22 @@ from server import adapters
 
 
 class AdapterTests(unittest.TestCase):
+    def test_authenticated_redirects_are_rejected(self):
+        import urllib.request
+
+        request = urllib.request.Request(
+            "https://provider.example/api", headers={"Authorization": "Bearer test"}
+        )
+        for target in (
+            "http://127.0.0.1/private",
+            "https://attacker.example/collect",
+            "https://provider.example/new",
+        ):
+            with self.assertRaises(ValueError):
+                adapters.NoCredentialRedirect().redirect_request(
+                    request, None, 302, "Moved", {}, target
+                )
+
     def test_platform_spoofing_is_rejected(self):
         for text in [
             "https://xiaohongshu.com.evil.com/x",

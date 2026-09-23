@@ -10,7 +10,10 @@ def score(content):
 
     def number(key):
         try:
-            return max(0, float(content[key])) if content.get(key) is not None else None
+            if content.get(key) is None or isinstance(content[key], bool):
+                return None
+            value = float(content[key])
+            return value if math.isfinite(value) and value >= 0 else None
         except (TypeError, ValueError):
             return None
 

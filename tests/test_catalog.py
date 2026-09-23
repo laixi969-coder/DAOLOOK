@@ -43,6 +43,13 @@ class CatalogTests(unittest.TestCase):
     @patch(
         "server.ranking.setting", return_value={"engagement": 0.3, "efficiency": 0.25}
     )
+    def test_nonfinite_and_negative_metrics_ignored(self, _):
+        for value in (float("inf"), float("nan"), -10, True):
+            self.assertIsNone(score({"likes": value})["score"])
+
+    @patch(
+        "server.ranking.setting", return_value={"engagement": 0.3, "efficiency": 0.25}
+    )
     def test_missing_data_no_score(self, _):
         self.assertIsNone(score({})["score"])
         self.assertNotIn(

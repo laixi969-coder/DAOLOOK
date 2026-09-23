@@ -27,6 +27,11 @@ DY_FIELDS = [
 ]
 
 
+class NoCredentialRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise ValueError("外部服务返回重定向，请配置最终 HTTPS 地址")
+
+
 def request_json(url, key="", payload=None, timeout=60):
     if not url.startswith("https://"):
         raise ValueError("服务地址必须使用 HTTPS")
@@ -38,7 +43,9 @@ def request_json(url, key="", payload=None, timeout=60):
         data=json.dumps(payload).encode() if payload is not None else None,
         headers=headers,
     )
-    with urllib.request.urlopen(req, timeout=timeout) as res:
+    with urllib.request.build_opener(NoCredentialRedirect()).open(
+        req, timeout=timeout
+    ) as res:
         return json.load(res)
 
 

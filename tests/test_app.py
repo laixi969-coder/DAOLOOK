@@ -99,6 +99,39 @@ class AppTests(unittest.TestCase):
             time.sleep(0.02)
         self.fail("Tasks did not complete")
 
+    def test_malformed_admin_config_does_not_break_workers(self):
+        for config in (
+            {"limits": []},
+            {"provider": "bad"},
+            {"rules": {"analyze": True, "create": 15, "cover": 8}},
+            {"limits": {"batch": 10, "timeout": 60, "retries": 1.5}},
+        ):
+            self.assertEqual(
+                self.admin.req("/api/admin/config", "POST", config)[0], 400
+            )
+
+    def test_malformed_input_is_rejected_before_charging(self):
+        for data in ([], "text", 123):
+            self.assertEqual(self.c.req("/api/create", "POST", data)[0], 400)
+        self.assertEqual(
+            self.post(
+                "/api/create",
+                {
+                    "source_id": self.ws["sources"][0]["id"],
+                    "requirements": {"bad": "type"},
+                },
+            )[0],
+            400,
+        )
+        self.assertEqual(
+            self.post(
+                "/api/create",
+                {"source_id": self.ws["sources"][0]["id"], "temporary": float("nan")},
+            )[0],
+            400,
+        )
+        self.assertEqual(self.c.req("/api/bootstrap")[1]["credits"]["balance"], 300)
+
     def test_auth_and_project_isolation(self):
         other = Client(self.base)
         other.req("/api/auth/demo", "POST", {})
