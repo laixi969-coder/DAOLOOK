@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "douyin analysis",
+  "type": "object",
+  "required": ["sections"],
+  "properties": {
+    "sections": {
+      "type": "array",
+      "minItems": 10,
+      "maxItems": 10,
+      "prefixItems": [
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "基础信息"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "核心选题"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "前三秒钩子"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "脚本结构"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "口播与字幕"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "镜头结构"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "节奏"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "互动/转化"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "爆点判断"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["name", "text"],
+          "properties": {
+            "name": {
+              "const": "可迁移规则"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      ]
+    }
+  }
+}
