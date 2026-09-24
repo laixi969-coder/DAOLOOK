@@ -1853,6 +1853,27 @@ tr:last-child td {
   border-radius: 12px;
   background: #f5f7ed;
 }
+.skill-prompt {
+  margin: 12px 0 4px;
+}
+.skill-prompt summary {
+  cursor: pointer;
+  color: #75835c;
+  font-size: 12px;
+  padding: 4px 0;
+}
+.skill-prompt pre {
+  margin: 10px 0 0;
+  padding: 14px;
+  background: var(--wash);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: inherit;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: #4c5a3a;
+}
 .inline-photo-upload small {
   line-height: 1.7;
 }

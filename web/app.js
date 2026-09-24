@@ -404,6 +404,12 @@ const states = {
   PARTIAL: "部分完成",
   CANCELLED: "已取消",
 };
+const skillStates = {
+  Draft: "草稿",
+  Test: "测试中",
+  Published: "生效中",
+  Archived: "已归档",
+};
 function tasks() {
   const items = S.tasks.filter((t) => t.project_id === S.project);
   return (
@@ -469,11 +475,18 @@ function adminBody() {
   if (S.adminTab === "tasks")
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
-    return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><p>${esc(s.prompt)}</p><div class="actions">${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" || s.status === "Archived" ? button(s.status === "Archived" ? "回滚至此版本" : "发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
+    return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="notice">每类任务只有一条「生效中」的 Prompt，真实拆解与创作只读它。要改 Prompt 就点「编辑为新版本」：保存草稿 → 测试 → 发布，发布即替换生效版本（旧版转为已归档）。</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${skillStates[s.status] || s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><details class="skill-prompt"><summary>查看完整 Prompt</summary><pre>${esc(s.prompt)}</pre></details><div class="actions">${button("编辑为新版本", "edit-skill", "secondary small", "edit", `data-id="${s.id}"`)}${button("复制", "copy-skill", "secondary small", "copy", `data-id="${s.id}"`)}${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" ? button("发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : s.status === "Archived" ? button("回滚至此版本", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
   return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}</section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
 }
 function field(label, id, value = "", type = "text") {
   return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0"' : ""}></label>`;
+}
+function skillModal(name = "xhs_analysis", prompt = "", title = "创建 Skill 草稿") {
+  modal(
+    title,
+    `<p class="subtext">保存会生成新的 Draft 版本，不会改动当前生效版本。结构测试通过后发布，发布即替换生效版本。</p><form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation"].map((n) => `<option ${n === name ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="12" required placeholder="输入平台拆解或创作规则…">${esc(prompt)}</textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
+    true,
+  );
 }
 async function coverStudio(id, saved) {
   const plan = await post("/api/cover/plan", body({ creation_id: id }));
@@ -1007,12 +1020,22 @@ const actions = {
     S.admin = await api("/api/admin");
     render();
   },
-  "new-skill": () =>
-    modal(
-      "创建 Skill 草稿",
-      `<form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation"].map((n) => `<option>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="10" required placeholder="输入平台拆解或创作规则…"></textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
-      true,
-    ),
+  "new-skill": () => skillModal(),
+  "edit-skill": (el) => {
+    const s = S.admin.skills.find((x) => x.id === el.dataset.id);
+    if (s)
+      skillModal(
+        s.name,
+        s.prompt,
+        `编辑 Skill · ${s.name} v${s.version} → 保存为新草稿`,
+      );
+  },
+  "copy-skill": async (el) => {
+    const s = S.admin.skills.find((x) => x.id === el.dataset.id);
+    if (!s) return;
+    await navigator.clipboard.writeText(s.prompt);
+    toast("Prompt 已复制");
+  },
   "test-skill": async (el) => {
     el.disabled = true;
     await post("/api/admin/skills/state", {
