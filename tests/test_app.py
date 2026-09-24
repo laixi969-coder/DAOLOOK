@@ -10,7 +10,8 @@ class Client:
     def __init__(self, base):
         self.base = base
         self.http = urllib.request.build_opener(
-            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar())
+            urllib.request.ProxyHandler({}),
+            urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()),
         )
 
     def req(self, path, method="GET", data=None, raw=False):
@@ -25,7 +26,7 @@ class Client:
                 b = r.read()
                 return r.status, b if raw else json.loads(b)
         except urllib.error.HTTPError as e:
-            return e.code, json.loads(e.read())
+            return e.code, e.read() if raw else json.loads(e.read())
 
 
 class AppTests(unittest.TestCase):
@@ -54,9 +55,9 @@ class AppTests(unittest.TestCase):
         )
         for _ in range(100):
             try:
-                if Client(cls.base).req("/api/health")[0] == 200:
+                if Client(cls.base).req("/api/health", raw=True)[0] == 200:
                     break
-            except OSError:
+            except Exception:
                 time.sleep(0.05)
         else:
             raise RuntimeError("Test server failed to start")

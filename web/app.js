@@ -151,7 +151,7 @@ function shell() {
     )
     .join(
       "",
-    )}</nav><div class="nav-label">MANAGE</div><nav class="nav">${[["tasks", "clock", "任务记录"], ["credits", "coin", "积分账本"], ...(user.role === "admin" ? [["admin", "settings", "管理后台"]] : [])].map(([id, ic, label]) => `<button class="${S.page === id ? "active" : ""}" data-page="${id}">${icon(ic)}${label}</button>`).join("")}</nav><div class="sidebar-bottom"><div class="credit-mini"><div class="top">${icon("coin")}创作积分</div><div class="balance">${S.boot.credits.balance.toLocaleString()}<small>可用积分</small></div><div class="credit-track"><span style="width:${Math.min(100, S.boot.credits.balance / 3)}%"></span></div><button data-page="credits">每一个好想法，都值得被实现 ${icon("arrow")}</button></div><button class="profile" data-action="account"><span class="avatar">${user.email.startsWith("demo-") ? "D" : esc(user.email[0].toUpperCase())}</span><span>${user.email.startsWith("demo-") ? "灵感探索者" : esc(user.email.split("@")[0])}<small>${user.role === "admin" ? "超级管理员" : user.email.startsWith("demo-") ? "演示工作空间" : "个人创作者"}</small></span>${icon("settings")}</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="展开菜单">${icon("menu")}</button>${icon("home")}<span>/</span>${esc(project?.name)}<span>/</span><strong>${pageNames[S.page]}</strong></div><div class="top-actions"><span class="mode">${S.boot.mode === "demo" ? "演示模式" : "已连接服务"}</span><button class="text-btn" data-action="help">${icon("help")}使用指南</button><span class="avatar">D</span></div></header><div class="content" id="content">${pageContent()}</div></main></div>`;
+    )}</nav><div class="nav-label">MANAGE</div><nav class="nav">${[["tasks", "clock", "任务记录"], ["credits", "coin", "积分账本"], ...(user.role === "admin" ? [["admin", "settings", "管理后台"]] : [])].map(([id, ic, label]) => `<button class="${S.page === id ? "active" : ""}" data-page="${id}">${icon(ic)}${label}</button>`).join("")}</nav><div class="sidebar-bottom"><div class="credit-mini"><div class="top">${icon("coin")}创作积分</div><div class="balance">${S.boot.credits.balance.toLocaleString()}<small>可用积分</small></div><div class="credit-track"><span style="width:${Math.min(100, S.boot.credits.balance / 3)}%"></span></div><button data-page="credits">每一个好想法，都值得被实现 ${icon("arrow")}</button></div><button class="profile" data-action="account"><span class="avatar">${user.email.startsWith("demo-") ? "D" : esc(user.email[0].toUpperCase())}</span><span>${user.email.startsWith("demo-") ? "灵感探索者" : esc(user.email.split("@")[0])}<small>${user.role === "admin" ? "超级管理员" : user.email.startsWith("demo-") ? "演示工作空间" : "个人创作者"}</small></span>${icon("settings")}</button></div></aside><main class="main"><header class="topbar"><div class="breadcrumb"><button class="mobile-menu" data-action="menu" aria-label="展开菜单">${icon("menu")}</button>${icon("home")}<span>/</span><span class="crumb-name">${esc(project?.name)}</span><span>/</span><strong>${pageNames[S.page]}</strong></div><div class="top-actions"><span class="mode">${S.boot.mode === "demo" ? "演示模式" : "已连接服务"}</span><button class="text-btn" data-action="help">${icon("help")}使用指南</button><span class="avatar">${user.email.startsWith("demo-") ? "D" : esc(user.email[0].toUpperCase())}</span></div></header><div class="content" id="content">${pageContent()}</div></main></div>`;
 }
 function heading(
   title,
@@ -183,11 +183,32 @@ function pageContent() {
       return discover();
   }
 }
+function shellKey() {
+  const project = S.boot.projects.find((p) => p.id === S.project);
+  return [
+    S.project,
+    project?.name,
+    S.boot.user.email,
+    S.boot.user.role,
+    S.boot.mode,
+    S.boot.credits.balance,
+    S.boot.credits.frozen,
+    S.workspace.creations.length,
+    S.page,
+  ].join("|");
+}
 function render() {
   const active = document.activeElement;
   const id = active?.id;
   const start = active?.selectionStart;
-  $("#app").innerHTML = shell();
+  const app = $("#app");
+  const key = shellKey();
+  if (app.dataset.shellKey === key && $("#content")) {
+    $("#content").innerHTML = pageContent();
+  } else {
+    app.dataset.shellKey = key;
+    app.innerHTML = shell();
+  }
   if (id && $("#" + id)) {
     $("#" + id).focus();
     if (start !== null && start !== undefined)
@@ -220,7 +241,7 @@ function entryPanel() {
     creator: "粘贴博主主页分享链接，发现值得参考的内容…",
     keyword: "输入关键词或品类，如：咖啡、家居、生活方式…",
   }[S.entry];
-  return `<section class="entry-panel"><div class="entry-tabs" role="tablist" aria-label="参考入口">${tabs.map(([id, ic, label]) => `<button role="tab" aria-selected="${S.entry === id}" class="${S.entry === id ? "active" : ""}" data-entry="${id}">${icon(ic)}${label}</button>`).join("")}<span class="entry-help">好创作，从一个好参考开始</span></div><form id="analyze-form"><div class="input-row"><div class="reference-input">${icon(S.entry === "keyword" ? "search" : "link")}${S.entry === "batch" ? `<textarea id="reference" aria-label="参考内容" placeholder="${placeholder}">${esc(S.entryText)}</textarea>` : `<input id="reference" aria-label="参考内容" value="${esc(S.entryText)}" placeholder="${placeholder}" autocomplete="off">`}</div>${S.entry === "keyword" ? `<select id="keyword-platform" aria-label="搜索平台"><option value="xhs">小红书</option><option value="douyin">抖音</option></select>` : ""}<button type="submit" class="btn primary" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}${S.busy ? "正在提交" : "开始拆解"} ${!S.busy ? icon("arrow") : ""}</button></div><div class="entry-bottom"><span class="platform-marks"><span class="xhs-mark">小红书</span><span class="dy-mark">♪</span>${S.entry === "keyword" ? (S.boot.mode === "demo" ? "演示搜索仅返回预置样本，不执行真实检索" : "按所选平台搜索，取接口前 3 条可识别结果，不保证为爆款") : "自动识别平台 · 使用对应平台的拆解方式"}</span><span id="entry-cost">预计 ${S.boot.rules.analyze * (S.entry === "batch" ? Math.max(1, S.entryText.split("\n").filter((x) => x.trim()).length) : 1)} 积分${S.entry === "batch" ? " · 逐条结算" : ""} · 失败自动退还</span></div></form></section>`;
+  return `<section class="entry-panel"><div class="entry-tabs" role="tablist" aria-label="参考入口">${tabs.map(([id, ic, label]) => `<button role="tab" aria-selected="${S.entry === id}" tabindex="${S.entry === id ? 0 : -1}" class="${S.entry === id ? "active" : ""}" data-entry="${id}">${icon(ic)}${label}</button>`).join("")}<span class="entry-help">好创作，从一个好参考开始</span></div><form id="analyze-form"><div class="input-row"><div class="reference-input">${icon(S.entry === "keyword" ? "search" : "link")}${S.entry === "batch" ? `<textarea id="reference" aria-label="参考内容" placeholder="${placeholder}">${esc(S.entryText)}</textarea>` : `<input id="reference" aria-label="参考内容" value="${esc(S.entryText)}" placeholder="${placeholder}" autocomplete="off">`}</div>${S.entry === "keyword" ? `<select id="keyword-platform" aria-label="搜索平台"><option value="xhs">小红书</option><option value="douyin">抖音</option></select>` : ""}<button type="submit" class="btn primary" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}${S.busy ? "正在提交" : "开始拆解"} ${!S.busy ? icon("arrow") : ""}</button></div><div class="entry-bottom"><span class="platform-marks"><span class="xhs-mark">小红书</span><span class="dy-mark">♪</span>${S.entry === "keyword" ? (S.boot.mode === "demo" ? "演示搜索仅返回预置样本，不执行真实检索" : "按所选平台搜索，取接口前 3 条可识别结果，不保证为爆款") : "自动识别平台 · 使用对应平台的拆解方式"}</span><span id="entry-cost">预计 ${S.boot.rules.analyze * (S.entry === "batch" ? Math.max(1, S.entryText.split("\n").filter((x) => x.trim()).length) : 1)} 积分${S.entry === "batch" ? " · 逐条结算" : ""} · 失败自动退还</span></div></form></section>`;
 }
 function catalogItems() {
   return S.workspace.sources.filter(
@@ -302,7 +323,7 @@ function sourceCards(savedOnly) {
   return items
     .map(
       (s, i) =>
-        `<article class="source-card" style="animation-delay:${Math.min(i, 5) * 40}ms"><button class="art" data-source="${s.id}" aria-label="拆解 ${esc(s.data.title)}"><img src="${art(s)}" alt="${esc(s.data.category || "参考内容")}主题插画" loading="lazy"><span class="platform-badge ${s.platform === "douyin" ? "dy" : ""}">${s.platform === "xhs" ? "小红书" : "♪ 抖音"}</span>${s.data.demo ? '<span class="demo-stamp">示例</span>' : ""}<span class="outlier">${icon("trend")}${sourceMetric(s, "efficiency") !== null ? `${sourceMetric(s, "efficiency").toFixed(1)}× 粉丝效率${s.data.demo ? " · 示例" : ""}` : "效率数据不完整"}</span></button><div class="source-body"><h3>${esc(s.data.title)}</h3><div class="author"><span class="author-avatar">${esc((s.data.author || "作")[0])}</span>${esc(s.data.author || "未知作者")}<span style="margin-left:auto">${fmt(s.data.followers)} 粉丝</span></div><div class="metrics"><span>${icon("heart")}${fmt(s.data.likes)}</span><span>${icon("star")}${fmt(s.data.saves)}</span><span>${icon("chat")}${fmt(s.data.comments)}</span></div><p class="source-format">形式 · ${esc(s.classification?.format || "待判断")} <span>建议分类</span></p><details class="source-evidence"><summary>来源与排序依据</summary><p>${esc(s.classification?.basis || "分类依据待补充")}</p>${(s.selection_reasons || []).map((r) => `<p>${esc(r)}</p>`).join("")}${s.data.url && /^https?:\/\//.test(s.data.url) && !s.data.demo ? `<a href="${esc(s.data.url)}" target="_blank" rel="noopener noreferrer">查看原始内容 ↗</a>` : ""}</details><div class="card-footer"><span class="category">行业 · ${esc(s.classification?.industry || "待分类")}</span><button data-source="${s.id}">拆解内容 ${icon("arrow")}</button></div></div></article>`,
+        `<article class="source-card" style="animation-delay:${Math.min(i, 5) * 40}ms"><button class="art" data-source="${s.id}" aria-label="拆解 ${esc(s.data.title)}"><img src="${art(s)}" alt="${esc(s.data.category || "参考内容")}主题插画" loading="lazy"><span class="platform-badge ${s.platform === "douyin" ? "dy" : ""}">${s.platform === "xhs" ? "小红书" : "♪ 抖音"}</span>${s.data.demo ? '<span class="demo-stamp">示例</span>' : ""}<span class="outlier">${icon("trend")}${sourceMetric(s, "efficiency") !== null ? `${sourceMetric(s, "efficiency").toFixed(1)}× 粉丝效率${s.data.demo ? " · 示例" : ""}` : "效率数据不完整"}</span></button><div class="source-body"><h3>${esc(s.data.title)}</h3><div class="author"><span class="author-avatar">${esc((s.data.author || "作")[0])}</span><span class="author-name">${esc(s.data.author || "未知作者")}</span><span class="author-followers">${fmt(s.data.followers)} 粉丝</span></div><div class="metrics"><span>${icon("heart")}${fmt(s.data.likes)}</span><span>${icon("star")}${fmt(s.data.saves)}</span><span>${icon("chat")}${fmt(s.data.comments)}</span></div><p class="source-format">形式 · ${esc(s.classification?.format || "待判断")} <span>建议分类</span></p><details class="source-evidence"><summary>来源与排序依据</summary><p>${esc(s.classification?.basis || "分类依据待补充")}</p>${(s.selection_reasons || []).map((r) => `<p>${esc(r)}</p>`).join("")}${s.data.url && /^https?:\/\//.test(s.data.url) && !s.data.demo ? `<a href="${esc(s.data.url)}" target="_blank" rel="noopener noreferrer">查看原始内容 ↗</a>` : ""}</details><div class="card-footer"><span class="category">行业 · ${esc(s.classification?.industry || "待分类")}</span><button data-source="${s.id}">拆解内容 ${icon("arrow")}</button></div></div></article>`,
     )
     .join("");
 }
@@ -468,7 +489,7 @@ async function coverStudio(id, saved) {
   <p class="muted">${esc(plan.reason)} 当前标题切入点：${esc(plan.hook)}。</p>
   <label class="field"><span>主标题 <small>最多 36 字</small></span><textarea id="cover-title" rows="2" maxlength="36">${esc(b.title)}</textarea></label>
   <label class="field"><span>副标题 · 可选</span><textarea id="cover-subtitle" rows="2" maxlength="48">${esc(b.subtitle)}</textarea></label>
-  <label class="field" id="cover-points-field" ${b.style !== "method" ? "hidden" : ""}><span>方法清单 · 可选，每行一项，最多 3 项</span><textarea id="cover-points" rows="3" placeholder="填写稿件里已经验证的方法">${esc(b.points.join("\n"))}</textarea></label>
+  <label class="field" id="cover-points-field" ${b.style !== "method" ? "hidden" : ""}><span>方法清单 · 可选，每行一项，最多 3 项</span><textarea id="cover-points" rows="3" placeholder="填写稿件里已经验证的方法">${esc((b.points || []).join("\n"))}</textarea></label>
   <label class="field"><span>品牌署名 · 可选</span><input id="cover-brand" maxlength="20" value="${esc(b.brand)}"></label>
   <div class="cover-photo-fields"><label class="field"><span>项目图片</span><select id="cover-asset"><option value="">不使用图片</option>${photos.map((a) => `<option value="${a.id}" ${b.asset_id === a.id ? "selected" : ""}>${esc(a.name)}</option>`).join("")}</select></label>
   <label class="field"><span>图片裁切</span><select id="cover-crop">${[
@@ -540,7 +561,8 @@ async function previewCover() {
 document.addEventListener("input", (e) => {
   if (!e.target.closest(".cover-controls")) return;
   ++coverPreviewSequence;
-  $('[data-action="generate-cover"]').disabled = true;
+  const save = $('[data-action="generate-cover"]');
+  if (save) save.disabled = true;
   clearTimeout(coverPreviewTimer);
   coverPreviewTimer = setTimeout(previewCover, 250);
 });
@@ -548,6 +570,7 @@ async function exportCover(id, format) {
   const item = S.workspace.images.find((i) => i.id === id);
   if (!item) throw new Error("封面不存在");
   const url = safeImage(item.data.url);
+  if (!url) throw new Error("封面图片不存在或已失效");
   if (!url.startsWith("data:")) {
     window.open(url, "_blank", "noopener");
     toast("已打开历史图片，请在图片页面下载");
@@ -1347,6 +1370,19 @@ document.addEventListener("keydown", (e) => {
       e.preventDefault();
     }
   }
+});
+document.addEventListener("keydown", (e) => {
+  const tab = e.target.closest?.("[role=tab]");
+  if (!tab || !tab.closest(".entry-tabs")) return;
+  if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+  e.preventDefault();
+  const tabs = $$(".entry-tabs [role=tab]");
+  const i = tabs.indexOf(tab);
+  const next = tabs[(i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length];
+  S.entryText = $("#reference")?.value || "";
+  S.entry = next.dataset.entry;
+  render();
+  $(`.entry-tabs [data-entry="${next.dataset.entry}"]`)?.focus();
 });
 window.addEventListener("hashchange", () => {
   if (!S.boot) return;
