@@ -241,7 +241,7 @@ function entryPanel() {
     creator: "粘贴博主主页分享链接，发现值得参考的内容…",
     keyword: "输入关键词或品类，如：咖啡、家居、生活方式…",
   }[S.entry];
-  return `<section class="entry-panel"><div class="entry-tabs" role="tablist" aria-label="参考入口">${tabs.map(([id, ic, label]) => `<button role="tab" aria-selected="${S.entry === id}" tabindex="${S.entry === id ? 0 : -1}" class="${S.entry === id ? "active" : ""}" data-entry="${id}">${icon(ic)}${label}</button>`).join("")}<span class="entry-help">好创作，从一个好参考开始</span></div><form id="analyze-form"><div class="input-row"><div class="reference-input">${icon(S.entry === "keyword" ? "search" : "link")}${S.entry === "batch" ? `<textarea id="reference" aria-label="参考内容" placeholder="${placeholder}">${esc(S.entryText)}</textarea>` : `<input id="reference" aria-label="参考内容" value="${esc(S.entryText)}" placeholder="${placeholder}" autocomplete="off">`}</div>${S.entry === "keyword" ? `<select id="keyword-platform" aria-label="搜索平台"><option value="xhs">小红书</option><option value="douyin">抖音</option></select>` : ""}<button type="submit" class="btn primary" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}${S.busy ? "正在提交" : "开始拆解"} ${!S.busy ? icon("arrow") : ""}</button></div><div class="entry-bottom"><span class="platform-marks"><span class="xhs-mark">小红书</span><span class="dy-mark">♪</span>${S.entry === "keyword" ? (S.boot.mode === "demo" ? "演示搜索仅返回预置样本，不执行真实检索" : "按所选平台搜索，取接口前 3 条可识别结果，不保证为爆款") : "自动识别平台 · 使用对应平台的拆解方式"}</span><span id="entry-cost">预计 ${S.boot.rules.analyze * (S.entry === "batch" ? Math.max(1, S.entryText.split("\n").filter((x) => x.trim()).length) : 1)} 积分${S.entry === "batch" ? " · 逐条结算" : ""} · 失败自动退还</span></div></form></section>`;
+  return `<section class="entry-panel"><div class="entry-tabs" role="tablist" aria-label="参考入口">${tabs.map(([id, ic, label]) => `<button role="tab" aria-selected="${S.entry === id}" tabindex="${S.entry === id ? 0 : -1}" class="${S.entry === id ? "active" : ""}" data-entry="${id}">${icon(ic)}${label}</button>`).join("")}<span class="entry-help">好创作，从一个好参考开始</span></div><form id="analyze-form"><div class="input-row"><div class="reference-input">${icon(S.entry === "keyword" ? "search" : "link")}${S.entry === "batch" ? `<textarea id="reference" aria-label="参考内容" placeholder="${placeholder}">${esc(S.entryText)}</textarea>` : `<input id="reference" aria-label="参考内容" value="${esc(S.entryText)}" placeholder="${placeholder}" autocomplete="off">`}</div>${S.entry === "keyword" ? `<select id="keyword-platform" aria-label="搜索平台"><option value="xhs">小红书</option><option value="douyin">抖音</option></select>` : ""}<button type="submit" class="btn primary" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}${S.busy ? "正在提交" : "开始拆解"} ${!S.busy ? icon("arrow") : ""}</button></div>${S.entry === "single" ? `<details class="transcript-box"><summary>视频内容？可补充口播或字幕文字（可选）</summary><textarea id="transcript" rows="4" maxlength="20000" aria-label="视频口播或字幕文字" placeholder="粘贴这条视频的口播或字幕。没有时系统会尝试自动转写；都没有时，口播、镜头、节奏会标注无法判断。"></textarea></details>` : ""}<div class="entry-bottom"><span class="platform-marks"><span class="xhs-mark">小红书</span><span class="dy-mark">♪</span>${S.entry === "keyword" ? (S.boot.mode === "demo" ? "演示搜索仅返回预置样本，不执行真实检索" : "按所选平台搜索，以结果中位数为赛道基线，按相对表现精选；评分未经校准，不保证为爆款") : "自动识别平台 · 使用对应平台的拆解方式"}</span><span id="entry-cost">${analyzeEstimate()}</span></div></form></section>`;
 }
 function catalogItems() {
   return S.workspace.sources.filter(
@@ -346,7 +346,7 @@ function detail() {
       "请返回发现灵感页面重新选择。",
       button("返回", "discover", "primary"),
     );
-  return `<button class="back" data-page="discover">${icon("back")}返回发现灵感</button>${heading(esc(s.data.title), "先理解内容为什么有效，再找到属于自己的表达。", button(s.saved ? "已保存参考" : "保存参考", "save-source", s.saved ? "secondary" : "primary", s.saved ? "check" : "plus", `data-id="${s.id}"`), "CONTENT BREAKDOWN / " + (s.platform === "xhs" ? "小红书" : "抖音"))}<div class="two-col"><section class="panel"><div class="detail-cover"><img src="${art(s)}" alt="参考主题插画"></div><div class="source-meta"><span>${esc(s.data.author || "未知作者")}</span><span>${fmt(s.data.likes)} 赞</span><span>${fmt(s.data.saves)} 收藏</span>${s.url && /^https?:/.test(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>` : ""}</div>${s.data.demo ? '<div class="notice">演示拆解：以下内容用于体验产品流程，不是真实平台抓取或模型分析。</div>' : ""}<h2>把好内容拆开看</h2>${(s.analysis.sections || []).map((a, i) => `<div class="analysis-section"><span class="num">${String(i + 1).padStart(2, "0")}</span><div><h3>${esc(a.name)}</h3><p>${esc(a.text)}</p></div></div>`).join("")}</section><section class="panel composer"><h2>${icon("spark")} 创作我的版本</h2><p class="intro">借鉴这条内容的创作思路，结合你的品牌与本次要求，一次获得 3 个不同表达方案。</p><form id="create-form"><label class="field"><span>本次创作要求 <small style="display:inline;font-weight:400">可选</small></span><textarea id="requirements" rows="5" placeholder="比如：改成适合独立咖啡店的日常分享，语气轻松，面向刚接触手冲的年轻人…">${esc(S.requirements)}</textarea></label><div class="field"><span>选择项目资料 <small style="display:inline;font-weight:400">可选，不会自动使用</small></span>${S.workspace.assets.length ? S.workspace.assets.map((a) => `<label class="check-row"><input type="checkbox" name="asset" value="${esc(a.id)}" ${S.selectedAssets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("") : '<p class="muted">还没有长期资料，去「项目资料」添加品牌或产品信息。</p>'}</div><div class="inline-photo-upload"><label class="field"><span>上传产品图 / 个人 IP 形象图</span><input type="file" id="creation-photo-file" accept="image/png,image/jpeg,image/webp" multiple><small>每张最多 2 MB，一次最多 6 张。上传后保存到当前项目并自动勾选，用于本次创作；封面默认带入一张，可重新选择。</small></label></div><label class="field"><span>本次临时资料 <small style="display:inline;font-weight:400">可选</small></span><textarea id="temporary" rows="3" placeholder="补充本次需要的真实信息，不会自动存入项目">${esc(S.temporary)}</textarea></label><label class="text-btn" style="cursor:pointer">${icon("plus")}上传文本资料<input type="file" id="temporary-file" accept=".txt,.md,.csv" hidden></label><div class="hint">每次生成 3 条独立稿件 · 新结果追加保留<br>预计消耗 ${S.boot.rules.create} 积分，失败自动退还</div><button class="btn primary full" type="submit" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}生成 3 条我的版本 ${icon("arrow")}</button></form><div class="actions" style="margin-top:16px">${button(`查看已有稿件 (${S.workspace.creations.filter((c) => c.source_id === s.id).length})`, "source-creations", "secondary small", "edit")}</div></section></div>`;
+  return `<button class="back" data-page="discover">${icon("back")}返回发现灵感</button>${heading(esc(s.data.title), "先理解内容为什么有效，再找到属于自己的表达。", button(s.saved ? "已保存参考" : "保存参考", "save-source", s.saved ? "secondary" : "primary", s.saved ? "check" : "plus", `data-id="${s.id}"`), "CONTENT BREAKDOWN / " + (s.platform === "xhs" ? "小红书" : "抖音"))}<div class="two-col"><section class="panel"><div class="detail-cover"><img src="${art(s)}" alt="参考主题插画"></div><div class="source-meta"><span>${esc(s.data.author || "未知作者")}</span><span>${fmt(s.data.likes)} 赞</span><span>${fmt(s.data.saves)} 收藏</span>${s.url && /^https?:/.test(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>` : ""}</div>${s.data.demo ? '<div class="notice">演示拆解：以下内容用于体验产品流程，不是真实平台抓取或模型分析。</div>' : ""}${s.data.transcript_source ? `<div class="hint">口播与字幕依据：${esc(s.data.transcript_source)}</div>` : s.data.transcript_note ? `<div class="notice">${esc(s.data.transcript_note)}；口播、镜头、节奏相关判断仅供参考。</div>` : ""}<h2>把好内容拆开看</h2>${(s.analysis.sections || []).map((a, i) => `<div class="analysis-section"><span class="num">${String(i + 1).padStart(2, "0")}</span><div><h3>${esc(a.name)}</h3><p>${esc(a.text)}</p></div></div>`).join("")}</section><section class="panel composer"><h2>${icon("spark")} 创作我的版本</h2><p class="intro">借鉴这条内容的创作思路，结合你的品牌与本次要求，一次获得 6 到 8 条不同岗位、不同切角的稿件。</p><form id="create-form"><label class="field"><span>本次创作要求 <small style="display:inline;font-weight:400">可选</small></span><textarea id="requirements" rows="5" placeholder="比如：改成适合独立咖啡店的日常分享，语气轻松，面向刚接触手冲的年轻人…">${esc(S.requirements)}</textarea></label><div class="field"><span>选择项目资料 <small style="display:inline;font-weight:400">可选，不会自动使用</small></span>${S.workspace.assets.length ? S.workspace.assets.map((a) => `<label class="check-row"><input type="checkbox" name="asset" value="${esc(a.id)}" ${S.selectedAssets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("") : '<p class="muted">还没有长期资料，去「项目资料」添加品牌或产品信息。</p>'}</div><div class="inline-photo-upload"><label class="field"><span>上传产品图 / 个人 IP 形象图</span><input type="file" id="creation-photo-file" accept="image/png,image/jpeg,image/webp" multiple><small>每张最多 2 MB，一次最多 6 张。上传后保存到当前项目并自动勾选，用于本次创作；封面默认带入一张，可重新选择。</small></label></div><label class="field"><span>本次临时资料 <small style="display:inline;font-weight:400">可选</small></span><textarea id="temporary" rows="3" placeholder="补充本次需要的真实信息，不会自动存入项目">${esc(S.temporary)}</textarea></label><label class="text-btn" style="cursor:pointer">${icon("plus")}上传文本资料<input type="file" id="temporary-file" accept=".txt,.md,.csv,.docx,.pdf" hidden></label><div class="hint">每次生成 6 到 8 条独立稿件 · 新结果追加保留<br>预计消耗 ${S.boot.rules.create} 积分，失败自动退还</div><button class="btn primary full" type="submit" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}生成 6 到 8 条我的版本 ${icon("arrow")}</button></form><div class="actions" style="margin-top:16px">${button(`查看已有稿件 (${S.workspace.creations.filter((c) => c.source_id === s.id).length})`, "source-creations", "secondary small", "edit")}</div></section></div>`;
 }
 function creations() {
   let items = S.workspace.creations.filter(
@@ -367,7 +367,43 @@ function draftCard(c) {
   const d = c.data;
   const source = S.workspace.sources.find((s) => s.id === c.source_id);
   const images = S.workspace.images.filter((i) => i.creation_id === c.id);
-  return `<article class="draft"><div class="draft-top"><span>${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"} · ${esc(d.angle || "原创方案")}</span><span>${date(c.created_at)}</span></div><h3>${esc(d.title)}</h3>${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>前三秒钩子</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${images.map(coverCard).join("")}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} 复制</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  return `<article class="draft"><div class="draft-top"><span>${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.direction ? `<div class="draft-direction"><span class="direction-badge ${DIRECTION_TONE[d.direction] || ""}">${esc(d.direction)}</span>${d.role ? `<span>${esc(d.role)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3>${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>前三秒钩子</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${d.direction ? `<p class="draft-note">${esc(PROMOTION_NOTE)}</p>` : ""}${images.map(coverCard).join("")}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} 复制</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+}
+const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
+const PROMOTION_NOTE =
+  "投放提醒：先用自然流看数据，点击率稳定在 20% 以上再考虑小额保护性投放；投放只放大已验证的结果。";
+function commentLines(layout) {
+  if (!layout) return [];
+  const p = layout.pinned || {};
+  return [
+    ...(layout.atmosphere || []).map((t) => "【气氛】" + t),
+    ...(layout.knowledge || []).map((t) => "【知识】" + t),
+    p.text ? "【置顶】" + p.text : "",
+    p.goal ? "置顶目标：" + p.goal : "",
+    p.keep_on_top ? "保持置顶：" + p.keep_on_top : "",
+    layout.first_hour ? "发布后一小时：" + layout.first_hour : "",
+  ].filter(Boolean);
+}
+function commentLayout(layout) {
+  if (!layout) return "";
+  const p = layout.pinned || {};
+  const list = (label, items) =>
+    items && items.length
+      ? `<div class="comment-row"><strong>${label}</strong><ul>${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>`
+      : "";
+  return `<details class="comment-layout" open><summary>评论布局 · 三分内容，七分评论</summary>${list("气氛", layout.atmosphere)}${list("知识", layout.knowledge)}${p.text ? `<div class="comment-row"><strong>置顶</strong><ul><li>${esc(p.text)}</li></ul><small>目标：${esc(p.goal || "")}<br>保持置顶：${esc(p.keep_on_top || "")}</small></div>` : ""}${layout.first_hour ? `<div class="comment-row"><strong>发布后一小时</strong><p>${esc(layout.first_hour)}</p></div>` : ""}</details>`;
+}
+function analyzeEstimate() {
+  const unit = S.boot.rules.analyze;
+  if (S.entry === "batch") {
+    const n = Math.max(1, S.entryText.split("\n").filter((x) => x.trim()).length);
+    return `预计 ${unit * n} 积分 · 逐条结算 · 失败自动退还`;
+  }
+  if (S.entry === "creator" || S.entry === "keyword") {
+    const n = S.boot.discover_pick || 3;
+    return `最多 ${unit * n} 积分 · 按相对表现精选 ${n} 条，逐条结算，未完成的退还`;
+  }
+  return `预计 ${unit} 积分 · 失败自动退还`;
 }
 function safeImage(url) {
   return /^(https:\/\/|data:image\/(png|jpeg|webp|svg\+xml);base64,)/.test(
@@ -420,7 +456,7 @@ function tasks() {
       "TASK HISTORY",
     ) +
     (items.length
-      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 3 条稿件", cover: "封面生成" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : t.state === "SUCCEEDED" ? "" : "pending"}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : t.state === "SUCCEEDED" ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
+      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 6 到 8 条稿件", cover: "封面生成" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? "" : "pending"}" title="${esc(t.state === "PARTIAL" ? t.error || "" : "")}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error && t.state !== "PARTIAL" ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
       : empty("还没有任务", "从一条参考链接开始，任务进度会显示在这里。"))
   );
 }
@@ -432,7 +468,7 @@ function credits() {
       "",
       "CREDIT ACCOUNT",
     ) +
-    `<div class="summary-strip"><div><p>当前可用积分</p><strong>${S.boot.credits.balance}</strong></div><div><p>正在冻结</p><strong>${S.boot.credits.frozen}</strong></div><div><p>再创作 / 3 条</p><strong>${S.boot.rules.create}<small style="font-size:12px"> 积分</small></strong></div></div><div class="notice">当前版本由管理员发放积分。已完成稿件的主动删除不会退还积分；封面生成单独计费，每次 ${S.boot.rules.cover} 积分。</div><div id="ledger">${S.ledger ? ledgerTable() : '<div class="loading-line"><span class="spinner"></span>读取积分流水…</div>'}</div>`
+    `<div class="summary-strip"><div><p>当前可用积分</p><strong>${S.boot.credits.balance}</strong></div><div><p>正在冻结</p><strong>${S.boot.credits.frozen}</strong></div><div><p>再创作 / 6 到 8 条</p><strong>${S.boot.rules.create}<small style="font-size:12px"> 积分</small></strong></div></div><div class="notice">当前版本由管理员发放积分。已完成稿件的主动删除不会退还积分；封面生成单独计费，每次 ${S.boot.rules.cover} 积分。</div><div id="ledger">${S.ledger ? ledgerTable() : '<div class="loading-line"><span class="spinner"></span>读取积分流水…</div>'}</div>`
   );
 }
 function ledgerTable() {
@@ -471,12 +507,12 @@ function adminBody() {
   if (S.adminTab === "models")
     return `<div class="admin-grid"><section class="panel"><h2>模型供应商</h2><p class="muted">默认供应商在服务配置中维护；可添加其他供应商作为主模型或备用。</p><div class="actions" style="margin:20px 0">${button("添加供应商", "new-provider", "primary small", "plus")}</div>${a.providers.map((p) => `<div class="asset-card" style="margin-top:12px"><span class="status">${p.enabled ? "已启用" : "已停用"}</span><h3>${esc(p.name)}</h3><p>${esc(p.base_url)}</p><div class="actions">${button("编辑", "edit-provider", "secondary small", "edit", `data-id="${p.id}"`)}${button("测试 / 同步", "test-provider", "secondary small", "refresh", `data-id="${p.id}"`)}</div></div>`).join("")}</section><section class="panel"><h2>按任务配置主备模型</h2><form id="routes-form">${["analyze", "create", "cover"].map((kind) => `<h3 style="font-size:14px;margin:18px 0">${{ analyze: "内容拆解", create: "再创作", cover: "封面生成" }[kind]}</h3>${["primary", "backup"].map((pos) => `<label class="field"><span>${pos === "primary" ? "主" : "备用"}供应商</span><select id="route-${kind}-${pos}-provider">${[{ id: "default", name: "默认供应商" }, ...a.providers].map((p) => `<option value="${p.id}" ${a.routes[kind][pos].provider === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>${field("模型 ID（留空继承默认配置）", `route-${kind}-${pos}-model`, a.routes[kind][pos].model)}`).join("")}`).join("")}<button class="btn primary full" type="submit">保存路由</button></form></section></div>`;
   if (S.adminTab === "users")
-    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("发放积分", "grant", "secondary small", "plus", `data-id="${u.id}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)}</td></tr>`).join("")}</tbody></table></div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("发放积分", "grant", "secondary small", "plus", `data-id="${u.id}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "tasks")
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
     return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="notice">每类任务只有一条「生效中」的 Prompt，真实拆解与创作只读它。要改 Prompt 就点「编辑为新版本」：保存草稿 → 测试 → 发布，发布即替换生效版本（旧版转为已归档）。</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${skillStates[s.status] || s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><details class="skill-prompt"><summary>查看完整 Prompt</summary><pre>${esc(s.prompt)}</pre></details><div class="actions">${button("编辑为新版本", "edit-skill", "secondary small", "edit", `data-id="${s.id}"`)}${button("复制", "copy-skill", "secondary small", "copy", `data-id="${s.id}"`)}${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" ? button("发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : s.status === "Archived" ? button("回滚至此版本", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
-  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}</section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
+  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
 }
 function field(label, id, value = "", type = "text") {
   return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0"' : ""}></label>`;
@@ -644,13 +680,34 @@ function assetModal(id) {
   S.editAsset = id;
   modal(
     a ? "编辑项目资料" : "添加项目资料",
-    `<form id="asset-form">${field("资料名称", "asset-name", a?.name || "")}<label class="field"><span>资料类型</span><select id="asset-kind">${["品牌资料", "产品信息", "受众画像", "禁用词", "图片", "其他"].map((k) => `<option ${a?.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><label class="field"><span>资料内容</span><textarea id="asset-content" rows="7" placeholder="请输入真实的品牌、产品或受众信息">${esc(a?.content || "")}</textarea></label><label class="field"><span>上传文件 · 文本 / 图片</span><input type="file" id="asset-file" accept=".txt,.md,.csv,image/png,image/jpeg,image/webp"><small>文本自动读取；图片最大 2 MB。资料不会自动在创作中全选。</small></label><button class="btn primary full" type="submit">${icon("check")}保存资料</button></form>`,
+    `<form id="asset-form">${field("资料名称", "asset-name", a?.name || "")}<label class="field"><span>资料类型</span><select id="asset-kind">${["品牌资料", "产品信息", "受众画像", "禁用词", "图片", "其他"].map((k) => `<option ${a?.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><label class="field"><span>资料内容</span><textarea id="asset-content" rows="7" placeholder="请输入真实的品牌、产品或受众信息">${esc(a?.content || "")}</textarea></label><label class="field"><span>上传文件 · 文本 / 图片</span><input type="file" id="asset-file" accept=".txt,.md,.csv,.docx,.pdf,image/png,image/jpeg,image/webp"><small>文本、Word（.docx）、PDF 自动提取文字；文件最大 2 MB。资料不会自动在创作中全选。</small></label><button class="btn primary full" type="submit">${icon("check")}保存资料</button></form>`,
   );
 }
-function login(register = false) {
+function login(register = false, reset = false) {
   S.loginRegister = register;
+  S.loginReset = reset;
+  const codeField = `<label class="field"><span>邮箱验证码</span><div class="code-row"><input id="code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字"><button type="button" class="btn secondary small" data-action="send-code">发送验证码</button></div></label>`;
+  const title = reset ? "找回密码" : register ? "开启你的创作空间" : "欢迎回到 DAOLOOK";
+  const intro = reset
+    ? "输入注册邮箱，用验证码设置新密码。"
+    : register
+      ? "用邮箱创建账号，开启有依据的创作。"
+      : "登录后，继续你的下一次好创作。";
+  const fields =
+    field("邮箱地址", "email", "", "email") +
+    (reset || (register && S.mail) ? codeField : "") +
+    field(reset ? "新密码（至少 8 位）" : "密码（至少 8 位）", "password", "", "password");
+  const submit = reset ? "重置并登录" : register ? "创建账号" : "邮箱登录";
+  const links = reset
+    ? '<button class="text-btn" data-action="toggle-login">返回登录</button>'
+    : `<button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : "还没有账号？免费注册"}</button>${register ? "" : '<button class="text-btn" data-action="forgot">忘记密码？</button>'}`;
   $("#app").innerHTML =
-    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>找依据 → 拆解 → 再创作</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${register ? "开启你的创作空间" : "欢迎回到 DAOLOOK"}</h2><p>${register ? "用邮箱创建账号，开启有依据的创作。" : "登录后，继续你的下一次好创作。"}</p><form id="login-form">${field("邮箱地址", "email", "", "email")}${field("密码（至少 8 位）", "password", "", "password")}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full">${register ? "创建账号" : "邮箱登录"} ${icon("arrow")}</button></form><div class="actions"><button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : "还没有账号？免费注册"}</button>${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
+    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>找依据 → 拆解 → 再创作</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full">${submit} ${icon("arrow")}</button></form>${reset && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员重置密码。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
+}
+async function loadPublic() {
+  const pub = await api("/api/public");
+  S.publicMode = pub.mode;
+  S.mail = !!pub.mail;
 }
 async function navigate(page) {
   S.page = page;
@@ -687,14 +744,18 @@ async function poll(ids, done) {
       if (
         relevant.length === ids.length &&
         relevant.every((t) =>
-          ["SUCCEEDED", "FAILED", "CANCELLED"].includes(t.state),
+          ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(t.state),
         )
       ) {
         S.watching = null;
         S.busy = false;
         render();
-        const success = relevant.filter((t) => t.state === "SUCCEEDED");
+        const success = relevant.filter((t) =>
+          ["SUCCEEDED", "PARTIAL"].includes(t.state),
+        );
         if (success.length) await done(success);
+        const partial = relevant.filter((t) => t.state === "PARTIAL");
+        if (partial.length) toast(`部分完成：${partial[0].error}`);
         const failed = relevant.filter((t) => t.state === "FAILED");
         if (failed.length)
           toast(`${failed.length} 个任务失败，积分已退回：${failed[0].error}`);
@@ -729,7 +790,12 @@ async function startAnalyze() {
   try {
     const r = await post(
       "/api/analyze",
-      body({ entry: S.entry, text, platform }),
+      body({
+        entry: S.entry,
+        text,
+        platform,
+        transcript: $("#transcript")?.value.trim() || "",
+      }),
     );
     toast("拆解已开始，可在任务记录查看进度");
     await poll(r.task_ids, async (tasks) => {
@@ -766,13 +832,17 @@ async function startCreate() {
         assets: S.selectedAssets,
       }),
     );
-    toast("正在创作 3 个独立方案…");
-    await poll(r.task_ids, async () => {
+    toast("正在创作 6 到 8 条独立稿件…");
+    await poll(r.task_ids, async (success) => {
       S.creationSource = S.detail;
       S.page = "creations";
       location.hash = "creations";
       render();
-      toast("3 条新稿件已追加，历史版本完整保留");
+      let count = "6 到 8";
+      try {
+        count = JSON.parse(success[0].result).creation_ids.length;
+      } catch (err) {}
+      toast(`${count} 条新稿件已追加，历史版本完整保留`);
       if (S.temporary.trim())
         modal(
           "保存本次临时资料？",
@@ -845,7 +915,7 @@ const actions = {
   help: () =>
     modal(
       "从参考，到自己的表达",
-      `<div class="analysis-section"><span class="num">01</span><div><h3>找到依据</h3><p>粘贴小红书 / 抖音链接，或搜索博主与关键词。</p></div></div><div class="analysis-section"><span class="num">02</span><div><h3>看懂内容</h3><p>浏览平台专属拆解，值得复用的参考再收藏。</p></div></div><div class="analysis-section"><span class="num">03</span><div><h3>创作自己的版本</h3><p>按需选择项目资料，每次生成 3 条独立新稿。可以重复创作，历史结果不会覆盖。</p></div></div><div class="analysis-section"><span class="num">04</span><div><h3>让表达落地</h3><p>选择封面方向，复制文案，或导出 Excel / CSV 到飞书表格。</p></div></div>`,
+      `<div class="analysis-section"><span class="num">01</span><div><h3>找到依据</h3><p>粘贴小红书 / 抖音链接，或搜索博主与关键词。</p></div></div><div class="analysis-section"><span class="num">02</span><div><h3>看懂内容</h3><p>浏览平台专属拆解，值得复用的参考再收藏。</p></div></div><div class="analysis-section"><span class="num">03</span><div><h3>创作自己的版本</h3><p>按需选择项目资料，每次生成 6 到 8 条独立新稿。可以重复创作，历史结果不会覆盖。</p></div></div><div class="analysis-section"><span class="num">04</span><div><h3>让表达落地</h3><p>选择封面方向，复制文案，或导出 Excel / CSV 到飞书表格。</p></div></div>`,
     ),
   account: () =>
     modal(
@@ -858,7 +928,7 @@ const actions = {
     S.boot = null;
     S.ledger = null;
     S.admin = null;
-    S.publicMode = (await api("/api/public")).mode;
+    await loadPublic();
     login();
   },
   demo: async () => {
@@ -866,7 +936,56 @@ const actions = {
     await bootstrap();
     render();
   },
-  "toggle-login": () => login(!S.loginRegister),
+  "toggle-login": () => login(S.loginReset ? false : !S.loginRegister),
+  forgot: () => login(false, true),
+  "send-code": async (el) => {
+    const email = $("#email").value.trim();
+    if (!email) {
+      $("#login-error").textContent = "请先填写邮箱";
+      return;
+    }
+    el.disabled = true;
+    try {
+      await post("/api/auth/code", {
+        email,
+        purpose: S.loginReset ? "reset" : "register",
+      });
+      toast(
+        S.loginReset
+          ? "如果该邮箱已注册，验证码已发送，请查看邮箱"
+          : "验证码已发送，请查看邮箱",
+      );
+      let left = 60;
+      const tick = () => {
+        if (!el.isConnected) return;
+        el.textContent = left > 0 ? `${left} 秒后重发` : "重新发送";
+        el.disabled = left > 0;
+        if (left-- > 0) setTimeout(tick, 1000);
+      };
+      tick();
+    } catch (e) {
+      el.disabled = false;
+      $("#login-error").textContent = e.message;
+    }
+  },
+  "reset-password": (el) => {
+    S.resetUser = el.dataset.id;
+    modal(
+      "重置用户密码",
+      `<form id="admin-password-form">${field("新密码（至少 8 位）", "admin-new-password", "", "password")}<p class="muted">重置后该用户的登录会话全部失效。</p><button class="btn primary full" type="submit">确认重置</button></form>`,
+    );
+  },
+  "test-mail": async (el) => {
+    el.disabled = true;
+    try {
+      await post("/api/admin/mail-test", {});
+      toast("测试邮件已发送到管理员邮箱");
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      el.disabled = false;
+    }
+  },
   "save-source": async (el) => {
     const s = S.workspace.sources.find((s) => s.id === el.dataset.id);
     await mutate("/api/sources/" + s.id, "PATCH", { saved: !s.saved });
@@ -892,6 +1011,9 @@ const actions = {
         (c.data.tags || []).map((t) => "#" + t).join(" "),
         ...(c.data.storyboard || []),
         ...(c.data.shooting_list || []),
+        commentLines(c.data.comment_layout).length
+          ? "评论布局\n" + commentLines(c.data.comment_layout).join("\n")
+          : "",
       ]
         .filter(Boolean)
         .join("\n\n"),
@@ -1142,10 +1264,16 @@ document.addEventListener("submit", async (e) => {
         break;
       }
       case "login-form":
-        await post("/api/auth/" + (S.loginRegister ? "register" : "login"), {
-          email: $("#email").value,
-          password: $("#password").value,
-        });
+        await post(
+          "/api/auth/" +
+            (S.loginReset ? "reset" : S.loginRegister ? "register" : "login"),
+          {
+            email: $("#email").value,
+            password: $("#password").value,
+            code: $("#code")?.value.trim() || "",
+          },
+        );
+        S.loginReset = false;
         await bootstrap();
         S.page = "discover";
         render();
@@ -1177,6 +1305,14 @@ document.addEventListener("submit", async (e) => {
         toast("项目资料已保存");
         break;
       }
+      case "admin-password-form":
+        await post("/api/admin/password", {
+          user_id: S.resetUser,
+          password: $("#admin-new-password").value,
+        });
+        close();
+        toast("密码已重置");
+        break;
       case "grant-form":
         await post("/api/admin/grant", {
           user_id: S.grantUser,
@@ -1199,7 +1335,17 @@ document.addEventListener("submit", async (e) => {
             model: $("#provider-model").value,
             backup_model: $("#provider-backup").value,
             image_model: $("#provider-image").value,
+            transcribe_model: $("#provider-transcribe").value.trim(),
             enabled: $("#provider-enabled").checked,
+          },
+          mail: {
+            enabled: $("#mail-enabled").checked,
+            host: $("#mail-host").value.trim(),
+            port: Number($("#mail-port").value),
+            security: $("#mail-security").value,
+            username: $("#mail-user").value.trim(),
+            password: $("#mail-password").value,
+            sender: $("#mail-sender").value.trim(),
           },
           tikhub: {
             ...c.tikhub,
@@ -1218,6 +1364,7 @@ document.addEventListener("submit", async (e) => {
             timeout: Number($("#timeout").value),
             retries: Number($("#retries").value),
             temporary_ttl_hours: Number($("#temporary-ttl").value),
+            discover_pick: Number($("#discover-pick").value),
           },
           ranking: JSON.parse($("#ranking").value),
         });
@@ -1257,11 +1404,24 @@ document.addEventListener("input", (e) => {
     S.entryText = e.target.value;
     const cost = $("#entry-cost");
     if (cost)
-      cost.textContent = `预计 ${S.boot.rules.analyze * (S.entry === "batch" ? Math.max(1, S.entryText.split("\n").filter((x) => x.trim()).length) : 1)} 积分${S.entry === "batch" ? " · 逐条结算" : ""} · 失败自动退还`;
+      cost.textContent = analyzeEstimate();
   }
   if (e.target.id === "requirements") S.requirements = e.target.value;
   if (e.target.id === "temporary") S.temporary = e.target.value;
 });
+async function fileText(f) {
+  if (!/\.(docx|pdf|doc)$/i.test(f.name)) return f.text();
+  const data = await new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result);
+    r.onerror = () => reject(new Error("文件读取失败"));
+    r.readAsDataURL(f);
+  });
+  toast("正在提取文件文字…");
+  const r = await post("/api/extract", { name: f.name, data });
+  toast("已提取文字，请核对后保存");
+  return r.text;
+}
 async function uploadProjectPhotos(input) {
   const files = [...input.files];
   if (!files.length) return;
@@ -1357,7 +1517,7 @@ document.addEventListener("change", async (e) => {
       if (!f) return;
       if (f.size > 2 * 1024 * 1024) throw new Error("文件最大支持 2 MB");
       if (e.target.id === "temporary-file") {
-        $("#temporary").value = await f.text();
+        $("#temporary").value = await fileText(f);
         S.temporary = $("#temporary").value;
       } else {
         if (!$("#asset-name").value) $("#asset-name").value = f.name;
@@ -1368,7 +1528,7 @@ document.addEventListener("change", async (e) => {
             $("#asset-kind").value = "图片";
           };
           reader.readAsDataURL(f);
-        } else $("#asset-content").value = await f.text();
+        } else $("#asset-content").value = await fileText(f);
       }
     }
   } catch (error) {
@@ -1418,7 +1578,7 @@ window.addEventListener("hashchange", () => {
 });
 (async () => {
   try {
-    S.publicMode = (await api("/api/public")).mode;
+    await loadPublic();
     try {
       await bootstrap();
     } catch (error) {
@@ -1438,7 +1598,7 @@ window.addEventListener("hashchange", () => {
     render();
     if (S.page === "credits" || S.page === "admin") await navigate(S.page);
     const pending = S.tasks.filter(
-      (t) => !["SUCCEEDED", "FAILED", "CANCELLED"].includes(t.state),
+      (t) => !["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(t.state),
     );
     if (pending.length)
       poll(

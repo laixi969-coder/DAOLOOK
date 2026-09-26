@@ -1,6 +1,7 @@
 import os, sqlite3, json, uuid, datetime
 from contextlib import contextmanager
 from .defaults import ENDPOINTS
+from .skills import RELEASE, RELEASE_KEY
 
 DB_PATH = os.environ.get("DAOLOOK_DB", "data/daolook.db")
 
@@ -52,6 +53,7 @@ def init():
         CREATE TABLE IF NOT EXISTS model_routes(kind TEXT PRIMARY KEY,config TEXT);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
         CREATE TABLE IF NOT EXISTS skill_versions(id TEXT PRIMARY KEY,name TEXT,version INTEGER,prompt TEXT,status TEXT,created_at TEXT);
+        CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
         """)
@@ -63,6 +65,7 @@ def init():
                 "timeout": 60,
                 "retries": 1,
                 "temporary_ttl_hours": 24,
+                "discover_pick": 3,
             },
             "provider": {
                 "base_url": "https://api.openai.com/v1",
@@ -70,12 +73,22 @@ def init():
                 "model": "",
                 "backup_model": "",
                 "image_model": "",
+                "transcribe_model": "",
                 "enabled": True,
             },
             "tikhub": {
                 "base_url": "https://api.tikhub.io",
                 "api_key": "",
                 "endpoints": ENDPOINTS,
+            },
+            "mail": {
+                "enabled": False,
+                "host": "",
+                "port": 465,
+                "security": "ssl",
+                "username": "",
+                "password": "",
+                "sender": "",
             },
             "ranking": {
                 "engagement": 0.3,
@@ -131,11 +144,41 @@ def init():
                         uid(),
                         name,
                         1,
-                        "你是专业内容策划。只依据提供的参考与资料，事实缺失时明确标注待补充。分析平台特有结构；创作三个机制一致但表达不同的原创方案，禁止编造数据、经历、产品功效。返回指定 JSON。",
+                        "你是专业内容策划。只依据提供的参考与资料，事实缺失时明确标注待补充。分析平台特有结构；一次创作 6 到 8 条独立稿件，小红书标明测评或钓鱼帖，抖音标明建立信任或截流，同一批两种都要有。禁止编造数据、经历、产品功效。返回指定 JSON。",
                         "Published",
                         now(),
                     ),
                 )
+        # 一次性发布当前内置 Skill（见 server/skills.py）；旧生效版本归档，可在后台回滚。
+        if not c.execute(
+            "SELECT 1 FROM settings WHERE key=?", (RELEASE_KEY,)
+        ).fetchone():
+            for name, prompt in RELEASE.items():
+                row = c.execute(
+                    "SELECT id,status FROM skill_versions WHERE name=? AND prompt=? ORDER BY version DESC LIMIT 1",
+                    (name, prompt),
+                ).fetchone()
+                if row and row["status"] == "Published":
+                    continue
+                c.execute(
+                    "UPDATE skill_versions SET status='Archived' WHERE name=? AND status='Published'",
+                    (name,),
+                )
+                if row:
+                    c.execute(
+                        "UPDATE skill_versions SET status='Published' WHERE id=?",
+                        (row["id"],),
+                    )
+                    continue
+                version = c.execute(
+                    "SELECT COALESCE(MAX(version),0)+1 FROM skill_versions WHERE name=?",
+                    (name,),
+                ).fetchone()[0]
+                c.execute(
+                    "INSERT INTO skill_versions VALUES (?,?,?,?,?,?)",
+                    (uid(), name, version, prompt, "Published", now()),
+                )
+            c.execute("INSERT INTO settings VALUES (?,'1')", (RELEASE_KEY,))
 
 
 def setting(key):

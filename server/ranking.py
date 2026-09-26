@@ -4,8 +4,30 @@ import math
 from .db import setting
 
 
-def score(content):
-    weights = setting("ranking")
+def engagement(content):
+    """互动强度：点赞 + 收藏×2 + 评论×3。账号/赛道基线用同一口径计算。"""
+    values = []
+    for key in ("likes", "saves", "comments"):
+        v = content.get(key)
+        if isinstance(v, bool) or not isinstance(v, (int, float)):
+            v = None
+        values.append(v if v is not None and math.isfinite(v) and v >= 0 else None)
+    if all(v is None for v in values):
+        return None
+    likes, saves, comments = values
+    return (likes or 0) + (saves or 0) * 2 + (comments or 0) * 3
+
+
+def median(values):
+    values = sorted(v for v in values if v is not None)
+    if not values:
+        return None
+    mid = len(values) // 2
+    return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
+
+
+def score(content, weights=None):
+    weights = weights if weights is not None else setting("ranking")
     components = {}
 
     def number(key):

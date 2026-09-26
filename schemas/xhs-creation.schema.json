@@ -2,15 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "xhs creation batch",
   "type": "object",
-  "required": ["outputs"],
+  "required": [
+    "outputs"
+  ],
+  "description": "一次 6 到 8 条。资料够用时两种方向都要出现；只够一个方向时整批同方向、各条切角不同，并在 missing 写明另一方向缺哪项事实。",
   "properties": {
     "outputs": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 6,
+      "maxItems": 8,
       "items": {
         "type": "object",
         "required": [
+          "direction",
+          "role",
+          "angle",
           "title",
           "cover_text",
           "body",
@@ -20,9 +26,28 @@
           "storyboard",
           "shooting_list",
           "missing",
-          "hook"
+          "hook",
+          "comment_layout"
         ],
         "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "测评",
+              "钓鱼帖"
+            ],
+            "description": "这条内容的岗位类型，先定方向再写表达"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这篇在账号里承担的岗位，一句话"
+          },
+          "angle": {
+            "type": "string",
+            "minLength": 1,
+            "description": "切角；同一方向下各条不得相同"
+          },
           "title": {
             "type": "string",
             "minLength": 1
@@ -75,6 +100,64 @@
           },
           "hook": {
             "type": "string"
+          },
+          "comment_layout": {
+            "type": "object",
+            "description": "三分内容，七分评论：发布后第一个小时的第一波评论布局",
+            "required": [
+              "atmosphere",
+              "knowledge",
+              "pinned",
+              "first_hour"
+            ],
+            "properties": {
+              "atmosphere": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "description": "气氛：可复制句子。无真实经历时写成向读者提的问题"
+              },
+              "knowledge": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 1,
+                "description": "知识：用路人能懂的话补充资料里已有的卖点细节"
+              },
+              "pinned": {
+                "type": "object",
+                "required": [
+                  "goal",
+                  "text",
+                  "keep_on_top"
+                ],
+                "properties": {
+                  "goal": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "这条置顶评论要完成什么"
+                  },
+                  "text": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "可复制的置顶评论；店铺名/入口只用资料里真实存在的"
+                  },
+                  "keep_on_top": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "如何把它留在最前面"
+                  }
+                }
+              },
+              "first_hour": {
+                "type": "string",
+                "minLength": 1,
+                "description": "发布后一小时内第一波的执行顺序"
+              }
+            }
           }
         }
       }

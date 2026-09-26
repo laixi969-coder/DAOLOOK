@@ -1,5 +1,24 @@
-import json, urllib.request, urllib.parse, urllib.error, html, base64, re
+import json, os, urllib.request, urllib.parse, urllib.error, html, base64, re
 from .db import setting, db
+from . import discovery
+
+# 单次创作的批量是 6 到 8 篇，不是每日上限。
+CREATION_MIN = 6
+CREATION_MAX = 8
+
+# PRD 9.1：每条稿先定岗位再写句子。只使用口播里写明的两种方向，不另造第三种。
+DIRECTIONS = {"xhs": ("测评", "钓鱼帖"), "douyin": ("建立信任", "截流")}
+DIRECTION_ROLES = {
+    "测评": "建立权威和信任，帮人做决定",
+    "钓鱼帖": "截流，把泛流量引到产品能回答的点",
+    "建立信任": "建立权威和信任，帮人做决定",
+    "截流": "用提问或场景截流，把泛流量引到产品能回答的点",
+}
+# PRD 9.3：投放不是创作步骤，导出与稿件说明保留这句。
+PROMOTION_NOTE = (
+    "先用自然流看数据；点击率稳定在 20% 以上、看得出有机会成为千赞测评时，"
+    "才做小额保护性投放。投放只放大已验证的结果，不用来拯救没人看的稿。"
+)
 
 XHS_FIELDS = [
     "基础信息",
@@ -47,6 +66,140 @@ def request_json(url, key="", payload=None, timeout=60):
         req, timeout=timeout
     ) as res:
         return json.load(res)
+
+
+MEDIA_MAX_BYTES = 25 * 1024 * 1024
+
+
+class HttpsOnlyRedirect(urllib.request.HTTPRedirectHandler):
+    """媒体 CDN 常用重定向；只允许跳转到 HTTPS，且请求不带任何凭证。"""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        host = urllib.parse.urlparse(newurl).hostname or ""
+        if not newurl.startswith("https://") or host == "localhost" or _is_ip(host):
+            raise ValueError("媒体地址重定向到不安全的地址")
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+def _is_ip(host):
+    import ipaddress
+
+    try:
+        ipaddress.ip_address(host.strip("[]"))
+        return True
+    except ValueError:
+        return False
+
+
+def download_media(url, timeout=60, limit=MEDIA_MAX_BYTES):
+    """只在内存中临时读取，用完即丢，不落盘、不入库。"""
+    if not isinstance(url, str) or not url.startswith("https://"):
+        raise ValueError("媒体地址无效")
+    host = urllib.parse.urlparse(url).hostname or ""
+    if host == "localhost" or _is_ip(host):
+        raise ValueError("媒体地址无效")
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 DAOLOOK"})
+    with urllib.request.build_opener(HttpsOnlyRedirect()).open(
+        req, timeout=timeout
+    ) as res:
+        data = res.read(limit + 1)
+    if len(data) > limit:
+        raise ValueError("视频超过转写大小上限（25 MB）")
+    return data
+
+
+def multipart(fields, file_field, filename, blob, mime):
+    boundary = "----daolook" + base64.b16encode(os.urandom(8)).decode()
+    parts = []
+    for k, v in fields.items():
+        parts.append(
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{k}"\r\n\r\n{v}\r\n'.encode()
+        )
+    parts.append(
+        (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="{file_field}"; '
+            f'filename="{filename}"\r\nContent-Type: {mime}\r\n\r\n'
+        ).encode()
+        + blob
+        + b"\r\n"
+    )
+    parts.append(f"--{boundary}--\r\n".encode())
+    return b"".join(parts), "multipart/form-data; boundary=" + boundary
+
+
+def transcribe_media(url):
+    """用兼容 OpenAI 的 /audio/transcriptions 把视频口播转成文字；未配置转写模型时返回 None。"""
+    cfg = setting("provider")
+    model = (cfg.get("transcribe_model") or "").strip()
+    if not model or not cfg.get("enabled") or not cfg.get("api_key"):
+        return None
+    timeout = setting("limits")["timeout"]
+    blob = download_media(url, timeout)
+    body, content_type = multipart(
+        {"model": model, "response_format": "json", "language": "zh"},
+        "file",
+        "media.mp4",
+        blob,
+        "video/mp4",
+    )
+    endpoint = cfg["base_url"].rstrip("/") + "/audio/transcriptions"
+    if not endpoint.startswith("https://"):
+        raise ValueError("服务地址必须使用 HTTPS")
+    req = urllib.request.Request(
+        endpoint,
+        data=body,
+        headers={
+            "Content-Type": content_type,
+            "Authorization": "Bearer " + cfg["api_key"],
+            "User-Agent": "DAOLOOK/1.1",
+        },
+    )
+    with urllib.request.build_opener(NoCredentialRedirect()).open(
+        req, timeout=max(timeout, 120)
+    ) as res:
+        text = json.load(res).get("text", "")
+    return text.strip() or None
+
+
+def attach_transcript(content, provided=""):
+    """口播/字幕来源：用户提供 > 自动转写 > 无。缺失时写明原因，拆解须标注无法判断。"""
+    provided = (provided or "").strip()
+    if provided:
+        content["transcript"] = provided[:20000]
+        content["transcript_source"] = "用户提供"
+        return content
+    if content.get("transcript") or not content.get("media_url"):
+        if not content.get("transcript"):
+            content["transcript_note"] = "数据源未提供视频地址，无法转写口播"
+        return content
+    try:
+        text = transcribe_media(content["media_url"])
+    except Exception as e:
+        content["transcript_note"] = "自动转写失败：" + (
+            str(e)[:80] if isinstance(e, ValueError) else type(e).__name__
+        )
+        return content
+    if text:
+        content["transcript"] = text[:20000]
+        content["transcript_source"] = "自动转写"
+    else:
+        content["transcript_note"] = "未配置转写模型，口播与字幕仅依据标题和描述"
+    return content
+
+
+def media_url(node):
+    video = node.get("video") if isinstance(node.get("video"), dict) else {}
+    for key in ("play_addr", "play_addr_h264", "download_addr"):
+        urls = (video.get(key) or {}).get("url_list") if isinstance(video.get(key), dict) else None
+        for u in urls or []:
+            if isinstance(u, str) and u.startswith("https://"):
+                return u
+    for n in walk(node):
+        for key in ("master_url", "backup_url"):
+            u = n.get(key)
+            if isinstance(u, str) and u.startswith("https://"):
+                return u
+    return None
 
 
 def platform(url):
@@ -198,11 +351,7 @@ def normalize(raw, p, text):
     stats = node.get("statistics") or node.get("interact_info") or node
 
     def metric(keys):
-        value = first_field(stats, keys)
-        try:
-            return int(str(value).replace(",", "")) if value is not None else None
-        except (ValueError, TypeError):
-            return None
+        return discovery.parse_count(first_field(stats, keys))
 
     content = {
         "platform": p,
@@ -216,7 +365,11 @@ def normalize(raw, p, text):
         "likes": metric(("digg_count", "liked_count", "likes", "like_count")),
         "saves": metric(("collect_count", "collected_count", "collects")),
         "comments": metric(("comment_count", "comments")),
-        "followers": first_field(author, ("follower_count", "fans", "fans_count")),
+        "followers": discovery.parse_count(
+            first_field(author, ("follower_count", "fans", "fans_count"))
+        ),
+        "age_days": discovery.parse_age_days(node),
+        "media_url": media_url(node),
         "evidence": node,
     }
     covers = node.get("image_list") or (node.get("video") or {}).get("cover") or {}
@@ -444,8 +597,8 @@ def validate_analysis(result, fields):
 
 def validate_creation(result, p):
     outputs = result.get("outputs") if isinstance(result, dict) else None
-    if not isinstance(outputs, list) or len(outputs) != 3:
-        raise ValueError("必须返回三条独立稿件")
+    if not isinstance(outputs, list) or not CREATION_MIN <= len(outputs) <= CREATION_MAX:
+        raise ValueError("必须返回 6 到 8 条独立稿件")
     for output in outputs:
         if not isinstance(output, dict) or any(
             not isinstance(output.get(k), str) or not output[k].strip()
@@ -464,16 +617,59 @@ def validate_creation(result, p):
                 not isinstance(x, str) for x in output[key]
             ):
                 raise ValueError("稿件列表字段无效：" + key)
+        if output.get("direction") not in DIRECTIONS[p]:
+            raise ValueError(
+                "每条稿件必须标明内容方向：" + " / ".join(DIRECTIONS[p])
+            )
+        for key in ("role", "angle"):
+            if not isinstance(output.get(key), str) or not output[key].strip():
+                raise ValueError("稿件缺少岗位或切角说明")
         if p == "xhs" and len(output["titles"]) != 3:
             raise ValueError("小红书稿件需要三个标题候选")
+        if p == "xhs":
+            validate_comment_layout(output.get("comment_layout"))
         if p == "douyin" and (
             not output.get("hook")
             or not output["storyboard"]
             or not output["shooting_list"]
         ):
             raise ValueError("抖音脚本缺少钩子、分镜或拍摄清单")
-    if len({o["body"] for o in outputs}) != 3:
-        raise ValueError("三条稿件正文不能重复")
+    if len({o["body"] for o in outputs}) != len(outputs):
+        raise ValueError("稿件正文不能重复")
+    # 同一方向下必须是不同切角，而不是换词。
+    pairs = [(o["direction"], o["angle"].strip()) for o in outputs]
+    if len(set(pairs)) != len(pairs):
+        raise ValueError("同一方向下的稿件切角不能重复")
+    used = {o["direction"] for o in outputs}
+    if len(used) == 1:
+        # 资料只够一个方向：允许整批同方向，但必须写明另一个方向缺哪项事实。
+        other = next(d for d in DIRECTIONS[p] if d not in used)
+        if not any(other in m for o in outputs for m in o["missing"]):
+            raise ValueError(
+                f"整批只有一种方向时，需在 missing 写明「{other}」缺哪项事实"
+            )
+
+
+def validate_comment_layout(layout):
+    """PRD 9.2：气氛、知识、置顶三种职能都要给到可复制的句子。"""
+    if not isinstance(layout, dict):
+        raise ValueError("小红书稿件缺少评论布局")
+    for key in ("atmosphere", "knowledge"):
+        items = layout.get(key)
+        if (
+            not isinstance(items, list)
+            or not items
+            or any(not isinstance(x, str) or not x.strip() for x in items)
+        ):
+            raise ValueError("评论布局缺少气氛或知识句子")
+    pinned = layout.get("pinned")
+    if not isinstance(pinned, dict) or any(
+        not isinstance(pinned.get(k), str) or not pinned[k].strip()
+        for k in ("goal", "text", "keep_on_top")
+    ):
+        raise ValueError("评论布局缺少置顶评论的目标、句子或保持置顶的做法")
+    if not isinstance(layout.get("first_hour"), str) or not layout["first_hour"].strip():
+        raise ValueError("评论布局缺少发布后一小时的第一波安排")
 
 
 def analyze(content, version):
@@ -486,7 +682,7 @@ def analyze(content, version):
                 "sections": [
                     {
                         "name": n,
-                        "text": "基于原文的分析；未提供画面、字幕、声音等信息须明确标注无法判断",
+                        "text": "基于原文的分析；有 transcript 字段时，口播与字幕、脚本结构、节奏依据它分析；未提供画面、字幕、声音等信息须明确标注无法判断，不得假装看过视频",
                     }
                     for n in fields
                 ]
@@ -519,12 +715,35 @@ def analyze(content, version):
     return {"sections": [{"name": n, "text": t} for n, t in zip(fields, texts)]}, "demo"
 
 
-def create(content, assets, requirements, version, batch):
+def creation_instruction(p):
+    a, b = DIRECTIONS[p]
+    rules = [
+        "生成 6 到 8 条独立稿件，不得少于 6 条、不得多于 8 条。",
+        f"每条先写 direction（只能是「{a}」或「{b}」）、role（这篇的岗位）和 angle（切角），再写表达。",
+        f"资料够用时，同一批「{a}」和「{b}」都要出现；资料只够一个方向时，整批可以同方向，但每条切角不同，并在 missing 里写明另一个方向缺哪项事实。",
+        "同一方向下必须是不同切角，不能只替换少量词语；参考的机制可以复用，但不能整批停在对参考句子的仿写。",
+        "好生产、好复制：选题、结构、配图都要能被重复做出来。项目资料写了语气时，语气服从资料；调性和人设不能代替内容方向。",
+        "只使用参考和资料里已有的事实；缺失的写进 missing，正文用 XX 占位。不编造经历、回购、效果和数据。",
+        "analysis 是这条参考的拆解结果：先读其中的爆点判断与可迁移规则，再决定每条复用哪条机制。",
+        "previous_outputs 是这条参考已经生成过的稿件：新的一批不得重复其中任何「方向+切角」组合，也不要沿用相同标题句式。",
+    ]
+    if p == "xhs":
+        rules += [
+            "钓鱼帖只写用户自己账号能发的提问式笔记，不指示另开账号假装路人回答。",
+            "每条都要给 comment_layout（三分内容，七分评论）：气氛、知识各给可复制句子，置顶写明目标、句子和如何保持置顶，first_hour 写发布后一小时内的第一波。没有真实使用经历时，气氛句写成向读者提的问题。店铺名和购买入口只用资料里真实存在的信息。不写多账号对敲、虚假身份互评或伪装成路人的店铺广告。",
+        ]
+    else:
+        rules.append("先写明这条视频是在建立信任还是在截流，再写口播；不另造其他抖音内容类型。")
+    return "\n".join(rules)
+
+
+def create(content, assets, requirements, version, batch, analysis=None, previous=None):
     p = content["platform"]
-    schema = {
-        "outputs": [
-            {
-                "title": "标题",
+    example = {
+        "direction": " / ".join(DIRECTIONS[p]),
+        "role": "这篇在账号里承担的岗位，一句话",
+        "angle": "切角；同一方向下各条不同",
+        "title": "标题",
                 "titles": ["标题候选1", "标题候选2", "标题候选3"],
                 "cover_text": "封面文案",
                 "body": "正文或完整口播脚本",
@@ -534,16 +753,33 @@ def create(content, assets, requirements, version, batch):
                 "storyboard": ["分镜时间、画面、台词"],
                 "shooting_list": ["拍摄清单"],
                 "missing": ["待补充事实"],
-            }
-        ]
     }
+    if p == "xhs":
+        example["comment_layout"] = {
+            "atmosphere": ["气氛：可复制句子；没有真实经历时写成向读者提的问题"],
+            "knowledge": ["知识：用路人能懂的话补上资料里已有的卖点细节"],
+            "pinned": {
+                "goal": "第一条最该被看见的评论要完成什么",
+                "text": "可复制的置顶评论；店铺名、购买入口只用资料里真实存在的",
+                "keep_on_top": "如何把它留在最前面",
+            },
+            "first_hour": "发布后一小时内第一波评论的执行顺序",
+        }
+    schema = {"outputs": [example]}
     if not content.get("demo"):
         result, model = model_json(
             {
-                "reference": content,
+                # 原始接口节点与媒体地址对创作没有用，只占上下文，不发给模型。
+                "reference": {
+                    k: v
+                    for k, v in content.items()
+                    if k not in ("evidence", "media_url", "selection", "origin")
+                },
+                "analysis": analysis or [],
+                "previous_outputs": previous or [],
                 "assets": assets,
                 "requirements": requirements,
-                "instruction": "生成恰好三个独立方案，各有不同切入角度，全部满足目标平台字段",
+                "instruction": creation_instruction(p),
                 "batch": batch,
             },
             schema,
@@ -552,32 +788,45 @@ def create(content, assets, requirements, version, batch):
             lambda r: validate_creation(r, p),
         )
         outputs = result.get("outputs", [])
-        if len(outputs) != 3 or any(
+        if not CREATION_MIN <= len(outputs) <= CREATION_MAX or any(
             not isinstance(o, dict) or not o.get("title") or not o.get("body")
             for o in outputs
         ):
-            raise ValueError("模型未返回完整的三条稿件")
+            raise ValueError("模型未返回完整的 6 到 8 条稿件")
         return outputs, model
     topic = requirements.strip()[:60] or content["title"].split("｜")[0]
-    names = ["共鸣叙事", "实用清单", "反向切入"]
+    specs = [
+        ("测评", "标准对比"),
+        ("钓鱼帖", "提问截流"),
+        ("测评", "避坑清单"),
+        ("钓鱼帖", "场景求助"),
+        ("测评", "使用前后"),
+        ("钓鱼帖", "选择困难"),
+        ("测评", "对照说明"),
+        ("钓鱼帖", "真实困惑"),
+    ]
     outputs = []
-    for i, angle in enumerate(names):
-        title = [
-            f"关于{topic}，我想换一种方式",
-            f"{topic}：从这 3 个小步骤开始",
-            f"先别急着改变，聊聊{topic}",
-        ][i]
-        body = [
-            f"你有没有这样的时刻：想让生活变好，却不知道从哪里开始？\n\n关于{topic}，与其一次改变所有事，不如先留意一个具体场景。\n\n把困扰写下来，选一个今天能完成的小动作，再记录过程中的真实感受。\n\n[请补充你的真实场景、行动与结果]\n\n你最近最想改变的一件小事是什么？",
-            f"想尝试{topic}，可以先用这份小清单：\n\n01 / 明确需求\n把最想解决的问题写成一句话。\n\n02 / 小范围尝试\n用已有的资源完成一次尝试，不急着购置新东西。\n\n03 / 记录并调整\n留下真实的前后对比，观察哪些方法适合自己。\n\n[请补充品牌或产品的真实信息与案例]\n\n先收藏，下次需要时从第一步开始。",
-            f"一定要准备齐全，才能开始{topic}吗？\n\n也许可以先反过来：减少一个不必要的步骤，给自己一点尝试的空间。\n\n比起照搬别人的答案，更值得记录的是你的实际需求、尝试过程，以及遇到的问题。\n\n[这里加入你自己的真实观察，避免使用未经证实的效果描述]\n\n你会选择做好准备再开始，还是边做边调整？",
-        ][i]
+    for i, (kind, angle) in enumerate(specs):
+        direction = DIRECTIONS[p][0 if kind == "测评" else 1]
+        title = f"{direction}｜{angle}：{topic}"
+        body = (
+            f"【{direction} · {angle}】\n\n"
+            f"这篇只处理{topic}里的一个切角：{angle}。\n\n"
+            f"[请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。]\n\n"
+            f"你会先看哪一个差别？"
+        )
         outputs.append(
             {
                 "title": title,
-                "titles": [title, "不用一步到位，从小改变开始", "给生活留一点新的可能"],
+                "titles": [
+                    title,
+                    f"{direction}｜先看懂{topic}的这一处",
+                    f"{angle}：关于{topic}的另一种问法",
+                ],
+                "direction": direction,
+                "role": DIRECTION_ROLES[direction],
                 "angle": angle,
-                "cover_text": ["从小改变开始", "3 步行动清单", "换个角度试试"][i],
+                "cover_text": f"{direction} · {angle}",
                 "body": body,
                 "tags": ["生活方式", "创作灵感", "日常记录"],
                 "image_suggestions": [
@@ -585,7 +834,7 @@ def create(content, assets, requirements, version, batch):
                     "行动过程的细节近景",
                     "步骤清单图",
                 ],
-                "hook": "台词：一定要准备好才能开始吗？画面：桌面物品从繁杂到简洁。"
+                "hook": f"台词：做{topic}之前，先问这一句。画面：把选择摊在桌上。"
                 if p == "douyin"
                 else "",
                 "storyboard": [
@@ -604,6 +853,17 @@ def create(content, assets, requirements, version, batch):
                 "batch": batch,
             }
         )
+        if p == "xhs":
+            outputs[-1]["comment_layout"] = {
+                "atmosphere": [f"你们在{topic}这件事上，最纠结的是哪一步？"],
+                "knowledge": ["[从项目资料里挑一个卖点细节，用路人能懂的话写一句]"],
+                "pinned": {
+                    "goal": "把讨论引到产品能回答的那个点",
+                    "text": "[用资料里真实存在的店铺名或入口改写；演示模板不填写]",
+                    "keep_on_top": "发布后由本账号回复并置顶这一条",
+                },
+                "first_hour": "发布后先发置顶，再补知识句，最后用气氛句提问带动讨论。",
+            }
     return outputs, "demo"
 
 

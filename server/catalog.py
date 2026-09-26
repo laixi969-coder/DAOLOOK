@@ -70,6 +70,19 @@ def evidence(content, ranking):
             "keyword": "来自关键词搜索的接口结果，未按爆款筛选。",
         }.get(entry, "来自本项目已拆解的参考内容。")
     ]
+    selection = content.get("selection")
+    if entry in ("creator", "keyword") and isinstance(selection, dict):
+        lines[0] = {
+            "creator": "来自指定博主的近期作品，按相对表现精选。",
+            "keyword": "来自关键词搜索结果，按相对表现精选。",
+        }[entry]
+        pool = selection.get("pool")
+        base = selection.get("baseline")
+        basis = "账号近期互动中位数" if entry == "creator" else "同批搜索结果互动中位数"
+        lines.append(
+            f"候选 {pool} 条，接口原顺序第 {selection.get('rank_source')} 条；"
+            + (f"{basis} {round(base)}。" if base else f"缺少{basis}。")
+        )
     if entry == "keyword" and origin.get("query"):
         lines.append("搜索词：" + str(origin["query"])[:100])
     labels = {

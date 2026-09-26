@@ -12,7 +12,7 @@ def cleanup():
     with db() as c:
         c.execute("DELETE FROM sessions WHERE expires < strftime('%s','now')")
         for row in c.execute(
-            "SELECT id,payload FROM tasks WHERE updated_at<? AND state IN ('SUCCEEDED','FAILED','CANCELLED')",
+            "SELECT id,payload FROM tasks WHERE updated_at<? AND state IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')",
             (cutoff,),
         ).fetchall():
             payload = json.loads(row["payload"])

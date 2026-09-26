@@ -101,7 +101,7 @@ class TransactionTests(unittest.TestCase):
         entered, release = Event(), Event()
         real_create = jobs.adapters.create
 
-        def delayed(*args):
+        def delayed(*args, **kwargs):
             entered.set()
             if not release.wait(5):
                 raise RuntimeError("test gate timed out")
@@ -122,7 +122,7 @@ class TransactionTests(unittest.TestCase):
             self.assertEqual(create.call_count, 1)
         with D.db() as c:
             self.assertEqual(
-                c.execute("SELECT count(*) FROM creation_outputs").fetchone()[0], 3
+                c.execute("SELECT count(*) FROM creation_outputs").fetchone()[0], 8
             )
             self.assertEqual(
                 tuple(
@@ -144,7 +144,7 @@ class TransactionTests(unittest.TestCase):
             )
             real_create = jobs.adapters.create
 
-            def delayed(*args):
+            def delayed(*args, **kwargs):
                 jobs.fail(ident, "expired") if terminal == "fail" else jobs.cancel(
                     ident, self.user
                 )

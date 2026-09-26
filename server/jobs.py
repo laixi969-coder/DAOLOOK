@@ -1,8 +1,25 @@
 import json, queue, threading, traceback
 from .db import db, uid, now, dumps, setting, ledger
-from . import adapters, covers
+from . import adapters, covers, discovery
 
 Q = queue.Queue()
+TERMINAL = ("SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED")
+DISCOVERY = ("creator", "keyword")
+
+
+def discover_pick():
+    value = setting("limits").get("discover_pick", 3)
+    return value if type(value) is int and 1 <= value <= 10 else 3
+
+
+def task_cost(kind, payload, rules=None):
+    """博主/关键词入口按精选条数逐条计费：先冻结上限，成功几条结算几条，其余退回。"""
+    unit = (rules or setting("rules")).get(kind)
+    if type(unit) is not int or unit < 0:
+        raise ValueError("任务计费配置无效")
+    if kind == "analyze" and payload.get("entry") in DISCOVERY:
+        return unit, unit * discover_pick()
+    return unit, unit
 
 
 def submit(user, project, kind, payload):
@@ -10,11 +27,10 @@ def submit(user, project, kind, payload):
 
 
 def submit_many(user, project, kind, payloads):
-    cost = setting("rules").get(kind)
-    if type(cost) is not int or cost < 0:
-        raise ValueError("任务计费配置无效")
+    rules = setting("rules")
+    costs = [task_cost(kind, payload, rules) for payload in payloads]
     ids = [uid() for _ in payloads]
-    total = cost * len(payloads)
+    total = sum(c for _, c in costs)
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if not c.execute(
@@ -26,9 +42,12 @@ def submit_many(user, project, kind, payloads):
             (total, total, user, total),
         ).rowcount:
             raise ValueError("积分不足，请联系管理员补充积分")
-        for ident, payload in zip(ids, payloads):
+        for ident, payload, (unit, cost) in zip(ids, payloads, costs):
             payload = dict(payload)
             payload["execution_mode"] = setting("mode")
+            payload["unit_cost"] = unit
+            if kind == "analyze" and payload.get("entry") in DISCOVERY:
+                payload["pick"] = cost // unit if unit else discover_pick()
             if kind == "create":
                 wanted = payload.get("assets", [])
                 rows = [
@@ -72,7 +91,7 @@ def cancel(ident, user):
         task = c.execute(
             "SELECT * FROM tasks WHERE id=? AND user_id=?", (ident, user)
         ).fetchone()
-        if not task or task["state"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+        if not task or task["state"] in TERMINAL:
             raise ValueError("任务已结束，无法取消")
         c.execute(
             "UPDATE credit_accounts SET balance=balance+?,frozen=frozen-? WHERE user_id=?",
@@ -87,7 +106,7 @@ def cancel(ident, user):
 def state(ident, s):
     with db() as c:
         c.execute(
-            "UPDATE tasks SET state=?,updated_at=? WHERE id=? AND state NOT IN ('SUCCEEDED','FAILED','CANCELLED')",
+            "UPDATE tasks SET state=?,updated_at=? WHERE id=? AND state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')",
             (s, now(), ident),
         )
 
@@ -96,7 +115,7 @@ def fail(ident, error):
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         task = c.execute("SELECT * FROM tasks WHERE id=?", (ident,)).fetchone()
-        if not task or task["state"] in ("SUCCEEDED", "FAILED", "CANCELLED"):
+        if not task or task["state"] in TERMINAL:
             return
         c.execute(
             "UPDATE credit_accounts SET balance=balance+?,frozen=frozen-? WHERE user_id=?",
@@ -127,6 +146,7 @@ def run(ident):
     new_sources = []
     outputs = []
     image = None
+    failures = []
     if kind in ("create", "cover"):
         with db() as c:
             source = c.execute(
@@ -148,21 +168,21 @@ def run(ident):
             raise ValueError("未找到已发布的拆解/创作 Skill")
     if kind == "analyze":
         state(ident, "FETCHING")
+        entry = payload.get("entry", "single")
         if demo:
             indexes = (
-                range(3)
-                if payload.get("entry") in ("creator", "keyword")
+                range(payload.get("pick") or discover_pick())
+                if entry in DISCOVERY
                 else [sum(map(ord, payload["text"])) % 6]
             )
             contents = [
                 adapters.demo_content(
-                    i, p, payload["text"] if payload.get("entry") != "keyword" else ""
+                    i, p, payload["text"] if entry != "keyword" else ""
                 )
                 for i in indexes
             ]
         else:
             adapter = adapters.TikHubAdapter()
-            entry = payload.get("entry", "single")
             if entry in ("single", "batch"):
                 contents = [adapter.getContentDetail(payload["text"], p)]
             else:
@@ -171,22 +191,55 @@ def run(ident):
                     if entry == "creator"
                     else adapter.searchContents(payload["text"], p)
                 )
-                urls = adapters.content_links(raw, p)
-                contents = [
-                    adapter.getContentDetail(u, adapters.platform(u)) for u in urls
-                ]
+                items = discovery.list_items(raw, p)
+                if not items:
+                    raise ValueError("数据源未返回可识别的内容 ID，请检查接口返回结构")
+                field = "account_median" if entry == "creator" else "category_median"
+                base = discovery.baseline(items)
+                contents = []
+                for item in discovery.pick(
+                    items, payload.get("pick") or discover_pick(), field, base
+                ):
+                    try:
+                        content = adapter.getContentDetail(item["url"], p)
+                    except Exception as e:
+                        failures.append({"url": item["url"], "error": reason(e)})
+                        continue
+                    if base:
+                        content[field] = base
+                    for key in ("age_days", "followers"):
+                        if content.get(key) is None and item.get(key) is not None:
+                            content[key] = item[key]
+                    content["selection"] = item["selection"]
+                    contents.append(content)
         state(ident, "ANALYZING")
         for content in contents:
-            analysis, model = adapters.analyze(content, version["prompt"])
+            provided = payload.get("transcript", "") if entry == "single" else ""
+            if not content.get("demo") and (
+                provided or content.get("media_url") or content["platform"] == "douyin"
+            ):
+                adapters.attach_transcript(content, provided)
+            try:
+                analysis, model = adapters.analyze(content, version["prompt"])
+            except Exception as e:
+                if entry not in DISCOVERY:
+                    raise
+                failures.append({"url": content.get("url", ""), "error": reason(e)})
+                continue
             # Model prose must never overwrite platform metrics, identity or demo provenance.
             analysis.pop("source", None)
             content["origin"] = {
-                "entry": payload.get("entry", "single"),
-                "query": payload["text"] if payload.get("entry") == "keyword" else "",
+                "entry": entry,
+                "query": payload["text"] if entry == "keyword" else "",
                 "provider": "demo" if demo else "TikHub",
                 "fetched_at": now(),
             }
             new_sources.append((uid(), content, analysis))
+        if not new_sources:
+            raise ValueError(
+                "精选内容均未能完成拆解："
+                + (failures[0]["error"] if failures else "没有可用内容")
+            )
     elif kind == "create":
         state(ident, "GENERATING")
         with db() as c:
@@ -198,20 +251,46 @@ def run(ident):
                 )
                 if r["id"] in payload.get("assets", [])
             ]
-            batch = (
-                c.execute(
-                    "SELECT count(*) FROM creation_outputs WHERE source_id=?",
-                    (payload["source_id"],),
-                ).fetchone()[0]
-                // 3
-                + 1
+            prior = sum(
+                1
+                for row in c.execute(
+                    "SELECT payload FROM tasks WHERE project_id=? AND kind='create' AND state='SUCCEEDED'",
+                    (t["project_id"],),
+                )
+                if json.loads(row["payload"]).get("source_id") == payload["source_id"]
             )
+            batch = prior + 1
+            row = c.execute(
+                "SELECT data FROM analysis_outputs WHERE source_id=? ORDER BY created_at DESC LIMIT 1",
+                (payload["source_id"],),
+            ).fetchone()
+            analysis = json.loads(row["data"]).get("sections", []) if row else []
+            # 同一参考再次生成时，把已有稿件的方向与切角告诉模型，避免换词重复。
+            previous = [
+                {
+                    k: d.get(k, "")
+                    for k in ("direction", "angle", "title")
+                }
+                for d in (
+                    json.loads(r["data"])
+                    for r in c.execute(
+                        "SELECT data FROM creation_outputs WHERE source_id=? AND project_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 40",
+                        (payload["source_id"], t["project_id"]),
+                    )
+                )
+            ]
         assets = payload.get("asset_snapshot", assets)
         if payload.get("temporary"):
             assets.append({"name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
         outputs, model = adapters.create(
-            content, assets, payload.get("requirements", ""), version["prompt"], batch
+            content,
+            assets,
+            payload.get("requirements", ""),
+            version["prompt"],
+            batch,
+            analysis=analysis,
+            previous=previous,
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -232,9 +311,7 @@ def run(ident):
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if c.execute("SELECT state FROM tasks WHERE id=?", (ident,)).fetchone()[0] in (
-            "CANCELLED",
-            "FAILED",
-            "SUCCEEDED",
+            TERMINAL
         ):
             return
         if (
@@ -302,15 +379,45 @@ def run(ident):
                 ),
             )
             result["image_id"] = iid
+        charged = t["cost"]
+        if kind == "analyze" and payload.get("entry") in DISCOVERY:
+            unit = payload.get("unit_cost", t["cost"])
+            charged = min(t["cost"], unit * len(new_sources))
+        refund = t["cost"] - charged
         c.execute(
-            "UPDATE credit_accounts SET frozen=frozen-? WHERE user_id=?",
-            (t["cost"], t["user_id"]),
+            "UPDATE credit_accounts SET frozen=frozen-?,balance=balance+? WHERE user_id=?",
+            (t["cost"], refund, t["user_id"]),
         )
+        if refund:
+            ledger(
+                c,
+                t["user_id"],
+                ident,
+                "REFUND",
+                refund,
+                "逐条结算：未完成或未找到的条目退回",
+            )
         ledger(c, t["user_id"], ident, "SETTLE", 0, "结算：" + kind)
+        if failures:
+            result["failures"] = failures
+        result["charged"] = charged
         c.execute(
-            "UPDATE tasks SET state='SUCCEEDED',result=?,model=?,skill_version=?,updated_at=? WHERE id=?",
-            (dumps(result), model, version_id, now(), ident),
+            "UPDATE tasks SET state=?,result=?,cost=?,model=?,skill_version=?,updated_at=?,error=? WHERE id=?",
+            (
+                "PARTIAL" if failures else "SUCCEEDED",
+                dumps(result),
+                charged,
+                model,
+                version_id,
+                now(),
+                f"{len(failures)} 条未完成，已退回对应积分" if failures else None,
+                ident,
+            ),
         )
+
+
+def reason(e):
+    return str(e)[:120] if isinstance(e, ValueError) else "外部服务或任务处理失败"
 
 
 def worker():
@@ -335,7 +442,7 @@ def start():
         stale = [
             r["id"]
             for r in c.execute(
-                "SELECT id FROM tasks WHERE state NOT IN ('SUCCEEDED','FAILED','CANCELLED')"
+                "SELECT id FROM tasks WHERE state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')"
             )
         ]
     for ident in stale:

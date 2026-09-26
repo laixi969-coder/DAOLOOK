@@ -3,11 +3,28 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents
 from .ranking import score
 
 ROOT = Path(__file__).resolve().parent.parent
 RATE = {}
+
+
+def comment_layout_text(layout):
+    if not isinstance(layout, dict):
+        return ""
+    pinned = layout.get("pinned") if isinstance(layout.get("pinned"), dict) else {}
+    lines = [f"【气氛】{x}" for x in layout.get("atmosphere") or []]
+    lines += [f"【知识】{x}" for x in layout.get("knowledge") or []]
+    if pinned.get("text"):
+        lines.append(f"【置顶】{pinned['text']}")
+    if pinned.get("goal"):
+        lines.append(f"置顶目标：{pinned['goal']}")
+    if pinned.get("keep_on_top"):
+        lines.append(f"保持置顶：{pinned['keep_on_top']}")
+    if layout.get("first_hour"):
+        lines.append(f"发布后一小时：{layout['first_hour']}")
+    return "\n".join(str(x) for x in lines)
 
 
 def reject_nonfinite_json(value):
@@ -210,13 +227,52 @@ class Handler(BaseHTTPRequestHandler):
                 raise Error("演示入口已关闭", 403)
             ident = new_user("demo-" + uid()[:12] + "@daolook.local", demo=True)
             return self.send({"ok": True}, headers=self.session(ident))
-        if path in ("/api/auth/login", "/api/auth/register") and method == "POST":
+        if path in (
+            "/api/auth/login",
+            "/api/auth/register",
+            "/api/auth/code",
+            "/api/auth/reset",
+        ) and method == "POST":
             ip = self.client_address[0]
             RATE[ip] = [x for x in RATE.get(ip, []) if x > time.time() - 60]
             if len(RATE[ip]) >= 15:
                 raise Error("请求过于频繁，请一分钟后重试", 429)
             RATE[ip].append(time.time())
             email = str(data.get("email", "")).strip().lower()
+            if path == "/api/auth/code":
+                if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+                    raise Error("请输入有效邮箱")
+                purpose = data.get("purpose")
+                with db() as c:
+                    exists = c.execute(
+                        "SELECT 1 FROM users WHERE email=?", (email,)
+                    ).fetchone()
+                if purpose == "register" and exists:
+                    raise Error("该邮箱已注册，请直接登录")
+                # 找回密码时不暴露邮箱是否注册：未注册也返回成功，但不发信。
+                if purpose == "reset" and not exists:
+                    if not mailer.enabled():
+                        raise Error("管理员尚未配置邮件服务，请联系管理员重置密码")
+                    return self.send({"ok": True})
+                mailer.issue(email, purpose)
+                return self.send({"ok": True})
+            if path == "/api/auth/reset":
+                password = str(data.get("password", ""))
+                if len(password) < 8:
+                    raise Error("新密码至少 8 位")
+                mailer.verify(email, "reset", data.get("code"))
+                with db() as c:
+                    u = c.execute(
+                        "SELECT id FROM users WHERE email=?", (email,)
+                    ).fetchone()
+                    if not u:
+                        raise Error("验证码已过期，请重新获取")
+                    c.execute(
+                        "UPDATE users SET password=? WHERE id=?",
+                        (password_hash(password), u["id"]),
+                    )
+                    c.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))
+                return self.send({"ok": True}, headers=self.session(u["id"]))
             password = str(data.get("password", ""))
             if (
                 not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
@@ -228,6 +284,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("register"):
                 if u:
                     raise Error("该邮箱已注册，请直接登录")
+                if mailer.enabled():
+                    mailer.verify(email, "register", data.get("code"))
                 ident = new_user(email, password)
             else:
                 if (
@@ -256,7 +314,7 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
         if path == "/api/public":
-            return self.send({"mode": setting("mode")})
+            return self.send({"mode": setting("mode"), "mail": mailer.enabled()})
         u = self.user()
         if path == "/api/bootstrap":
             with db() as c:
@@ -279,10 +337,15 @@ class Handler(BaseHTTPRequestHandler):
                     "credits": credits,
                     "mode": setting("mode"),
                     "rules": setting("rules"),
+                    "discover_pick": jobs.discover_pick(),
                 }
             )
         if path.startswith("/api/admin"):
             return self.admin(method, path, data, u, q)
+        if path == "/api/extract" and method == "POST":
+            return self.send(
+                {"text": documents.extract(data.get("name"), data.get("data"))}
+            )
         if path == "/api/projects" and method == "POST":
             name = str(data.get("name", "")).strip()[:60]
             if not name:
@@ -385,6 +448,9 @@ class Handler(BaseHTTPRequestHandler):
             )
             if len(texts) > setting("limits")["batch"]:
                 raise Error("超出批量上限")
+            transcript = data.get("transcript", "")
+            if not isinstance(transcript, str) or len(transcript) > 20000:
+                raise Error("口播文字最多 20000 字")
             ps = [
                 adapters.platform(x)
                 if entry != "keyword"
@@ -397,14 +463,21 @@ class Handler(BaseHTTPRequestHandler):
                 balance = c.execute(
                     "SELECT balance FROM credit_accounts WHERE user_id=?", (u["id"],)
                 ).fetchone()[0]
-            if balance < len(texts) * setting("rules")["analyze"]:
+            if balance < sum(
+                jobs.task_cost("analyze", {"entry": entry})[1] for _ in texts
+            ):
                 raise Error("积分不足以执行此批任务")
             ids = jobs.submit_many(
                 u["id"],
                 project_id,
                 "analyze",
                 [
-                    {"text": text, "entry": entry, "platform": p}
+                    {
+                        "text": text,
+                        "entry": entry,
+                        "platform": p,
+                        "transcript": transcript.strip() if entry == "single" else "",
+                    }
                     for text, p in zip(texts, ps)
                 ],
             )
@@ -612,6 +685,9 @@ class Handler(BaseHTTPRequestHandler):
                 "稿件ID",
                 "平台",
                 "参考链接",
+                "内容方向",
+                "岗位",
+                "切角",
                 "标题",
                 "标题候选",
                 "封面文案",
@@ -622,13 +698,17 @@ class Handler(BaseHTTPRequestHandler):
                 "拍摄清单",
                 "配图建议",
                 "素材缺口",
+                "评论布局",
+                "投放说明",
+                "生成批次",
+                "模型",
                 "Skill版本",
                 "创建时间",
             ]
         ]
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,t.model FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
@@ -637,6 +717,9 @@ class Handler(BaseHTTPRequestHandler):
                         r["id"],
                         r["platform"],
                         r["url"],
+                        d.get("direction", ""),
+                        d.get("role", ""),
+                        d.get("angle", ""),
                         d.get("title", ""),
                         " / ".join(d.get("titles", [])),
                         d.get("cover_text", ""),
@@ -647,6 +730,10 @@ class Handler(BaseHTTPRequestHandler):
                         "\n".join(d.get("shooting_list", [])),
                         "\n".join(d.get("image_suggestions", [])),
                         "\n".join(d.get("missing", [])),
+                        comment_layout_text(d.get("comment_layout")),
+                        adapters.PROMOTION_NOTE if d.get("direction") else "",
+                        r["task_id"],
+                        r["model"] or "",
                         r["skill_version"],
                         r["created_at"],
                     ]
@@ -717,10 +804,19 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/admin" and method == "GET":
             cfg = {
                 k: setting(k)
-                for k in ("mode", "rules", "limits", "provider", "tikhub", "ranking")
+                for k in (
+                    "mode",
+                    "rules",
+                    "limits",
+                    "provider",
+                    "tikhub",
+                    "ranking",
+                    "mail",
+                )
             }
             for k in ("provider", "tikhub"):
                 cfg[k]["api_key"] = "••••••••" if cfg[k].get("api_key") else ""
+            cfg["mail"]["password"] = "••••••••" if cfg["mail"].get("password") else ""
             with db() as c:
                 users = [
                     dict(r)
@@ -831,8 +927,29 @@ class Handler(BaseHTTPRequestHandler):
                     "provider",
                     "tikhub",
                     "ranking",
+                    "mail",
                 ):
                     raise Error("不支持的配置项")
+                if key == "mail":
+                    value = {
+                        "enabled": bool(value.get("enabled")),
+                        "host": str(value.get("host", "")).strip(),
+                        "port": value.get("port", 465),
+                        "security": value.get("security", "ssl"),
+                        "username": str(value.get("username", "")).strip(),
+                        "password": str(value.get("password", "")),
+                        "sender": str(value.get("sender", "")).strip(),
+                    }
+                    if (
+                        type(value["port"]) is not int
+                        or not 1 <= value["port"] <= 65535
+                        or value["security"] not in ("ssl", "starttls")
+                    ):
+                        raise Error("邮件服务端口或加密方式无效")
+                    if value["enabled"] and (not value["host"] or not value["sender"]):
+                        raise Error("启用邮件服务需要填写 SMTP 地址和发件人")
+                    if value["password"] == "••••••••":
+                        value["password"] = setting("mail").get("password", "")
                 if key != "mode" and not isinstance(value, dict):
                     raise Error("配置项必须为 JSON 对象")
                 if key == "mode" and value not in ("demo", "live"):
@@ -852,8 +969,10 @@ class Handler(BaseHTTPRequestHandler):
                             ("timeout", 0),
                             ("retries", 1),
                             ("temporary_ttl_hours", 24),
+                            ("discover_pick", 3),
                         )
                     )
+                    or not 1 <= value.get("discover_pick", 3) <= 10
                     or not 1 <= value.get("batch", 0) <= 50
                     or not 1 <= value.get("timeout", 0) <= 180
                     or not 0 <= value.get("retries", 1) <= 2
@@ -893,6 +1012,28 @@ class Handler(BaseHTTPRequestHandler):
                     c.execute(
                         "UPDATE settings SET value=? WHERE key=?", (dumps(value), key)
                     )
+            return self.send({"ok": True})
+        if path == "/api/admin/mail-test" and method == "POST":
+            if not mailer.enabled():
+                raise Error("请先保存并启用邮件服务")
+            try:
+                mailer.send_mail(
+                    u["email"], "【DAOLOOK】邮件服务测试", "邮件服务配置可用。"
+                )
+            except Exception as e:
+                raise Error("测试邮件发送失败：" + type(e).__name__)
+            return self.send({"ok": True})
+        if path == "/api/admin/password" and method == "POST":
+            password = str(data.get("password", ""))
+            if len(password) < 8:
+                raise Error("新密码至少 8 位")
+            with db() as c:
+                if not c.execute(
+                    "UPDATE users SET password=? WHERE id=?",
+                    (password_hash(password), data.get("user_id")),
+                ).rowcount:
+                    raise Error("用户不存在")
+                c.execute("DELETE FROM sessions WHERE user_id=?", (data.get("user_id"),))
             return self.send({"ok": True})
         if path == "/api/admin/grant" and method == "POST":
             amount = int(data["amount"])

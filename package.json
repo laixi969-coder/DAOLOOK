@@ -7,6 +7,6 @@
     "dev": "python3 -m server.app",
     "start": "python3 -m server.app",
     "test": "python3 -m unittest discover -s tests -v",
-    "check": "node --check web/app.js && python3 -m py_compile server/app.py server/db.py server/jobs.py server/adapters.py server/ranking.py server/maintenance.py"
+    "check": "node --check web/app.js && python3 -m py_compile server/app.py server/db.py server/jobs.py server/adapters.py server/skills.py server/discovery.py server/mailer.py server/documents.py server/ranking.py server/maintenance.py"
   }
 }

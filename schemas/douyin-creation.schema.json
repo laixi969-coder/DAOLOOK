@@ -2,15 +2,21 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "douyin creation batch",
   "type": "object",
-  "required": ["outputs"],
+  "required": [
+    "outputs"
+  ],
+  "description": "一次 6 到 8 条。资料够用时两种方向都要出现；只够一个方向时整批同方向、各条切角不同，并在 missing 写明另一方向缺哪项事实。",
   "properties": {
     "outputs": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 6,
+      "maxItems": 8,
       "items": {
         "type": "object",
         "required": [
+          "direction",
+          "role",
+          "angle",
           "title",
           "cover_text",
           "body",
@@ -23,6 +29,24 @@
           "hook"
         ],
         "properties": {
+          "direction": {
+            "type": "string",
+            "enum": [
+              "建立信任",
+              "截流"
+            ],
+            "description": "这条内容的岗位类型，先定方向再写表达"
+          },
+          "role": {
+            "type": "string",
+            "minLength": 1,
+            "description": "这篇在账号里承担的岗位，一句话"
+          },
+          "angle": {
+            "type": "string",
+            "minLength": 1,
+            "description": "切角；同一方向下各条不得相同"
+          },
           "title": {
             "type": "string",
             "minLength": 1

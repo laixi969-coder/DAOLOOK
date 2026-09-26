@@ -181,7 +181,7 @@ class AppTests(unittest.TestCase):
             200,
         )
 
-    def test_three_outputs_append_soft_delete_and_export(self):
+    def test_batch_outputs_append_soft_delete_and_export(self):
         sid = self.ws["sources"][0]["id"]
         seen = set()
         for _ in range(2):
@@ -192,10 +192,10 @@ class AppTests(unittest.TestCase):
             tasks = self.wait(r["task_ids"])
             self.assertEqual(tasks[0]["state"], "SUCCEEDED", tasks)
             ids = json.loads(tasks[0]["result"])["creation_ids"]
-            self.assertEqual(len(ids), 3)
+            self.assertEqual(len(ids), 8)
             self.assertFalse(seen.intersection(ids))
             seen.update(ids)
-        self.assertEqual(len(self.workspace()["creations"]), 6)
+        self.assertEqual(len(self.workspace()["creations"]), 16)
         credits = self.c.req("/api/bootstrap")[1]["credits"]
         self.assertEqual(credits["balance"], 270)
         self.assertEqual(credits["frozen"], 0)
@@ -204,7 +204,7 @@ class AppTests(unittest.TestCase):
             self.c.req("/api/creations/" + target, "DELETE", {"project_id": self.p})[0],
             200,
         )
-        self.assertEqual(len(self.workspace()["creations"]), 5)
+        self.assertEqual(len(self.workspace()["creations"]), 15)
         self.assertEqual(self.c.req("/api/bootstrap")[1]["credits"]["balance"], 270)
         with sqlite3.connect(self.db) as conn:
             self.assertIsNotNone(
@@ -216,6 +216,10 @@ class AppTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertTrue(csv.startswith(b"\xef\xbb\xbf"))
         self.assertIn("稿件ID", csv.decode())
+        header = csv.decode().lstrip("\ufeff").splitlines()[0]
+        for column in ("内容方向", "岗位", "切角", "评论布局", "投放说明", "模型"):
+            self.assertIn(column, header)
+        self.assertIn("【置顶】", csv.decode())
         status, xlsx = self.c.req(
             "/api/export?project_id=" + self.p + "&format=xlsx", raw=True
         )
@@ -223,7 +227,7 @@ class AppTests(unittest.TestCase):
             from xml.etree import ElementTree as ET
 
             root = ET.fromstring(z.read("xl/worksheets/sheet1.xml"))
-            self.assertEqual(len(list(root)[0]), 6)
+            self.assertEqual(len(list(root)[0]), 16)
 
     def test_platform_schemas_batch_and_validation(self):
         status, r = self.post(
