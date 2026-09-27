@@ -1,4 +1,4 @@
-"""内容生产线（PRD 9.5）：工序、第一小时清单、数据回填、投放判断、账号矩阵、导出。"""
+"""内容生产线（PRD 9.5）：工序、发布账号、第一小时清单与导出；不回填数据。"""
 
 import importlib, tempfile, threading, unittest
 from http.server import ThreadingHTTPServer
@@ -8,38 +8,6 @@ from unittest.mock import patch
 D = importlib.import_module("server.db")
 from server import app, jobs, production
 from tests.test_app import Client
-
-LIMITS = {"promote_ctr": 0.2, "promote_min_impressions": 500}
-
-
-class EvaluateTests(unittest.TestCase):
-    def test_advice(self):
-        self.assertIsNone(production.evaluate({}, LIMITS))
-        self.assertEqual(production.evaluate({"likes": 3}, LIMITS)["advice"], "unknown")
-        self.assertEqual(
-            production.evaluate({"impressions": 300, "clicks": 200}, LIMITS)["advice"],
-            "insufficient",
-        )
-        good = production.evaluate(
-            {"impressions": 1000, "clicks": 250, "likes": 20, "saves": 5}, LIMITS
-        )
-        self.assertEqual(good["advice"], "promote")
-        self.assertEqual(good["ctr"], 0.25)
-        self.assertEqual(good["engagement"], 0.1)
-        self.assertIn("小额保护性投放", good["advice_text"])
-        low = production.evaluate({"impressions": 1000, "clicks": 150}, LIMITS)
-        self.assertEqual(low["advice"], "hold")
-        self.assertIn("不建议投放", low["advice_text"])
-        self.assertEqual(
-            production.evaluate({"impressions": 1000, "clicks": 150}, {"promote_ctr": 0.1})["advice"],
-            "promote",
-        )
-
-    def test_clean_metrics(self):
-        self.assertEqual(production.clean_metrics({"impressions": 10, "clicks": ""}), {"impressions": 10})
-        for bad in ({"impressions": -1}, {"clicks": 1.5}, {"likes": "3"}, {"likes": True}, {"impressions": 5, "clicks": 6}):
-            with self.subTest(bad=bad), self.assertRaises(ValueError):
-                production.clean_metrics(bad)
 
 
 class TrackingApiTests(unittest.TestCase):
@@ -73,9 +41,9 @@ class TrackingApiTests(unittest.TestCase):
     def ws(self):
         return self.c.req(f"/api/workspace?project_id={self.p}")[1]
 
-    def test_flow_publish_checklist_metrics_export(self):
+    def test_flow_publish_checklist_export(self):
         cid = self.ids[0]
-        self.assertEqual(self.ws()["creations"][0]["tracking"]["status"], "draft")
+        self.assertEqual(self.ws()["creations"][0]["tracking"], {"status": "draft", "checklist": {}})
         acc = self.post("/api/assets", {"name": "山野咖啡主号", "kind": "账号", "content": "通勤人群"})[1]["id"]
         other = self.post("/api/assets", {"name": "产品", "kind": "产品信息", "content": "x"})[1]["id"]
         self.assertEqual(self.post(f"/api/tracking/{cid}", {"status": "published", "account_id": other})[0], 400)
@@ -85,28 +53,27 @@ class TrackingApiTests(unittest.TestCase):
         self.assertTrue(t["published_at"])
         status, t = self.post(f"/api/tracking/{cid}", {"checklist": {"pinned": True, "knowledge": 1, "hack": True}})
         self.assertEqual(t["checklist"], {"pinned": True, "knowledge": True, "atmosphere": False})
-        self.assertEqual(self.post(f"/api/tracking/{cid}", {"metrics": {"impressions": 10, "clicks": 20}})[0], 400)
-        status, t = self.post(f"/api/tracking/{cid}", {"metrics": {"impressions": 2000, "clicks": 500, "likes": 40}})
-        self.assertEqual(t["evaluation"]["advice"], "promote")
-        # 状态与账号在后续更新中保留
-        self.assertEqual(t["status"], "published")
+        # 状态与账号在后续更新中保留；不存在数据回填
         self.assertEqual(t["account_id"], acc)
-        tr = next(c for c in self.ws()["creations"] if c["id"] == cid)["tracking"]
-        self.assertEqual(tr["evaluation"]["ctr"], 0.25)
+        self.assertNotIn("metrics", t)
+        self.assertNotIn("evaluation", t)
+        status, t = self.post(f"/api/tracking/{cid}", {"metrics": {"impressions": 2000}})
+        self.assertNotIn("metrics", t)
         status, csv = self.c.req(f"/api/export?project_id={self.p}", raw=True)
         text = csv.decode()
-        for col in ("工序状态", "发布账号", "点击率", "投放建议", "山野咖啡主号", "25.0%", "小额保护性投放", "待发布"):
+        for col in ("工序状态", "发布账号", "发布时间", "山野咖啡主号", "已发布", "待发布"):
             self.assertIn(col, text)
-        # 撤回为待发布：清空发布时间与清单，保留数据
+        for gone in ("曝光", "点击率", "投放建议"):
+            self.assertNotIn(gone, text.splitlines()[0])
         t = self.post(f"/api/tracking/{cid}", {"status": "draft"})[1]
         self.assertIsNone(t["published_at"])
         self.assertEqual(t["checklist"], {})
-        self.assertEqual(t["metrics"]["impressions"], 2000)
 
     def test_isolation_and_validation(self):
         cid = self.ids[0]
         self.assertEqual(self.post(f"/api/tracking/{cid}", {"status": "sent"})[0], 400)
         self.assertEqual(self.post(f"/api/tracking/{cid}", {"status": "published", "published_at": "昨天"})[0], 400)
+        self.assertEqual(self.post(f"/api/tracking/{cid}", {"checklist": "yes"})[0], 400)
         self.assertEqual(self.post("/api/tracking/abcdef", {"status": "published"})[0], 404)
         other = Client(self.c.base)
         other.req("/api/auth/demo", "POST", {})
@@ -116,10 +83,15 @@ class TrackingApiTests(unittest.TestCase):
         self.c.req(f"/api/creations/{cid}", "DELETE", {"project_id": self.p})
         self.assertEqual(self.post(f"/api/tracking/{cid}", {"status": "published"})[0], 404)
 
-    def test_default_promote_thresholds(self):
-        limits = D.setting("limits")
-        self.assertEqual(limits["promote_ctr"], 0.2)
-        self.assertEqual(limits["promote_min_impressions"], 500)
+    def test_old_table_with_metrics_column_still_works(self):
+        with D.db() as c:
+            c.execute("DROP TABLE creation_tracking")
+            c.execute(
+                "CREATE TABLE creation_tracking(creation_id TEXT PRIMARY KEY,project_id TEXT,status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,metrics TEXT,checklist TEXT,updated_at TEXT)"
+            )
+        status, t = self.post(f"/api/tracking/{self.ids[0]}", {"status": "published"})
+        self.assertEqual(status, 200, t)
+        self.assertEqual(self.ws()["creations"][0]["tracking"]["status"] in ("draft", "published"), True)
 
 
 if __name__ == "__main__":

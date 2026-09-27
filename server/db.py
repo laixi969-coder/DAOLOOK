@@ -53,7 +53,7 @@ def init():
         CREATE TABLE IF NOT EXISTS model_routes(kind TEXT PRIMARY KEY,config TEXT);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
         CREATE TABLE IF NOT EXISTS skill_versions(id TEXT PRIMARY KEY,name TEXT,version INTEGER,prompt TEXT,status TEXT,created_at TEXT);
-        CREATE TABLE IF NOT EXISTS creation_tracking(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,metrics TEXT,checklist TEXT,updated_at TEXT);
+        CREATE TABLE IF NOT EXISTS creation_tracking(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,checklist TEXT,updated_at TEXT);
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
@@ -67,8 +67,6 @@ def init():
                 "retries": 1,
                 "temporary_ttl_hours": 24,
                 "discover_pick": 3,
-                "promote_ctr": 0.2,
-                "promote_min_impressions": 500,
             },
             "provider": {
                 "base_url": "https://api.openai.com/v1",

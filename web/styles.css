@@ -2177,34 +2177,6 @@ tr:last-child td {
 .first-hour .check-row {
   margin: 4px 0;
 }
-.metrics-line {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 8px;
-  color: var(--ink-2);
-}
-.advice {
-  margin-top: 6px;
-  font-size: 12px;
-  line-height: 1.7;
-  padding: 6px 9px;
-  border-radius: 7px;
-  background: var(--wash);
-}
-.advice.promote {
-  background: var(--lime);
-  color: var(--ink);
-}
-.advice.hold {
-  background: #fff1eb;
-  color: #8a3a2c;
-}
-.metrics-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 12px;
-}
 @media (max-width: 760px) {
   .board-stats {
     grid-template-columns: 1fr 1fr;
