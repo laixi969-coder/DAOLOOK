@@ -362,6 +362,8 @@ function creations() {
     (c) => !S.creationSource || c.source_id === S.creationSource,
   );
   if (S.onlyFavorites) items = items.filter((c) => c.saved);
+  const scoped = items;
+  if (S.stage && S.stage !== "all") items = items.filter((c) => stageOf(c) === S.stage || (S.stage === "published" && ["firsthour", "promote", "measured"].includes(stageOf(c))) || (S.stage === "measured" && stageOf(c) === "promote"));
   return (
     heading(
       "你的表达，在这里生长。",
@@ -370,6 +372,7 @@ function creations() {
       "MADE BY YOU, INSPIRED BY THE WORLD",
     ) +
     (briefOf(S.creationSource) ? briefPanel(briefOf(S.creationSource)) : "") +
+    productionBoard(scoped) +
     `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? `<div class="creation-grid">${items.map(draftCard).join("")}</div>` : empty("第一条好内容，从一个参考开始", "先找到值得借鉴的内容，进入拆解页，点击「创作我的版本」。", button("去发现灵感", "discover", "primary", "spark"))}`
   );
 }
@@ -379,7 +382,7 @@ function draftCard(c) {
     S.workspace.sources.find((s) => s.id === c.source_id) ||
     briefOf(c.source_id);
   const images = S.workspace.images.filter((i) => i.creation_id === c.id);
-  return `<article class="draft"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.direction ? `<div class="draft-direction"><span class="direction-badge ${DIRECTION_TONE[d.direction] || ""}">${esc(d.direction)}</span>${d.role ? `<span>${esc(d.role)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3>${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>前三秒钩子</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${d.direction ? `<p class="draft-note">${esc(PROMOTION_NOTE)}</p>` : ""}${images.map(coverCard).join("")}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} 复制</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  return `<article class="draft"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.direction ? `<div class="draft-direction"><span class="direction-badge ${DIRECTION_TONE[d.direction] || ""}">${esc(d.direction)}</span>${d.role ? `<span>${esc(d.role)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3>${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>前三秒钩子</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${d.direction ? `<p class="draft-note">${esc(PROMOTION_NOTE)}</p>` : ""}${images.map(coverCard).join("")}${pipeline(c, source)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} 复制</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 const PROMOTION_NOTE =
@@ -412,6 +415,73 @@ function originalForm() {
   const o = S.original;
   const assets = S.workspace.assets;
   return `<form id="original-form" class="original-form"><div class="original-grid"><label class="field"><span>平台</span><select id="original-platform">${[["xhs", "小红书图文"], ["douyin", "抖音脚本"]].map(([v, l]) => `<option value="${v}" ${o.platform === v ? "selected" : ""}>${l}</option>`).join("")}</select></label><label class="field original-topic"><span>创作主题</span><input id="original-topic" maxlength="200" value="${esc(o.topic)}" placeholder="要写什么，如：山野咖啡冷萃挂耳" autocomplete="off"></label><label class="field"><span>赛道关键词 <small style="display:inline;font-weight:400">可选</small></span><input id="original-keyword" maxlength="60" value="${esc(o.keyword)}" placeholder="留空则用主题搜索" autocomplete="off"></label></div><div class="field"><span>依据哪些资料 <small style="display:inline;font-weight:400">至少选一份，或填写临时资料；事实只来自这里</small></span>${assets.length ? `<div class="original-assets">${assets.map((a) => `<label class="check-row"><input type="checkbox" name="original-asset" value="${esc(a.id)}" ${o.assets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("")}</div>` : `<p class="muted">还没有项目资料。可以先去「项目资料」添加产品、卖点和受众，或在下面填写临时资料。</p>`}</div><details class="transcript-box" ${o.requirements || o.temporary ? "open" : ""}><summary>本次要求与临时资料（可选）</summary><label class="field"><span>本次要求</span><textarea id="original-requirements" rows="3" placeholder="比如：面向第一次买挂耳的上班族，语气克制">${esc(o.requirements)}</textarea></label><label class="field"><span>临时资料</span><textarea id="original-temporary" rows="3" placeholder="补充本次需要的真实信息，不会自动存入项目">${esc(o.temporary)}</textarea></label></details><div class="entry-bottom"><span class="platform-marks">系统会按关键词取一批同赛道内容，只看写法，不改写任何一条</span><span>预计 ${originalCost()} 积分 · 失败自动退还</span></div><button type="submit" class="btn primary" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}生成 6 到 8 条 ${icon("arrow")}</button></form>`;
+}
+function accounts() {
+  return S.workspace.assets.filter((a) => a.kind === "账号");
+}
+function firstHourLeft(t) {
+  if (t.status !== "published" || !t.published_at) return null;
+  return 60 - Math.floor((Date.now() - new Date(t.published_at).getTime()) / 60000);
+}
+function checklistDone(t) {
+  const k = t.checklist || {};
+  return k.pinned && k.knowledge && k.atmosphere;
+}
+function stageOf(c) {
+  const t = c.tracking || {};
+  if (t.status !== "published") return "draft";
+  if (t.evaluation?.advice === "promote") return "promote";
+  if (t.evaluation) return "measured";
+  const left = firstHourLeft(t);
+  if (c.data.comment_layout && left !== null && left > 0 && !checklistDone(t))
+    return "firsthour";
+  return "published";
+}
+function productionBoard(items) {
+  if (!items.length) return "";
+  const today = new Date().toDateString();
+  const made = items.filter((c) => new Date(c.created_at).toDateString() === today).length;
+  const count = (st) => items.filter((c) => stageOf(c) === st).length;
+  const published = items.length - count("draft");
+  const dirs = {};
+  items.forEach((c) => {
+    const d = c.data.direction || "未标方向";
+    dirs[d] = (dirs[d] || 0) + 1;
+  });
+  const accs = accounts();
+  const chips = [
+    ["all", "全部", items.length],
+    ["draft", "待发布", count("draft")],
+    ["published", "已发布", published],
+    ["firsthour", "第一小时进行中", count("firsthour")],
+    ["measured", "已回填数据", count("measured") + count("promote")],
+    ["promote", "投放候选", count("promote")],
+  ];
+  const stage = S.stage || "all";
+  return `<section class="panel board"><div class="board-stats"><div><p>今日产出</p><strong>${made}<small> / 6–8 篇</small></strong><div class="meter"><span style="width:${Math.min(100, (made / 8) * 100)}%"></span></div></div><div><p>已发布</p><strong>${published}<small> / ${items.length}</small></strong></div><div><p>投放候选</p><strong>${count("promote")}</strong><small class="muted">点击率达标的稿件</small></div><div><p>方向配比</p><div class="mix">${Object.entries(dirs).map(([d, n]) => `<span class="direction-badge ${DIRECTION_TONE[d] || ""}">${esc(d)} ${n}</span>`).join("")}</div></div></div>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length} · 候选 ${mine.filter((c) => stageOf(c) === "promote").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能按账号铺矩阵、看各账号表现。</p>`}<div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
+}
+function pipeline(c, source) {
+  const t = c.tracking || { status: "draft" };
+  const acc = accounts().find((a) => a.id === t.account_id);
+  if (t.status !== "published")
+    return `<div class="pipeline"><div class="pipeline-head"><span class="stage-pill">待发布</span><button class="text-btn" data-action="publish" data-id="${c.id}">${icon("check")} 已在平台发布</button></div></div>`;
+  const left = firstHourLeft(t);
+  const k = t.checklist || {};
+  const items = [
+    ["pinned", "置顶评论已发并置顶"],
+    ["knowledge", "知识句已补充"],
+    ["atmosphere", "气氛问题已抛出"],
+  ];
+  const ev = t.evaluation;
+  const pct = (v) => (v == null ? "—" : (v * 100).toFixed(1) + "%");
+  return `<div class="pipeline"><div class="pipeline-head"><span class="stage-pill live">已发布${acc ? " · " + esc(acc.name) : ""} · ${date(t.published_at)}</span><span class="pipeline-actions"><button class="text-btn" data-action="metrics" data-id="${c.id}">${icon("trend")} ${ev ? "更新数据" : "回填数据"}</button><button class="text-btn muted-btn" data-action="unpublish" data-id="${c.id}">撤回</button></span></div>${c.data.comment_layout ? `<div class="first-hour"><p><strong>第一小时评论</strong> ${left > 0 ? `还剩 ${left} 分钟` : "已过第一小时"}${checklistDone(t) ? " · 已完成" : ""}</p>${items.map(([key, label]) => `<label class="check-row"><input type="checkbox" data-action="check-item" data-id="${c.id}" data-key="${key}" ${k[key] ? "checked" : ""}>${label}</label>`).join("")}</div>` : ""}${ev ? `<div class="metrics-line"><span>曝光 ${fmt(t.metrics.impressions ?? "—")}</span><span>点击率 ${pct(ev.ctr)}</span><span>互动率 ${pct(ev.engagement)}</span></div><p class="advice ${ev.advice}">${esc(ev.advice_text)}</p>` : ""}</div>`;
+}
+async function track(id, data) {
+  const r = await post("/api/tracking/" + id, body(data));
+  const c = S.workspace.creations.find((x) => x.id === id);
+  if (c) c.tracking = r;
+  render();
+  return r;
 }
 function briefOf(id) {
   return (S.workspace.briefs || []).find((b) => b.id === id);
@@ -594,10 +664,10 @@ function adminBody() {
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
     return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="notice">每类任务只有一条「生效中」的 Prompt，真实拆解与创作只读它。要改 Prompt 就点「编辑为新版本」：保存草稿 → 测试 → 发布，发布即替换生效版本（旧版转为已归档）。</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${skillStates[s.status] || s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><details class="skill-prompt"><summary>查看完整 Prompt</summary><pre>${esc(s.prompt)}</pre></details><div class="actions">${button("编辑为新版本", "edit-skill", "secondary small", "edit", `data-id="${s.id}"`)}${button("复制", "copy-skill", "secondary small", "copy", `data-id="${s.id}"`)}${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" ? button("发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : s.status === "Archived" ? button("回滚至此版本", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
-  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
+  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}${field("投放建议：点击率阈值（0–1）", "promote-ctr", c.limits.promote_ctr ?? 0.2, "number")}${field("投放建议：最少曝光", "promote-min", c.limits.promote_min_impressions ?? 500, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
 }
 function field(label, id, value = "", type = "text") {
-  return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0"' : ""}></label>`;
+  return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0" step="any"' : ""}></label>`;
 }
 function skillModal(name = "xhs_analysis", prompt = "", title = "创建 Skill 草稿") {
   modal(
@@ -762,7 +832,7 @@ function assetModal(id) {
   S.editAsset = id;
   modal(
     a ? "编辑项目资料" : "添加项目资料",
-    `<form id="asset-form">${field("资料名称", "asset-name", a?.name || "")}<label class="field"><span>资料类型</span><select id="asset-kind">${["品牌资料", "产品信息", "受众画像", "禁用词", "图片", "其他"].map((k) => `<option ${a?.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><label class="field"><span>资料内容</span><textarea id="asset-content" rows="7" placeholder="请输入真实的品牌、产品或受众信息">${esc(a?.content || "")}</textarea></label><label class="field"><span>上传文件 · 文本 / 图片</span><input type="file" id="asset-file" accept=".txt,.md,.csv,.docx,.pdf,image/png,image/jpeg,image/webp"><small>文本、Word（.docx）、PDF 自动提取文字；文件最大 2 MB。资料不会自动在创作中全选。</small></label><button class="btn primary full" type="submit">${icon("check")}保存资料</button></form>`,
+    `<form id="asset-form">${field("资料名称", "asset-name", a?.name || "")}<label class="field"><span>资料类型</span><select id="asset-kind">${["品牌资料", "产品信息", "受众画像", "禁用词", "账号", "图片", "其他"].map((k) => `<option ${a?.kind === k ? "selected" : ""}>${k}</option>`).join("")}</select></label><label class="field"><span>资料内容</span><textarea id="asset-content" rows="7" placeholder="请输入真实的品牌、产品或受众信息">${esc(a?.content || "")}</textarea></label><label class="field"><span>上传文件 · 文本 / 图片</span><input type="file" id="asset-file" accept=".txt,.md,.csv,.docx,.pdf,image/png,image/jpeg,image/webp"><small>文本、Word（.docx）、PDF 自动提取文字；文件最大 2 MB。资料不会自动在创作中全选。</small></label><button class="btn primary full" type="submit">${icon("check")}保存资料</button></form>`,
   );
 }
 function login(register = false, reset = false) {
@@ -1078,6 +1148,40 @@ const actions = {
     S.page = "creations";
     location.hash = "creations";
     render();
+  },
+  stage: (el) => {
+    S.stage = el.dataset.stage;
+    render();
+  },
+  publish: (el) => {
+    S.trackId = el.dataset.id;
+    const accs = accounts();
+    const local = new Date(Date.now() - new Date().getTimezoneOffset() * 60000)
+      .toISOString()
+      .slice(0, 16);
+    modal(
+      "标记为已发布",
+      `<p class="subtext">在平台发布后再标记。发布后第一小时内完成评论布局；V1 不会替你发布或评论。</p><form id="publish-form">${accs.length ? `<label class="field"><span>发布账号</span><select id="publish-account"><option value="">不指定</option>${accs.map((a) => `<option value="${esc(a.id)}">${esc(a.name)}</option>`).join("")}</select></label>` : '<p class="muted">还没有登记账号。可以在「项目资料」添加类型为「账号」的资料，按账号铺矩阵。</p>'}<label class="field"><span>发布时间</span><input type="datetime-local" id="publish-time" value="${local}"></label><button class="btn primary full" type="submit">${icon("check")}确认已发布</button></form>`,
+    );
+  },
+  unpublish: async (el) => {
+    await track(el.dataset.id, { status: "draft" });
+    toast("已撤回为待发布");
+  },
+  "check-item": async (el) => {
+    const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
+    const checklist = { ...(c.tracking.checklist || {}), [el.dataset.key]: el.checked };
+    await track(el.dataset.id, { checklist });
+  },
+  metrics: (el) => {
+    S.trackId = el.dataset.id;
+    const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
+    const m = c.tracking.metrics || {};
+    const dy = S.workspace.sources.concat(S.workspace.briefs || []).find((s) => s.id === c.source_id)?.platform === "douyin";
+    modal(
+      "回填自然流数据",
+      `<p class="subtext">先看自然流：点击率稳定在 20% 以上才建议小额保护性投放，投放只放大已经被验证的结果。</p><form id="metrics-form"><div class="metrics-grid">${[["impressions", "曝光"], ["clicks", dy ? "点击 / 2 秒以上观看" : "点击（封面点击）"], ["likes", "点赞"], ["saves", "收藏"], ["comments", "评论"]].map(([k, l]) => `<label class="field"><span>${l}</span><input type="number" min="0" step="1" id="metric-${k}" value="${m[k] ?? ""}"></label>`).join("")}</div><button class="btn primary full" type="submit">${icon("check")}保存并判断</button></form>`,
+    );
   },
   "original-again": async (el) => {
     await startOriginal(el.dataset.id);
@@ -1395,6 +1499,28 @@ document.addEventListener("submit", async (e) => {
         toast("项目资料已保存");
         break;
       }
+      case "publish-form": {
+        const time = $("#publish-time").value;
+        await track(S.trackId, {
+          status: "published",
+          account_id: $("#publish-account")?.value || "",
+          published_at: time ? new Date(time).toISOString() : undefined,
+        });
+        close();
+        toast("已标记发布，第一小时内完成评论布局");
+        break;
+      }
+      case "metrics-form": {
+        const metrics = {};
+        ["impressions", "clicks", "likes", "saves", "comments"].forEach((k) => {
+          const v = $("#metric-" + k).value;
+          if (v !== "") metrics[k] = Number(v);
+        });
+        const r = await track(S.trackId, { metrics });
+        close();
+        toast(r.evaluation?.advice_text || "数据已保存");
+        break;
+      }
       case "admin-password-form":
         await post("/api/admin/password", {
           user_id: S.resetUser,
@@ -1456,6 +1582,8 @@ document.addEventListener("submit", async (e) => {
             retries: Number($("#retries").value),
             temporary_ttl_hours: Number($("#temporary-ttl").value),
             discover_pick: Number($("#discover-pick").value),
+            promote_ctr: Number($("#promote-ctr").value),
+            promote_min_impressions: Number($("#promote-min").value),
           },
           ranking: JSON.parse($("#ranking").value),
         });
@@ -1595,6 +1723,8 @@ async function uploadProjectPhotos(input) {
 }
 document.addEventListener("change", async (e) => {
   try {
+    if (e.target.dataset.action === "check-item")
+      return await actions["check-item"](e.target);
     if (["creation-photo-file", "cover-photo-file"].includes(e.target.id))
       return await uploadProjectPhotos(e.target);
     if (e.target.id === "source-kind-filter") {

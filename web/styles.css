@@ -2064,3 +2064,149 @@ tr:last-child td {
     flex-direction: column;
   }
 }
+.board {
+  margin-bottom: 22px;
+}
+.board-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
+}
+.board-stats p {
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-bottom: 4px;
+}
+.board-stats strong {
+  font-size: 24px;
+}
+.board-stats strong small {
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--ink-3);
+}
+.board-stats .muted {
+  display: block;
+  font-size: 12px;
+}
+.meter {
+  height: 6px;
+  border-radius: 99px;
+  background: var(--wash);
+  margin-top: 6px;
+  overflow: hidden;
+}
+.meter span {
+  display: block;
+  height: 100%;
+  background: var(--lime);
+}
+.mix {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.board-accounts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.board-accounts .acc {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 4px 10px;
+  color: var(--ink);
+}
+.board-accounts .acc small {
+  margin-left: 6px;
+  color: var(--ink-3);
+}
+.board-hint {
+  margin-top: 14px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.stage-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+.pipeline {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px dashed var(--line);
+  border-radius: 9px;
+  font-size: 13px;
+}
+.pipeline-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pipeline-actions {
+  display: flex;
+  gap: 10px;
+}
+.stage-pill {
+  font-size: 12px;
+  padding: 2px 9px;
+  border-radius: 99px;
+  background: var(--wash);
+  color: var(--ink-2);
+}
+.stage-pill.live {
+  background: var(--lime);
+  color: var(--ink);
+}
+.muted-btn {
+  color: var(--ink-3);
+}
+.first-hour {
+  margin-top: 8px;
+}
+.first-hour p {
+  margin-bottom: 4px;
+}
+.first-hour .check-row {
+  margin: 4px 0;
+}
+.metrics-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--ink-2);
+}
+.advice {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.7;
+  padding: 6px 9px;
+  border-radius: 7px;
+  background: var(--wash);
+}
+.advice.promote {
+  background: var(--lime);
+  color: var(--ink);
+}
+.advice.hold {
+  background: #fff1eb;
+  color: #8a3a2c;
+}
+.metrics-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 12px;
+}
+@media (max-width: 760px) {
+  .board-stats {
+    grid-template-columns: 1fr 1fr;
+  }
+}

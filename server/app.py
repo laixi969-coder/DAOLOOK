@@ -3,7 +3,7 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production
 from .ranking import score
 from .skills import SKILL_NAMES
 
@@ -26,6 +26,22 @@ def comment_layout_text(layout):
     if layout.get("first_hour"):
         lines.append(f"发布后一小时：{layout['first_hour']}")
     return "\n".join(str(x) for x in lines)
+
+
+def tracking_columns(r, limits):
+    metrics = json.loads(r["track_metrics"] or "{}")
+    ev = production.evaluate(metrics, limits) or {}
+    pct = lambda v: f"{v:.1%}" if v is not None else ""
+    return [
+        "已发布" if r["track_status"] == "published" else "待发布",
+        r["account_name"] or "",
+        r["published_at"] or "",
+        metrics.get("impressions", ""),
+        metrics.get("clicks", ""),
+        pct(ev.get("ctr")),
+        pct(ev.get("engagement")),
+        ev.get("advice_text", ""),
+    ]
 
 
 def reject_nonfinite_json(value):
@@ -412,12 +428,21 @@ class Handler(BaseHTTPRequestHandler):
                     s["analysis"] = json.loads(a[0]) if a else {}
                     sources.append(s)
                 creations = []
+                limits = setting("limits")
+                tracking = {
+                    r["creation_id"]: r
+                    for r in c.execute(
+                        "SELECT * FROM creation_tracking WHERE project_id=?",
+                        (project_id,),
+                    )
+                }
                 for r in c.execute(
                     "SELECT * FROM creation_outputs WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
                     (project_id,),
                 ):
                     d = dict(r)
                     d["data"] = json.loads(d["data"])
+                    d["tracking"] = production.row_view(tracking.get(d["id"]), limits)
                     creations.append(d)
                 assets = [
                     dict(r)
@@ -748,6 +773,73 @@ class Handler(BaseHTTPRequestHandler):
                         (int(bool(data.get("saved"))), ident),
                     )
             return self.send({"ok": True})
+        match = re.fullmatch(r"/api/tracking/([a-f0-9]+)", path)
+        if match and method == "POST":
+            ident = match.group(1)
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                if not c.execute(
+                    "SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL",
+                    (ident, project_id),
+                ).fetchone():
+                    raise Error("稿件不存在", 404)
+                row = c.execute(
+                    "SELECT * FROM creation_tracking WHERE creation_id=?", (ident,)
+                ).fetchone()
+                cur = {
+                    "status": row["status"] if row else "draft",
+                    "account_id": row["account_id"] if row else None,
+                    "published_at": row["published_at"] if row else None,
+                    "metrics": json.loads(row["metrics"] or "{}") if row else {},
+                    "checklist": json.loads(row["checklist"] or "{}") if row else {},
+                }
+                if "status" in data:
+                    if data["status"] not in production.STATUSES:
+                        raise Error("工序状态无效")
+                    cur["status"] = data["status"]
+                    if data["status"] == "draft":
+                        cur["published_at"] = None
+                        cur["checklist"] = {}
+                    elif not cur["published_at"]:
+                        cur["published_at"] = now()
+                if "published_at" in data and cur["status"] == "published":
+                    value = str(data["published_at"] or "")
+                    try:
+                        import datetime as _dt
+
+                        _dt.datetime.fromisoformat(value.replace("Z", "+00:00"))
+                    except ValueError:
+                        raise Error("发布时间格式不正确")
+                    cur["published_at"] = value
+                if "account_id" in data:
+                    account = data["account_id"] or None
+                    if account and not c.execute(
+                        "SELECT 1 FROM assets WHERE id=? AND project_id=? AND kind='账号'",
+                        (account, project_id),
+                    ).fetchone():
+                        raise Error("账号不存在，请先在项目资料里添加「账号」")
+                    cur["account_id"] = account
+                if "metrics" in data:
+                    cur["metrics"] = production.clean_metrics(data["metrics"])
+                if "checklist" in data:
+                    cur["checklist"] = production.clean_checklist(data["checklist"])
+                c.execute(
+                    "INSERT OR REPLACE INTO creation_tracking VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        ident,
+                        project_id,
+                        cur["status"],
+                        cur["account_id"],
+                        cur["published_at"],
+                        dumps(cur["metrics"]),
+                        dumps(cur["checklist"]),
+                        now(),
+                    ),
+                )
+                row = c.execute(
+                    "SELECT * FROM creation_tracking WHERE creation_id=?", (ident,)
+                ).fetchone()
+                return self.send(production.row_view(row, setting("limits")))
         if path == "/api/export":
             return self.export(project_id, q.get("format", ["csv"])[0])
         raise Error("接口不存在", 404)
@@ -777,11 +869,20 @@ class Handler(BaseHTTPRequestHandler):
                 "模型",
                 "Skill版本",
                 "创建时间",
+                "工序状态",
+                "发布账号",
+                "发布时间",
+                "曝光",
+                "点击",
+                "点击率",
+                "互动率",
+                "投放建议",
             ]
         ]
+        limits = setting("limits")
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,k.status AS track_status,k.published_at,k.metrics AS track_metrics,a.name AS account_name FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
@@ -813,6 +914,7 @@ class Handler(BaseHTTPRequestHandler):
                         r["skill_version"],
                         r["created_at"],
                     ]
+                    + tracking_columns(r, limits)
                 )
         if fmt == "xlsx":
             out = io.BytesIO()
@@ -1050,6 +1152,11 @@ class Handler(BaseHTTPRequestHandler):
                         )
                     )
                     or not 1 <= value.get("discover_pick", 3) <= 10
+                    or not isinstance(value.get("promote_ctr", 0.2), (int, float))
+                    or isinstance(value.get("promote_ctr", 0.2), bool)
+                    or not 0 < value.get("promote_ctr", 0.2) < 1
+                    or type(value.get("promote_min_impressions", 500)) is not int
+                    or not 0 <= value.get("promote_min_impressions", 500) <= 10_000_000
                     or not 1 <= value.get("batch", 0) <= 50
                     or not 1 <= value.get("timeout", 0) <= 180
                     or not 0 <= value.get("retries", 1) <= 2
