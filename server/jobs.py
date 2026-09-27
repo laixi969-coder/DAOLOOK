@@ -168,8 +168,10 @@ def run(ident):
                 "SELECT * FROM skill_versions WHERE name=? AND status='Published' ORDER BY version DESC LIMIT 1",
                 (name,),
             ).fetchone()
-        if not version:
+        # 演示模式只用预置模板，不读 Skill。
+        if not version and not demo:
             raise ValueError("未找到已发布的拆解/创作 Skill")
+    prompt = version["prompt"] if version else ""
     if kind == "analyze":
         state(ident, "FETCHING")
         entry = payload.get("entry", "single")
@@ -224,7 +226,7 @@ def run(ident):
             ):
                 adapters.attach_transcript(content, provided)
             try:
-                analysis, model = adapters.analyze(content, version["prompt"])
+                analysis, model = adapters.analyze(content, prompt)
             except Exception as e:
                 if entry not in DISCOVERY:
                     raise
@@ -291,10 +293,11 @@ def run(ident):
             content,
             assets,
             payload.get("requirements", ""),
-            version["prompt"],
+            prompt,
             batch,
             analysis=analysis,
             previous=previous,
+            demo=demo,
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -329,7 +332,7 @@ def run(ident):
             benchmark,
             assets,
             payload.get("requirements", ""),
-            version["prompt"],
+            prompt,
             batch,
             previous=previous,
             demo=demo,

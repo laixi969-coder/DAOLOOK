@@ -595,7 +595,15 @@ def validate_analysis(result, fields):
         raise ValueError("拆解输出结构不完整")
 
 
-def validate_creation(result, p):
+def used_pairs(previous):
+    return {
+        (str(o.get("direction", "")), str(o.get("angle", "")).strip())
+        for o in previous or []
+        if o.get("direction") and str(o.get("angle", "")).strip()
+    }
+
+
+def validate_creation(result, p, previous=None):
     outputs = result.get("outputs") if isinstance(result, dict) else None
     if not isinstance(outputs, list) or not CREATION_MIN <= len(outputs) <= CREATION_MAX:
         raise ValueError("必须返回 6 到 8 条独立稿件")
@@ -640,6 +648,9 @@ def validate_creation(result, p):
     pairs = [(o["direction"], o["angle"].strip()) for o in outputs]
     if len(set(pairs)) != len(pairs):
         raise ValueError("同一方向下的稿件切角不能重复")
+    # 再来一批：已生成过的「方向 + 切角」组合不得再用（PRD 9.4）。
+    if set(pairs) & used_pairs(previous):
+        raise ValueError("本批与已生成稿件的方向和切角重复，需换切角")
     used = {o["direction"] for o in outputs}
     if len(used) == 1:
         # 资料只够一个方向：允许整批同方向，但必须写明另一个方向缺哪项事实。
@@ -778,6 +789,8 @@ def demo_outputs(p, topic, batch):
         ("测评", "对照说明"),
         ("钓鱼帖", "真实困惑"),
     ]
+    if batch > 1:
+        specs = [(kind, f"{angle}·第{batch}批") for kind, angle in specs]
     outputs = []
     for i, (kind, angle) in enumerate(specs):
         direction = DIRECTIONS[p][0 if kind == "测评" else 1]
@@ -840,10 +853,11 @@ def demo_outputs(p, topic, batch):
     return outputs
 
 
-def create(content, assets, requirements, version, batch, analysis=None, previous=None):
+def create(content, assets, requirements, version, batch, analysis=None, previous=None, demo=False):
+    """demo 为运行模式；演示模式或演示参考都只用模板，不调用模型。"""
     p = content["platform"]
     schema = {"outputs": [creation_example(p)]}
-    if not content.get("demo"):
+    if not demo and not content.get("demo"):
         result, model = model_json(
             {
                 # 原始接口节点与媒体地址对创作没有用，只占上下文，不发给模型。
@@ -862,7 +876,7 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
             schema,
             version,
             "create",
-            lambda r: validate_creation(r, p),
+            lambda r: validate_creation(r, p, previous),
         )
         outputs = result.get("outputs", [])
         if not CREATION_MIN <= len(outputs) <= CREATION_MAX or any(
@@ -871,7 +885,7 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
         ):
             raise ValueError("模型未返回完整的 6 到 8 条稿件")
         return outputs, model
-    topic = requirements.strip()[:60] or content["title"].split("｜")[0]
+    topic = requirements.strip()[:60] or (content.get("title") or "这个主题").split("｜")[0]
     return demo_outputs(p, topic, batch), "demo"
 
 
@@ -941,7 +955,7 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
             {"outputs": [creation_example(p)]},
             version,
             "create",
-            lambda r: validate_creation(r, p),
+            lambda r: validate_creation(r, p, previous),
         )
         return result["outputs"], model
     return demo_outputs(p, brief["topic"][:60], batch), "demo"

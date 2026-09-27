@@ -376,7 +376,11 @@ function creations() {
       `<div class="actions">${button("Excel 导出", "export-xlsx", "secondary", "download")}${button("CSV 导出", "export-csv", "secondary", "download")}${button("开始新创作", "discover", "primary", "plus")}</div>`,
       "MADE BY YOU, INSPIRED BY THE WORLD",
     ) +
-    (briefOf(S.creationSource) ? briefPanel(briefOf(S.creationSource)) : "") +
+    (briefOf(S.creationSource)
+      ? briefPanel(briefOf(S.creationSource))
+      : sourceOf(S.creationSource)
+        ? sourcePanel(sourceOf(S.creationSource))
+        : "") +
     productionBoard(scoped) +
     `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? `<div class="creation-grid">${items.map(draftCard).join("")}</div>` : empty("第一条好内容，从一个参考开始", "先找到值得借鉴的内容，进入拆解页，点击「创作我的版本」。", button("去发现灵感", "discover", "primary", "spark"))}`
   );
@@ -484,6 +488,12 @@ async function track(id, data) {
 }
 function briefOf(id) {
   return (S.workspace.briefs || []).find((b) => b.id === id);
+}
+function sourceOf(id) {
+  return id ? S.workspace.sources.find((s) => s.id === id) : null;
+}
+function sourcePanel(s) {
+  return `<section class="panel brief-panel"><div class="brief-head"><div><p class="eyebrow">再创作 · ${s.platform === "douyin" ? "抖音" : "小红书"}</p><h2>${esc(s.data.title || "参考内容")}</h2></div><div class="actions">${button("再来一批", "create-again", "primary small", "spark", `data-id="${s.id}"`)}${button("回到拆解", "open-source", "secondary small", "back", `data-id="${s.id}"`)}</div></div><p class="muted">再来一批沿用这条参考上次选的资料与本次要求，不重复已有的方向和切角；想换资料或要求，回到拆解页重新填写。预计消耗 ${S.boot.rules.create} 积分，失败自动退还。</p></section>`;
 }
 function briefPanel(b) {
   const bm = b.data.benchmark || {};
@@ -966,26 +976,33 @@ async function startAnalyze() {
     toast(e.message);
   }
 }
-async function startCreate() {
-  if (S.imageUploading) throw new Error("图片正在上传，请完成后再生成");
-  S.requirements = $("#requirements").value;
-  S.temporary = $("#temporary").value;
-  S.selectedAssets = $$("input[name=asset]:checked").map((x) => x.value);
+async function startCreate(againId) {
+  const sourceId = againId || S.detail;
+  if (!againId) {
+    if (S.imageUploading) throw new Error("图片正在上传，请完成后再生成");
+    S.requirements = $("#requirements").value;
+    S.temporary = $("#temporary").value;
+    S.selectedAssets = $$("input[name=asset]:checked").map((x) => x.value);
+  }
   S.busy = true;
   render();
   try {
     const r = await post(
       "/api/create",
-      body({
-        source_id: S.detail,
-        requirements: S.requirements,
-        temporary: S.temporary,
-        assets: S.selectedAssets,
-      }),
+      body(
+        againId
+          ? { source_id: againId, again: true }
+          : {
+              source_id: sourceId,
+              requirements: S.requirements,
+              temporary: S.temporary,
+              assets: S.selectedAssets,
+            },
+      ),
     );
     toast("正在创作 6 到 8 条独立稿件…");
     await poll(r.task_ids, async (success) => {
-      S.creationSource = S.detail;
+      S.creationSource = sourceId;
       S.page = "creations";
       location.hash = "creations";
       render();
@@ -994,7 +1011,7 @@ async function startCreate() {
         count = JSON.parse(success[0].result).creation_ids.length;
       } catch (err) {}
       toast(`${count} 条新稿件已追加，历史版本完整保留`);
-      if (S.temporary.trim())
+      if (!againId && S.temporary.trim())
         modal(
           "保存本次临时资料？",
           `<p class="subtext">这份资料可以留作下一次创作的参考，也可以仅用于本次任务。</p>${field("资料名称", "temporary-name", "本次创作补充资料")}<div class="actions">${button("保存到项目", "save-temporary", "primary", "folder")}${button("仅本次使用", "close", "secondary")}</div>`,
@@ -1171,6 +1188,12 @@ const actions = {
     const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
     const checklist = { ...(c.tracking.checklist || {}), [el.dataset.key]: el.checked };
     await track(el.dataset.id, { checklist });
+  },
+  "create-again": async (el) => {
+    await startCreate(el.dataset.id);
+  },
+  "open-source": async (el) => {
+    await openSource(el.dataset.id);
   },
   "original-again": async (el) => {
     await startOriginal(el.dataset.id);

@@ -530,6 +530,26 @@ class Handler(BaseHTTPRequestHandler):
                         "SELECT id FROM assets WHERE project_id=?", (project_id,)
                     )
                 }
+            if data.get("again") and "assets" not in data:
+                # 再来一批：沿用这条参考上一次仍然存在的资料选择与本次要求；临时资料可能已清理，不沿用。
+                with db() as c:
+                    last = next(
+                        (
+                            json.loads(r["payload"])
+                            for r in c.execute(
+                                "SELECT payload FROM tasks WHERE project_id=? AND kind='create' ORDER BY created_at DESC",
+                                (project_id,),
+                            )
+                            if json.loads(r["payload"]).get("source_id") == source["id"]
+                        ),
+                        {},
+                    )
+                selected = [a for a in last.get("assets", []) if a in available]
+                data = {
+                    "source_id": source["id"],
+                    "assets": selected,
+                    "requirements": data.get("requirements", last.get("requirements", "")),
+                }
             if any(x not in available for x in selected):
                 raise Error("所选资料不存在或不属于当前项目")
             payload = {
@@ -863,7 +883,7 @@ class Handler(BaseHTTPRequestHandler):
         ]
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,k.status AS track_status,k.published_at,a.name AS account_name FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,k.status AS track_status,k.published_at,a.name AS account_name FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
@@ -892,7 +912,9 @@ class Handler(BaseHTTPRequestHandler):
                         adapters.PROMOTION_NOTE if d.get("direction") else "",
                         r["task_id"],
                         r["model"] or "",
-                        r["skill_version"],
+                        f"{r['skill_name']} v{r['skill_number']}"
+                        if r["skill_name"]
+                        else r["skill_version"] or "",
                         r["created_at"],
                     ]
                     + tracking_columns(r)

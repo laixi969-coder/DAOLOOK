@@ -109,7 +109,7 @@ class OriginalTests(unittest.TestCase):
 
         def fake(prompt, schema, version, kind, validator):
             seen.append(json.loads(json.dumps(prompt)))
-            outputs = adapters.demo_outputs("douyin", "t", 1)
+            outputs = adapters.demo_outputs("douyin", "t", prompt["batch"])
             validator({"outputs": outputs})
             return {"outputs": outputs}, "fake/model"
 
