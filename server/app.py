@@ -5,6 +5,7 @@ from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
 from . import jobs, adapters, maintenance, covers, catalog, mailer, documents
 from .ranking import score
+from .skills import SKILL_NAMES
 
 ROOT = Path(__file__).resolve().parent.parent
 RATE = {}
@@ -391,12 +392,16 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/workspace":
             with db() as c:
                 sources = []
+                briefs = []
                 for r in c.execute(
                     "SELECT * FROM source_contents WHERE project_id=? ORDER BY created_at DESC",
                     (project_id,),
                 ):
                     s = dict(r)
                     s["data"] = json.loads(s["data"])
+                    if s["data"].get("kind") == "brief":
+                        briefs.append(s)
+                        continue
                     s["ranking"] = score(s["data"])
                     s["classification"] = catalog.classify(s["data"])
                     s["selection_reasons"] = catalog.evidence(s["data"], s["ranking"])
@@ -431,6 +436,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(
                 {
                     "sources": sources,
+                    "briefs": briefs,
                     "creations": creations,
                     "assets": assets,
                     "images": images,
@@ -521,6 +527,73 @@ class Handler(BaseHTTPRequestHandler):
             }
             return self.send(
                 {"task_ids": [jobs.submit(u["id"], project_id, "create", payload)]}, 202
+            )
+        if path == "/api/original" and method == "POST":
+            for field in ("requirements", "temporary"):
+                if (
+                    not isinstance(data.get(field, ""), str)
+                    or len(data.get(field, "")) > 100000
+                ):
+                    raise Error("创作要求与临时资料必须是最多 100000 字的文本")
+            brief_id = data.get("brief_id")
+            selected = data.get("assets", [])
+            if not isinstance(selected, list) or any(
+                not isinstance(x, str) for x in selected
+            ):
+                raise Error("资料选择格式不正确")
+            with db() as c:
+                available = {
+                    r["id"]
+                    for r in c.execute(
+                        "SELECT id FROM assets WHERE project_id=?", (project_id,)
+                    )
+                }
+                old_brief = None
+                if brief_id:
+                    row = c.execute(
+                        "SELECT data FROM source_contents WHERE id=? AND project_id=?",
+                        (brief_id, project_id),
+                    ).fetchone()
+                    old_brief = json.loads(row["data"]) if row else None
+                    if not old_brief or old_brief.get("kind") != "brief":
+                        raise Error("自主创作主题不存在", 404)
+            if old_brief:
+                brief = {
+                    k: old_brief.get(k, "") for k in ("platform", "topic", "keyword")
+                }
+                if not selected and "assets" not in data:
+                    # 再来一批：沿用上次仍然存在的资料选择
+                    selected = [a for a in old_brief.get("assets", []) if a in available]
+                requirements = data.get("requirements", old_brief.get("requirements", ""))
+            else:
+                brief = {
+                    "platform": data.get("platform"),
+                    "topic": str(data.get("topic", "")).strip(),
+                    "keyword": str(data.get("keyword", "")).strip()[:60],
+                }
+                if brief["platform"] not in ("xhs", "douyin"):
+                    raise Error("请选择小红书或抖音")
+                if not 2 <= len(brief["topic"]) <= 200:
+                    raise Error("请填写 2 到 200 字的创作主题")
+                requirements = data.get("requirements", "")
+            if any(x not in available for x in selected):
+                raise Error("所选资料不存在或不属于当前项目")
+            temporary = data.get("temporary", "")
+            if not selected and not temporary.strip():
+                raise Error("自主创作需要依据：请至少选择一份项目资料或填写临时资料")
+            payload = {
+                "source_id": brief_id or uid(),
+                "brief": brief,
+                "assets": selected,
+                "requirements": requirements,
+                "temporary": temporary,
+            }
+            return self.send(
+                {
+                    "task_ids": [jobs.submit(u["id"], project_id, "original", payload)],
+                    "brief_id": payload["source_id"],
+                },
+                202,
             )
         if (
             path in ("/api/cover", "/api/cover/plan", "/api/cover/preview")
@@ -708,15 +781,18 @@ class Handler(BaseHTTPRequestHandler):
         ]
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url,t.model FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
+                src = json.loads(r["source_data"] or "{}")
                 rows.append(
                     [
                         r["id"],
                         r["platform"],
-                        r["url"],
+                        "自主创作：" + src.get("topic", "")
+                        if src.get("kind") == "brief"
+                        else r["url"],
                         d.get("direction", ""),
                         d.get("role", ""),
                         d.get("angle", ""),
@@ -955,7 +1031,8 @@ class Handler(BaseHTTPRequestHandler):
                 if key == "mode" and value not in ("demo", "live"):
                     raise Error("模式无效")
                 if key == "rules" and (
-                    set(value) != {"analyze", "create", "cover"}
+                    not {"analyze", "create", "cover"} <= set(value)
+                    or not set(value) <= {"analyze", "create", "cover", "original"}
                     or any(
                         type(v) is not int or v < 0 or v > 10000 for v in value.values()
                     )
@@ -1097,13 +1174,7 @@ class Handler(BaseHTTPRequestHandler):
             name = data.get("name")
             prompt = data.get("prompt", "").strip()
             if (
-                name
-                not in (
-                    "xhs_analysis",
-                    "douyin_analysis",
-                    "xhs_creation",
-                    "douyin_creation",
-                )
+                name not in SKILL_NAMES
                 or not prompt
             ):
                 raise Error("Skill 名称或内容无效")
@@ -1144,7 +1215,17 @@ class Handler(BaseHTTPRequestHandler):
                         "demo": False,
                     }
                 )
-                if skill["name"].endswith("analysis"):
+                if skill["name"].endswith("original"):
+                    adapters.create_original(
+                        {"platform": skill["name"].split("_")[0], "topic": "验证结构"},
+                        {"examples": [], "note": "结构测试，无赛道参考"},
+                        [{"name": "测试资料", "content": data.get("sample", "这是一份用于测试输出结构的资料样本。")}],
+                        "验证结构",
+                        skill["prompt"],
+                        1,
+                        demo=setting("mode") == "demo",
+                    )
+                elif skill["name"].endswith("analysis"):
                     adapters.analyze(content, skill["prompt"])
                 else:
                     adapters.create(content, [], "验证结构", skill["prompt"], 1)

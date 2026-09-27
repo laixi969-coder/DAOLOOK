@@ -1,7 +1,7 @@
 import os, sqlite3, json, uuid, datetime
 from contextlib import contextmanager
 from .defaults import ENDPOINTS
-from .skills import RELEASE, RELEASE_KEY
+from .skills import RELEASES
 
 DB_PATH = os.environ.get("DAOLOOK_DB", "data/daolook.db")
 
@@ -59,7 +59,7 @@ def init():
         """)
         defaults = {
             "mode": os.environ.get("DAOLOOK_MODE", "demo"),
-            "rules": {"analyze": 5, "create": 15, "cover": 8},
+            "rules": {"analyze": 5, "create": 15, "cover": 8, "original": 15},
             "limits": {
                 "batch": 10,
                 "timeout": 60,
@@ -150,10 +150,12 @@ def init():
                     ),
                 )
         # 一次性发布当前内置 Skill（见 server/skills.py）；旧生效版本归档，可在后台回滚。
-        if not c.execute(
-            "SELECT 1 FROM settings WHERE key=?", (RELEASE_KEY,)
-        ).fetchone():
-            for name, prompt in RELEASE.items():
+        for release_key, release in RELEASES:
+            if c.execute(
+                "SELECT 1 FROM settings WHERE key=?", (release_key,)
+            ).fetchone():
+                continue
+            for name, prompt in release.items():
                 row = c.execute(
                     "SELECT id,status FROM skill_versions WHERE name=? AND prompt=? ORDER BY version DESC LIMIT 1",
                     (name, prompt),
@@ -178,7 +180,7 @@ def init():
                     "INSERT INTO skill_versions VALUES (?,?,?,?,?,?)",
                     (uid(), name, version, prompt, "Published", now()),
                 )
-            c.execute("INSERT INTO settings VALUES (?,'1')", (RELEASE_KEY,))
+            c.execute("INSERT INTO settings VALUES (?,'1')", (release_key,))
 
 
 def setting(key):

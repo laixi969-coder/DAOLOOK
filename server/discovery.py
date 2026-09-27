@@ -118,6 +118,13 @@ def list_items(raw, p):
             )
             if isinstance(author, dict)
             else None,
+            "title": str(
+                node.get("title")
+                or node.get("display_title")
+                or (node.get("note_card") or {}).get("display_title")
+                or node.get("desc")
+                or ""
+            )[:80],
             "age_days": parse_age_days(node)
             or parse_age_days(node.get("note_card") or {}),
         }
@@ -148,3 +155,18 @@ def pick(items, limit, field, value):
         scored.append((result["score"] is None, -(result["score"] or 0), order, candidate))
     scored.sort(key=lambda x: x[:3])
     return [x[3] for x in scored[:limit]]
+
+
+def benchmark_from(items, keyword, provider, limit=5):
+    """自主创作的赛道参考：基线 + 按相对表现取前 N 条样本（只留标题与公开指标）。"""
+    base = baseline(items)
+    chosen = pick(items, limit, "category_median", base)
+    keep = ("title", "likes", "saves", "comments", "followers", "age_days", "url")
+    return {
+        "keyword": keyword,
+        "provider": provider,
+        "pool": len(items),
+        "baseline": base,
+        "examples": [{k: c.get(k) for k in keep} for c in chosen],
+        "note": "",
+    }

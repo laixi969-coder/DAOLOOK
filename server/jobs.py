@@ -14,7 +14,9 @@ def discover_pick():
 
 def task_cost(kind, payload, rules=None):
     """博主/关键词入口按精选条数逐条计费：先冻结上限，成功几条结算几条，其余退回。"""
-    unit = (rules or setting("rules")).get(kind)
+    rules = rules or setting("rules")
+    # 旧数据库没有「自主创作」规则时，沿用再创作的价格。
+    unit = rules.get(kind, rules.get("create")) if kind == "original" else rules.get(kind)
     if type(unit) is not int or unit < 0:
         raise ValueError("任务计费配置无效")
     if kind == "analyze" and payload.get("entry") in DISCOVERY:
@@ -48,7 +50,7 @@ def submit_many(user, project, kind, payloads):
             payload["unit_cost"] = unit
             if kind == "analyze" and payload.get("entry") in DISCOVERY:
                 payload["pick"] = cost // unit if unit else discover_pick()
-            if kind == "create":
+            if kind in ("create", "original"):
                 wanted = payload.get("assets", [])
                 rows = [
                     dict(r)
@@ -158,7 +160,9 @@ def run(ident):
             content = json.loads(source["data"])
             p = source["platform"]
     if kind != "cover":
-        name = p + "_" + ("analysis" if kind == "analyze" else "creation")
+        if kind == "original":
+            p = payload["brief"]["platform"]
+        name = p + "_" + {"analyze": "analysis", "create": "creation", "original": "original"}[kind]
         with db() as c:
             version = c.execute(
                 "SELECT * FROM skill_versions WHERE name=? AND status='Published' ORDER BY version DESC LIMIT 1",
@@ -294,6 +298,47 @@ def run(ident):
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
+    elif kind == "original":
+        brief = payload["brief"]
+        state(ident, "FETCHING")
+        benchmark = adapters.fetch_benchmark(
+            brief.get("keyword") or brief["topic"], brief["platform"], demo
+        )
+        state(ident, "GENERATING")
+        with db() as c:
+            batch = 1 + c.execute(
+                "SELECT count(DISTINCT task_id) FROM creation_outputs WHERE source_id=?",
+                (payload["source_id"],),
+            ).fetchone()[0]
+            previous = [
+                {k: d.get(k, "") for k in ("direction", "angle", "title")}
+                for d in (
+                    json.loads(r["data"])
+                    for r in c.execute(
+                        "SELECT data FROM creation_outputs WHERE source_id=? AND project_id=? AND deleted_at IS NULL ORDER BY created_at DESC LIMIT 40",
+                        (payload["source_id"], t["project_id"]),
+                    )
+                )
+            ]
+        assets = list(payload.get("asset_snapshot", []))
+        if payload.get("temporary"):
+            assets.append({"name": "临时资料", "content": payload["temporary"]})
+        selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
+        outputs, model = adapters.create_original(
+            brief,
+            benchmark,
+            assets,
+            payload.get("requirements", ""),
+            version["prompt"],
+            batch,
+            previous=previous,
+            demo=demo,
+        )
+        for output in outputs:
+            output["image_asset_ids"] = selected_image_ids
+            output["origin"] = "original"
+            if demo:
+                output["demo"] = True
     else:
         state(ident, "GENERATING")
         with db() as c:
@@ -345,6 +390,38 @@ def run(ident):
                     (uid(), sid, dumps(analysis), version_id, ident, now()),
                 )
             result["source_ids"] = [s[0] for s in new_sources]
+        if kind == "original":
+            brief_data = {
+                **payload["brief"],
+                "kind": "brief",
+                "title": payload["brief"]["topic"],
+                "demo": demo,
+                "benchmark": benchmark,
+                "assets": payload.get("assets", []),
+                "requirements": payload.get("requirements", ""),
+            }
+            if c.execute(
+                "SELECT 1 FROM source_contents WHERE id=? AND project_id=?",
+                (payload["source_id"], t["project_id"]),
+            ).fetchone():
+                c.execute(
+                    "UPDATE source_contents SET data=? WHERE id=?",
+                    (dumps(brief_data), payload["source_id"]),
+                )
+            else:
+                c.execute(
+                    "INSERT INTO source_contents VALUES (?,?,?,?,?,?,?)",
+                    (
+                        payload["source_id"],
+                        t["project_id"],
+                        brief_data["platform"],
+                        "",
+                        dumps(brief_data),
+                        0,
+                        now(),
+                    ),
+                )
+            result["brief_id"] = payload["source_id"]
         if outputs:
             ids = []
             for output in outputs:

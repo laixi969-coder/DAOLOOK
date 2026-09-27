@@ -1996,3 +1996,71 @@ tr:last-child td {
 .code-row .btn {
   white-space: nowrap;
 }
+.original-form {
+  padding-top: 16px;
+}
+.original-grid {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 2fr) minmax(0, 1fr);
+  gap: 12px;
+}
+.original-grid .field {
+  margin-bottom: 0;
+}
+.original-form > .field {
+  margin-top: 14px;
+}
+.original-assets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.original-assets .check-row {
+  margin: 0;
+}
+.original-form > .btn {
+  margin-top: 14px;
+}
+.brief-panel {
+  margin-bottom: 22px;
+}
+.brief-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+.brief-head h2 {
+  margin-top: 4px;
+}
+.brief-panel > .muted {
+  margin-top: 8px;
+}
+.brief-bench {
+  margin-top: 12px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.brief-bench summary {
+  cursor: pointer;
+  padding: 4px 0;
+}
+.brief-bench ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.brief-bench li {
+  line-height: 1.8;
+}
+.brief-bench small {
+  margin-left: 8px;
+  color: var(--ink-3);
+}
+@media (max-width: 760px) {
+  .original-grid {
+    grid-template-columns: 1fr;
+  }
+  .brief-head {
+    flex-direction: column;
+  }
+}

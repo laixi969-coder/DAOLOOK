@@ -737,8 +737,7 @@ def creation_instruction(p):
     return "\n".join(rules)
 
 
-def create(content, assets, requirements, version, batch, analysis=None, previous=None):
-    p = content["platform"]
+def creation_example(p):
     example = {
         "direction": " / ".join(DIRECTIONS[p]),
         "role": "这篇在账号里承担的岗位，一句话",
@@ -765,36 +764,10 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
             },
             "first_hour": "发布后一小时内第一波评论的执行顺序",
         }
-    schema = {"outputs": [example]}
-    if not content.get("demo"):
-        result, model = model_json(
-            {
-                # 原始接口节点与媒体地址对创作没有用，只占上下文，不发给模型。
-                "reference": {
-                    k: v
-                    for k, v in content.items()
-                    if k not in ("evidence", "media_url", "selection", "origin")
-                },
-                "analysis": analysis or [],
-                "previous_outputs": previous or [],
-                "assets": assets,
-                "requirements": requirements,
-                "instruction": creation_instruction(p),
-                "batch": batch,
-            },
-            schema,
-            version,
-            "create",
-            lambda r: validate_creation(r, p),
-        )
-        outputs = result.get("outputs", [])
-        if not CREATION_MIN <= len(outputs) <= CREATION_MAX or any(
-            not isinstance(o, dict) or not o.get("title") or not o.get("body")
-            for o in outputs
-        ):
-            raise ValueError("模型未返回完整的 6 到 8 条稿件")
-        return outputs, model
-    topic = requirements.strip()[:60] or content["title"].split("｜")[0]
+    return example
+
+
+def demo_outputs(p, topic, batch):
     specs = [
         ("测评", "标准对比"),
         ("钓鱼帖", "提问截流"),
@@ -864,7 +837,114 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
                 },
                 "first_hour": "发布后先发置顶，再补知识句，最后用气氛句提问带动讨论。",
             }
-    return outputs, "demo"
+    return outputs
+
+
+def create(content, assets, requirements, version, batch, analysis=None, previous=None):
+    p = content["platform"]
+    schema = {"outputs": [creation_example(p)]}
+    if not content.get("demo"):
+        result, model = model_json(
+            {
+                # 原始接口节点与媒体地址对创作没有用，只占上下文，不发给模型。
+                "reference": {
+                    k: v
+                    for k, v in content.items()
+                    if k not in ("evidence", "media_url", "selection", "origin")
+                },
+                "analysis": analysis or [],
+                "previous_outputs": previous or [],
+                "assets": assets,
+                "requirements": requirements,
+                "instruction": creation_instruction(p),
+                "batch": batch,
+            },
+            schema,
+            version,
+            "create",
+            lambda r: validate_creation(r, p),
+        )
+        outputs = result.get("outputs", [])
+        if not CREATION_MIN <= len(outputs) <= CREATION_MAX or any(
+            not isinstance(o, dict) or not o.get("title") or not o.get("body")
+            for o in outputs
+        ):
+            raise ValueError("模型未返回完整的 6 到 8 条稿件")
+        return outputs, model
+    topic = requirements.strip()[:60] or content["title"].split("｜")[0]
+    return demo_outputs(p, topic, batch), "demo"
+
+
+def original_instruction(p):
+    """自主创作：事实只来自用户资料；赛道样本只用于观察写法，不改写任何一条。"""
+    rules = creation_instruction(p).split("\n")
+    rules = [
+        r
+        for r in rules
+        if not r.startswith("analysis ") and "参考的机制" not in r
+    ]
+    rules[1:1] = [
+        "这是自主创作：没有被改写的参考内容。brief 是用户要写的主题，事实只能来自 assets（项目资料与临时资料）。",
+        "benchmark 是同赛道的一批公开内容（标题与公开指标），只用来观察这个赛道常见的选题切角、标题结构和互动方式；不得改写、照搬任何一条样本的句子、经历或数据，也不得把样本作者的经历写成用户的经历。",
+        "benchmark 为空或写明未取得赛道参考时，只依据 assets 写，不要编造赛道数据。",
+        "同一方向下必须是不同切角，不能只替换少量词语。",
+    ]
+    return (
+        "\n".join(rules)
+        .replace("只使用参考和资料里已有的事实", "只使用 assets 里已有的事实")
+        .replace("这条参考已经生成过的稿件", "这个主题已经生成过的稿件")
+    )
+
+
+def fetch_benchmark(keyword, p, demo=False):
+    """取同赛道样本；失败不抛错，返回带说明的空参考，让本批只依据用户资料生成。"""
+    if demo:
+        items = []
+        for i in range(6):
+            d = demo_content(i, p)
+            items.append({k: d.get(k) for k in ("title", "likes", "saves", "comments", "followers", "age_days")})
+            items[-1]["url"] = ""
+        bench = discovery.benchmark_from(items, keyword, "demo")
+        bench["note"] = "演示样本，不是真实搜索结果"
+        return bench
+    try:
+        raw = TikHubAdapter().searchContents(keyword, p)
+        items = discovery.list_items(raw, p)
+        if not items:
+            raise ValueError("数据源没有返回可识别的内容")
+        return discovery.benchmark_from(items, keyword, "TikHub")
+    except Exception as e:
+        reason = str(e)[:80] if isinstance(e, ValueError) else type(e).__name__
+        return {
+            "keyword": keyword,
+            "provider": "TikHub",
+            "pool": 0,
+            "baseline": None,
+            "examples": [],
+            "note": "未取得赛道参考（" + reason + "），本批只依据你的资料生成",
+        }
+
+
+def create_original(brief, benchmark, assets, requirements, version, batch, previous=None, demo=False):
+    p = brief["platform"]
+    if not demo:
+        result, model = model_json(
+            {
+                "brief": {"platform": p, "topic": brief["topic"]},
+                "benchmark": benchmark,
+                "assets": assets,
+                "requirements": requirements,
+                "previous_outputs": previous or [],
+                "instruction": original_instruction(p),
+                "batch": batch,
+            },
+            {"outputs": [creation_example(p)]},
+            version,
+            "create",
+            lambda r: validate_creation(r, p),
+        )
+        return result["outputs"], model
+    return demo_outputs(p, brief["topic"][:60], batch), "demo"
 
 
 def cover(output, direction):
