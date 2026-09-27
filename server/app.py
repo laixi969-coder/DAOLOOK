@@ -49,18 +49,25 @@ def password_hash(password, salt=None):
     )
 
 
+def signup_allowed(email):
+    """白名单开启时，只有名单内邮箱和 .env 里的管理员邮箱可以注册。"""
+    rule = setting("signup")
+    admin = os.environ.get("DAOLOOK_ADMIN_EMAIL", "").strip().lower()
+    return not rule.get("whitelist") or email in rule.get("emails", []) or email == admin
+
+
 def new_user(email, password=None, role="user", demo=False):
     ident = uid()
     project = uid()
+    welcome = 300 if demo else setting("signup").get("welcome_credits", 100)
     with db() as c:
         c.execute(
             "INSERT INTO users VALUES (?,?,?,?,?)",
             (ident, email, password_hash(password) if password else None, role, now()),
         )
-        c.execute(
-            "INSERT INTO credit_accounts VALUES (?,?,0)", (ident, 300 if demo else 100)
-        )
-        ledger(c, ident, None, "GRANT", 300 if demo else 100, "欢迎积分")
+        c.execute("INSERT INTO credit_accounts VALUES (?,?,0)", (ident, welcome))
+        if welcome:
+            ledger(c, ident, None, "GRANT", welcome, "欢迎积分")
         c.execute(
             "INSERT INTO projects VALUES (?,?,?,?,?)",
             (project, ident, "我的灵感空间", "从好内容出发，找到自己的表达。", now()),
@@ -258,6 +265,8 @@ class Handler(BaseHTTPRequestHandler):
                     ).fetchone()
                 if purpose == "register" and exists:
                     raise Error("该邮箱已注册，请直接登录")
+                if purpose == "register" and not signup_allowed(email):
+                    raise Error("该邮箱不在注册白名单内，请联系管理员开通", 403)
                 # 找回密码时不暴露邮箱是否注册：未注册也返回成功，但不发信。
                 if purpose == "reset" and not exists:
                     if not mailer.enabled():
@@ -293,6 +302,8 @@ class Handler(BaseHTTPRequestHandler):
             if path.endswith("register"):
                 if u:
                     raise Error("该邮箱已注册，请直接登录")
+                if not signup_allowed(email):
+                    raise Error("该邮箱不在注册白名单内，请联系管理员开通", 403)
                 if mailer.enabled():
                     mailer.verify(email, "register", data.get("code"))
                 ident = new_user(email, password)
@@ -323,7 +334,13 @@ class Handler(BaseHTTPRequestHandler):
                 },
             )
         if path == "/api/public":
-            return self.send({"mode": setting("mode"), "mail": mailer.enabled()})
+            return self.send(
+                {
+                    "mode": setting("mode"),
+                    "mail": mailer.enabled(),
+                    "whitelist": bool(setting("signup").get("whitelist")),
+                }
+            )
         u = self.user()
         if path == "/api/bootstrap":
             with db() as c:
@@ -993,6 +1010,7 @@ class Handler(BaseHTTPRequestHandler):
                     "tikhub",
                     "ranking",
                     "mail",
+                    "signup",
                 )
             }
             for k in ("provider", "tikhub"):
@@ -1109,8 +1127,33 @@ class Handler(BaseHTTPRequestHandler):
                     "tikhub",
                     "ranking",
                     "mail",
+                    "signup",
                 ):
                     raise Error("不支持的配置项")
+                if key == "signup":
+                    if not isinstance(value, dict) or not isinstance(
+                        value.get("emails", []), list
+                    ):
+                        raise Error("注册设置格式不正确")
+                    emails = []
+                    for e in value.get("emails", []):
+                        e = str(e).strip().lower()
+                        if not e:
+                            continue
+                        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", e):
+                            raise Error("白名单里有无效邮箱：" + e[:60])
+                        if e not in emails:
+                            emails.append(e)
+                    welcome = value.get("welcome_credits", 100)
+                    if type(welcome) is not int or not 0 <= welcome <= 100000:
+                        raise Error("新用户赠送积分需在 0–100000 之间")
+                    if len(emails) > 5000:
+                        raise Error("白名单最多 5000 个邮箱")
+                    value = {
+                        "whitelist": bool(value.get("whitelist")),
+                        "emails": emails,
+                        "welcome_credits": welcome,
+                    }
                 if key == "mail":
                     value = {
                         "enabled": bool(value.get("enabled")),
@@ -1218,16 +1261,33 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute("DELETE FROM sessions WHERE user_id=?", (data.get("user_id"),))
             return self.send({"ok": True})
         if path == "/api/admin/grant" and method == "POST":
-            amount = int(data["amount"])
-            if amount <= 0 or amount > 100000:
-                raise Error("发放积分必须在 1–100000 之间")
+            amount = data.get("amount")
+            if type(amount) is not int or amount == 0 or abs(amount) > 100000:
+                raise Error("调整积分需为 -100000 到 100000 之间的非零整数")
             with db() as c:
-                if not c.execute(
+                c.execute("BEGIN IMMEDIATE")
+                account = c.execute(
+                    "SELECT balance FROM credit_accounts WHERE user_id=?",
+                    (data.get("user_id"),),
+                ).fetchone()
+                if not account:
+                    raise Error("用户不存在")
+                # 扣减只动可用积分，不动任务冻结中的积分。
+                if account["balance"] + amount < 0:
+                    raise Error(f"可用积分只有 {account['balance']}，不足以扣减")
+                c.execute(
                     "UPDATE credit_accounts SET balance=balance+? WHERE user_id=?",
                     (amount, data["user_id"]),
-                ).rowcount:
-                    raise Error("用户不存在")
-                ledger(c, data["user_id"], None, "GRANT", amount, "管理员发放")
+                )
+                note = str(data.get("note", "")).strip()[:60]
+                ledger(
+                    c,
+                    data["user_id"],
+                    None,
+                    "GRANT" if amount > 0 else "DEDUCT",
+                    amount,
+                    ("管理员发放" if amount > 0 else "管理员扣减") + ("：" + note if note else ""),
+                )
             return self.send({"ok": True})
         if path == "/api/admin/test" and method == "POST":
             cfg = setting("provider")

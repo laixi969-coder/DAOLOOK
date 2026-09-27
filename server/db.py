@@ -91,7 +91,9 @@ def init():
                 "password": "",
                 "sender": "",
             },
-            "ranking": {
+            # 注册：白名单开启时只有名单里的邮箱能注册；新用户赠送积分可在后台调整。
+        "signup": {"whitelist": False, "emails": [], "welcome_credits": 100},
+        "ranking": {
                 "engagement": 0.3,
                 "efficiency": 0.25,
                 "account_lift": 0.2,

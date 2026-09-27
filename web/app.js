@@ -633,7 +633,7 @@ function credits() {
   );
 }
 function ledgerTable() {
-  return `<div class="table-wrap"><table><thead><tr><th>流水说明</th><th>类型</th><th>可用积分变动</th><th>时间</th></tr></thead><tbody>${S.ledger.map((l) => `<tr><td>${esc(l.description)}</td><td>${{ GRANT: "发放", FREEZE: "冻结", REFUND: "退回", SETTLE: "结算" }[l.kind] || l.kind}</td><td style="color:${l.amount > 0 ? "#718d42" : "inherit"}">${l.amount > 0 ? "+" : ""}${l.amount}</td><td>${date(l.created_at)}</td></tr>`).join("")}</tbody></table></div>`;
+  return `<div class="table-wrap"><table><thead><tr><th>流水说明</th><th>类型</th><th>可用积分变动</th><th>时间</th></tr></thead><tbody>${S.ledger.map((l) => `<tr><td>${esc(l.description)}</td><td>${{ GRANT: "发放", DEDUCT: "扣减", FREEZE: "冻结", REFUND: "退回", SETTLE: "结算" }[l.kind] || l.kind}</td><td style="color:${l.amount > 0 ? "#718d42" : "inherit"}">${l.amount > 0 ? "+" : ""}${l.amount}</td><td>${date(l.created_at)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 function admin() {
   if (S.boot.user.role !== "admin")
@@ -668,12 +668,12 @@ function adminBody() {
   if (S.adminTab === "models")
     return `<div class="admin-grid"><section class="panel"><h2>模型供应商</h2><p class="muted">默认供应商在服务配置中维护；可添加其他供应商作为主模型或备用。</p><div class="actions" style="margin:20px 0">${button("添加供应商", "new-provider", "primary small", "plus")}</div>${a.providers.map((p) => `<div class="asset-card" style="margin-top:12px"><span class="status">${p.enabled ? "已启用" : "已停用"}</span><h3>${esc(p.name)}</h3><p>${esc(p.base_url)}</p><div class="actions">${button("编辑", "edit-provider", "secondary small", "edit", `data-id="${p.id}"`)}${button("测试 / 同步", "test-provider", "secondary small", "refresh", `data-id="${p.id}"`)}</div></div>`).join("")}</section><section class="panel"><h2>按任务配置主备模型</h2><form id="routes-form">${["analyze", "create", "cover"].map((kind) => `<h3 style="font-size:14px;margin:18px 0">${{ analyze: "内容拆解", create: "再创作", cover: "封面生成" }[kind]}</h3>${["primary", "backup"].map((pos) => `<label class="field"><span>${pos === "primary" ? "主" : "备用"}供应商</span><select id="route-${kind}-${pos}-provider">${[{ id: "default", name: "默认供应商" }, ...a.providers].map((p) => `<option value="${p.id}" ${a.routes[kind][pos].provider === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>${field("模型 ID（留空继承默认配置）", `route-${kind}-${pos}-model`, a.routes[kind][pos].model)}`).join("")}`).join("")}<button class="btn primary full" type="submit">保存路由</button></form></section></div>`;
   if (S.adminTab === "users")
-    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("发放积分", "grant", "secondary small", "plus", `data-id="${u.id}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)}</td></tr>`).join("")}</tbody></table></div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("调整积分", "grant", "secondary small", "coin", `data-id="${u.id}" data-balance="${u.balance}" data-email="${esc(u.email)}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "tasks")
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
     return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="notice">每类任务只有一条「生效中」的 Prompt，真实拆解与创作只读它。要改 Prompt 就点「编辑为新版本」：保存草稿 → 测试 → 发布，发布即替换生效版本（旧版转为已归档）。</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${skillStates[s.status] || s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><details class="skill-prompt"><summary>查看完整 Prompt</summary><pre>${esc(s.prompt)}</pre></details><div class="actions">${button("编辑为新版本", "edit-skill", "secondary small", "edit", `data-id="${s.id}"`)}${button("复制", "copy-skill", "secondary small", "copy", `data-id="${s.id}"`)}${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" ? button("发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : s.status === "Archived" ? button("回滚至此版本", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
-  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
+  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>注册与白名单</h2><label class="check-row"><input type="checkbox" id="signup-whitelist" ${c.signup?.whitelist ? "checked" : ""}>开启注册白名单：只有名单内邮箱可以注册</label><label class="field"><span>白名单邮箱 <small style="display:inline;font-weight:400">每行一个，也可用逗号分隔</small></span><textarea id="signup-emails" rows="8" placeholder="name@example.com">${esc((c.signup?.emails || []).join("\n"))}</textarea></label>${field("新用户赠送积分", "signup-welcome", c.signup?.welcome_credits ?? 100, "number")}<div class="hint">白名单只限制新注册，已注册的用户不受影响；.env 里的管理员邮箱始终可以注册。赠送积分只对之后注册的新用户生效，设为 0 则不赠送。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
 }
 function field(label, id, value = "", type = "text") {
   return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0" step="any"' : ""}></label>`;
@@ -852,7 +852,9 @@ function login(register = false, reset = false) {
   const intro = reset
     ? "输入注册邮箱，用验证码设置新密码。"
     : register
-      ? "用邮箱创建账号，开启有依据的创作。"
+      ? S.whitelist
+        ? "目前仅限受邀邮箱注册；未开通的邮箱请联系管理员。"
+        : "用邮箱创建账号，开启有依据的创作。"
       : "登录后，继续你的下一次好创作。";
   const fields =
     field("邮箱地址", "email", "", "email") +
@@ -861,13 +863,14 @@ function login(register = false, reset = false) {
   const submit = reset ? "重置并登录" : register ? "创建账号" : "邮箱登录";
   const links = reset
     ? '<button class="text-btn" data-action="toggle-login">返回登录</button>'
-    : `<button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : "还没有账号？免费注册"}</button>${register ? "" : '<button class="text-btn" data-action="forgot">忘记密码？</button>'}`;
+    : `<button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : S.whitelist ? "受邀邮箱注册" : "还没有账号？免费注册"}</button>${register ? "" : '<button class="text-btn" data-action="forgot">忘记密码？</button>'}`;
   $("#app").innerHTML =
     `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>找依据 → 拆解 → 再创作</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full">${submit} ${icon("arrow")}</button></form>${reset && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员重置密码。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
 }
 async function loadPublic() {
   const pub = await api("/api/public");
   S.publicMode = pub.mode;
+  S.whitelist = pub.whitelist;
   S.mail = !!pub.mail;
 }
 async function navigate(page) {
@@ -1321,8 +1324,8 @@ const actions = {
   grant: (el) => {
     S.grantUser = el.dataset.id;
     modal(
-      "发放创作积分",
-      `<form id="grant-form">${field("发放数量", "grant-amount", 100, "number")}<button class="btn primary full" type="submit">确认发放</button></form>`,
+      "调整创作积分",
+      `<p class="subtext">${esc(el.dataset.email || "")} · 当前可用 ${esc(el.dataset.balance || "0")} 积分。正数为发放，负数为扣减；扣减只动可用积分，不动任务冻结中的积分。</p><form id="grant-form"><label class="field"><span>调整数量</span><input id="grant-amount" type="number" step="1" min="-100000" max="100000" value="100" required></label>${field("备注（可选，记入流水）", "grant-note", "")}<button class="btn primary full" type="submit">确认调整</button></form>`,
     );
   },
   "test-model": async (el) => {
@@ -1530,17 +1533,22 @@ document.addEventListener("submit", async (e) => {
         close();
         toast("密码已重置");
         break;
-      case "grant-form":
+      case "grant-form": {
+        const amount = Number($("#grant-amount").value);
+        if (!Number.isInteger(amount) || amount === 0)
+          throw new Error("请输入非零整数，负数为扣减");
         await post("/api/admin/grant", {
           user_id: S.grantUser,
-          amount: Number($("#grant-amount").value),
+          amount,
+          note: $("#grant-note").value,
         });
         close();
         S.admin = await api("/api/admin");
         await refresh();
         render();
-        toast("积分已发放");
+        toast(amount > 0 ? `已发放 ${amount} 积分` : `已扣减 ${-amount} 积分`);
         break;
+      }
       case "config-form": {
         const c = S.admin.config;
         await post("/api/admin/config", {
@@ -1585,6 +1593,14 @@ document.addEventListener("submit", async (e) => {
             discover_pick: Number($("#discover-pick").value),
           },
           ranking: JSON.parse($("#ranking").value),
+          signup: {
+            whitelist: $("#signup-whitelist").checked,
+            emails: $("#signup-emails")
+              .value.split(/[\s,，;；]+/)
+              .map((x) => x.trim())
+              .filter(Boolean),
+            welcome_credits: Number($("#signup-welcome").value),
+          },
         });
         S.admin = await api("/api/admin");
         await refresh();
