@@ -1,14 +1,16 @@
-import os, json, re, time, secrets, hashlib, hmac, csv, io, zipfile, html, urllib.parse
-from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+import os, json, re, time, secrets, hashlib, hmac, csv, io, zipfile, html, urllib.parse, socket, threading, http.client
+from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality
 from .ranking import score
 from .skills import SKILL_NAMES
+from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
 
 ROOT = Path(__file__).resolve().parent.parent
-RATE = {}
+RATE = RateLimiter()
+STATIC_CACHE = StaticCache()
 
 
 def comment_layout_text(layout):
@@ -97,6 +99,48 @@ class Error(Exception):
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "DAOLOOK"
+    sys_version = ""
+    request_read_timeout = 15
+
+    def setup(self):
+        self.request.settimeout(self.request_read_timeout)
+        super().setup()
+        # Absolute header/body deadline also stops clients that trickle bytes forever.
+        self.read_deadline = threading.Timer(self.request_read_timeout, self.expire_read)
+        self.read_deadline.daemon = True
+        self.read_deadline.start()
+
+    def expire_read(self):
+        try:
+            self.connection.shutdown(socket.SHUT_RDWR)
+        except OSError:
+            pass
+
+    def finish(self):
+        self.read_deadline.cancel()
+        super().finish()
+
+    def parse_request(self):
+        original = self.rfile
+        class HeaderReader:
+            def __init__(self):
+                self.remaining = 32768
+            def readline(self, limit=-1):
+                line = original.readline(min(limit if limit >= 0 else 32769, self.remaining + 1))
+                self.remaining -= len(line)
+                if self.remaining < 0:
+                    raise http.client.LineTooLong('request headers')
+                return line
+        self.rfile = HeaderReader()
+        try:
+            return super().parse_request()
+        finally:
+            self.rfile = original
+
+    def send_error(self, code, message=None, explain=None):
+        self.close_connection = True
+        messages = {431: "请求头过大", 414: "请求地址过长", 501: "不支持的操作"}
+        self.send({"error": messages.get(code, "请求格式不正确")}, code)
 
     def log_message(self, fmt, *args):
         pass
@@ -117,14 +161,18 @@ class Handler(BaseHTTPRequestHandler):
         )
         self.send_response(status)
         self.send_header("Content-Type", content_type)
-        self.send_header("Content-Length", str(len(body)))
+        if status != 304:
+            self.send_header("Content-Length", str(len(body)))
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Referrer-Policy", "same-origin")
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", (headers or {}).get("Cache-Control", "private, no-store"))
+        self.send_header("X-Frame-Options", "DENY")
         for k, v in (headers or {}).items():
-            self.send_header(k, v)
+            if k.lower() != "cache-control":
+                self.send_header(k, v)
         self.end_headers()
-        self.wfile.write(body)
+        if self.command != "HEAD" and status != 304:
+            self.wfile.write(body)
 
     def session(self, user):
         token = secrets.token_urlsafe(32)
@@ -169,6 +217,9 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.handle_request("GET")
 
+    def do_HEAD(self):
+        self.handle_request("HEAD")
+
     def do_POST(self):
         self.handle_request("POST")
 
@@ -180,30 +231,34 @@ class Handler(BaseHTTPRequestHandler):
 
     def handle_request(self, method):
         try:
-            path = urllib.parse.urlparse(self.path).path
-            query = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)
+            if len(self.path) > 8192:
+                raise Error("请求地址过长", 414)
+            parsed = urllib.parse.urlsplit(self.path)
+            if parsed.scheme or parsed.netloc:
+                raise Error("请求地址无效")
+            path = parsed.path
+            query = urllib.parse.parse_qs(parsed.query, max_num_fields=100)
+            length = validate_request(self.headers, method)
+            self.remote_ip = client_ip(self.client_address[0], self.headers)
+            RATE.check(("request", self.remote_ip), 1200)
+            if path.startswith("/api/"):
+                RATE.check(("api", self.remote_ip), 900)
+            if path in ("/api/auth/login", "/api/auth/register", "/api/auth/code", "/api/auth/reset") and method == "POST":
+                RATE.check(("auth", self.remote_ip), 15)
+            if path == "/api/auth/demo" and method == "POST":
+                RATE.check(("demo", self.remote_ip), 30)
             data = {}
-            if method != "GET":
-                origin = self.headers.get("Origin")
-                if origin and urllib.parse.urlparse(origin).netloc != self.headers.get(
-                    "Host"
-                ):
-                    raise Error("跨站请求已拒绝", 403)
-                length = int(self.headers.get("Content-Length", 0))
-                if length < 0:
-                    raise Error("请求长度无效")
-                if length > 3_000_000:
-                    raise Error("文件过大，请控制在 2 MB 以内", 413)
-                if length:
-                    data = json.loads(
-                        self.rfile.read(length),
-                        parse_constant=reject_nonfinite_json,
-                    )
-                    if not isinstance(data, dict):
-                        raise Error("请求内容必须是 JSON 对象")
+            if length:
+                body = self.rfile.read(length)
+                if len(body) != length:
+                    raise Error("请求未接收完整，请重试")
+                data = json.loads(body, parse_constant=reject_nonfinite_json)
+                if not isinstance(data, dict):
+                    raise Error("请求内容必须是 JSON 对象")
+            self.read_deadline.cancel()
             if path.startswith("/api/"):
                 return self.api(method, path, query, data)
-            if method != "GET":
+            if method not in ("GET", "HEAD"):
                 raise Error("不支持的操作", 405)
             target = (
                 (ROOT / "web" / path.lstrip("/")).resolve()
@@ -218,16 +273,26 @@ class Handler(BaseHTTPRequestHandler):
                 ".css": "text/css; charset=utf-8",
                 ".svg": "image/svg+xml",
             }
+            body, etag = STATIC_CACHE.read(target)
+            tags = [tag.strip().removeprefix("W/") for tag in self.headers.get("If-None-Match", "").split(",")]
             return self.send(
-                target.read_bytes(),
+                b"" if etag in tags or "*" in tags else body,
+                status=304 if etag in tags or "*" in tags else 200,
                 content_type=types.get(target.suffix, "application/octet-stream"),
                 headers={
+                    "Cache-Control": "public, no-cache",
+                    "ETag": etag,
                     "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
                 },
             )
-        except Error as e:
-            self.send({"error": e.message}, e.status)
-        except (ValueError, KeyError, TypeError) as e:
+        except (Error, Rejected) as e:
+            self.send({"error": e.message}, e.status, headers=getattr(e, "headers", None))
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
+        except jobs.TaskAdmissionError as e:
+            headers = {"Retry-After": str(e.retry_after)} if e.retry_after is not None else None
+            self.send({"error": str(e)}, e.status, headers=headers)
+        except (ValueError, KeyError, TypeError, RecursionError) as e:
             self.send({"error": str(e)}, 400)
         except Exception:
             import traceback
@@ -249,12 +314,11 @@ class Handler(BaseHTTPRequestHandler):
             "/api/auth/code",
             "/api/auth/reset",
         ) and method == "POST":
-            ip = self.client_address[0]
-            RATE[ip] = [x for x in RATE.get(ip, []) if x > time.time() - 60]
-            if len(RATE[ip]) >= 15:
-                raise Error("请求过于频繁，请一分钟后重试", 429)
-            RATE[ip].append(time.time())
             email = str(data.get("email", "")).strip().lower()
+            if len(email) > 254 or len(str(data.get("password", ""))) > 1024:
+                raise Error("邮箱或密码过长")
+            if email:
+                RATE.check(("auth-account", hashlib.sha256(email.encode()).hexdigest()), 15)
             if path == "/api/auth/code":
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                     raise Error("请输入有效邮箱")
@@ -342,6 +406,12 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
         u = self.user()
+        RATE.check(("account", u["id"]), 600)
+        if method not in ("GET", "HEAD"):
+            RATE.check(("write", u["id"]), 120)
+        if path in ("/api/analyze", "/api/create", "/api/original", "/api/cover", "/api/cover/preview", "/api/extract", "/api/export", "/api/admin/test", "/api/admin/tikhub-test", "/api/admin/skills/state", "/api/admin/mail-test", "/api/admin/retry"):
+            RATE.check(("expensive-account", u["id"]), 30)
+            RATE.check(("expensive-ip", self.remote_ip), 120)
         if path == "/api/bootstrap":
             with db() as c:
                 projects = [
@@ -373,9 +443,12 @@ class Handler(BaseHTTPRequestHandler):
                 {"text": documents.extract(data.get("name"), data.get("data"))}
             )
         if path == "/api/projects" and method == "POST":
-            name = str(data.get("name", "")).strip()[:60]
-            if not name:
-                raise Error("请输入项目名称")
+            name, description = data.get("name"), data.get("description", "")
+            if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+                raise Error("项目名称需要填写 1 到 100 字")
+            if not isinstance(description, str) or len(description) > 2000:
+                raise Error("项目介绍最多 2000 字")
+            name = name.strip()
             ident = uid()
             with db() as c:
                 c.execute(
@@ -384,11 +457,24 @@ class Handler(BaseHTTPRequestHandler):
                         ident,
                         u["id"],
                         name,
-                        str(data.get("description", ""))[:500],
+                        description.strip(),
                         now(),
                     ),
                 )
             return self.send({"id": ident})
+        project_match = re.fullmatch(r"/api/projects/([a-f0-9]+)", path)
+        if project_match and method == "PATCH":
+            ident = project_match.group(1)
+            self.project(ident, u)
+            name, description = data.get("name"), data.get("description", "")
+            if not isinstance(name, str) or not name.strip() or len(name.strip()) > 100:
+                raise Error("项目名称需要填写 1 到 100 字")
+            if not isinstance(description, str) or len(description) > 2000:
+                raise Error("项目介绍最多 2000 字")
+            with db() as c:
+                c.execute("UPDATE projects SET name=?,description=? WHERE id=? AND user_id=?",
+                          (name.strip(), description.strip(), ident, u["id"]))
+            return self.send({"ok": True})
         if path == "/api/credits":
             with db() as c:
                 rows = [
@@ -437,6 +523,8 @@ class Handler(BaseHTTPRequestHandler):
                     s["analysis"] = json.loads(a[0]) if a else {}
                     sources.append(s)
                 creations = []
+                results = {r["creation_id"]: {**json.loads(r["data"]), "recorded_at": r["updated_at"]}
+                           for r in c.execute("SELECT * FROM creation_results WHERE project_id=?", (project_id,))}
                 tracking = {
                     r["creation_id"]: r
                     for r in c.execute(
@@ -451,6 +539,7 @@ class Handler(BaseHTTPRequestHandler):
                     d = dict(r)
                     d["data"] = json.loads(d["data"])
                     d["tracking"] = production.row_view(tracking.get(d["id"]))
+                    d["results"] = results.get(d["id"], {})
                     creations.append(d)
                 assets = [
                     dict(r)
@@ -529,6 +618,8 @@ class Handler(BaseHTTPRequestHandler):
                 ).fetchone()
             if not source:
                 raise Error("请先选择参考内容", 404)
+            if json.loads(source["data"]).get("kind") == "brief":
+                raise Error("请从自主创作主题点击再来一批")
             for field in ("requirements", "temporary"):
                 if (
                     not isinstance(data.get(field, ""), str)
@@ -548,13 +639,13 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 }
             if data.get("again") and "assets" not in data:
-                # 再来一批：沿用这条参考上一次仍然存在的资料选择与本次要求；临时资料可能已清理，不沿用。
+                # 只继承成功任务，临时资料仅在尚未过期时复用。
                 with db() as c:
                     last = next(
                         (
-                            json.loads(r["payload"])
+                            {**json.loads(r["payload"]), "temporary": content_quality.reusable_temporary(json.loads(r["payload"]), r["updated_at"], setting("limits").get("temporary_ttl_hours", 24))}
                             for r in c.execute(
-                                "SELECT payload FROM tasks WHERE project_id=? AND kind='create' ORDER BY created_at DESC",
+                                "SELECT payload,updated_at FROM tasks WHERE project_id=? AND kind='create' AND state='SUCCEEDED' ORDER BY created_at DESC,rowid DESC",
                                 (project_id,),
                             )
                             if json.loads(r["payload"]).get("source_id") == source["id"]
@@ -566,6 +657,8 @@ class Handler(BaseHTTPRequestHandler):
                     "source_id": source["id"],
                     "assets": selected,
                     "requirements": data.get("requirements", last.get("requirements", "")),
+                    "temporary": data.get("temporary", last.get("temporary", "")),
+                    "goal": data.get("goal", last.get("goal", "leads")),
                 }
             if any(x not in available for x in selected):
                 raise Error("所选资料不存在或不属于当前项目")
@@ -576,8 +669,12 @@ class Handler(BaseHTTPRequestHandler):
                     ("assets", []),
                     ("requirements", ""),
                     ("temporary", ""),
+                    ("goal", "leads"),
                 ]
             }
+            payload["goal"] = content_quality.goal(payload["goal"])
+            if setting("mode") != "demo" and not selected and not payload["temporary"].strip():
+                raise Error("请提供自己的产品或服务资料，参考内容不能代替你的业务事实")
             return self.send(
                 {"task_ids": [jobs.submit(u["id"], project_id, "create", payload)]}, 202
             )
@@ -589,6 +686,8 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     raise Error("创作要求与临时资料必须是最多 100000 字的文本")
             brief_id = data.get("brief_id")
+            if brief_id is not None and not isinstance(brief_id, str):
+                raise Error("自主创作主题格式不正确")
             selected = data.get("assets", [])
             if not isinstance(selected, list) or any(
                 not isinstance(x, str) for x in selected
@@ -614,21 +713,33 @@ class Handler(BaseHTTPRequestHandler):
                 brief = {
                     k: old_brief.get(k, "") for k in ("platform", "topic", "keyword")
                 }
+                brief["goal"] = data.get("goal", old_brief.get("goal", "leads"))
                 if not selected and "assets" not in data:
                     # 再来一批：沿用上次仍然存在的资料选择
                     selected = [a for a in old_brief.get("assets", []) if a in available]
                 requirements = data.get("requirements", old_brief.get("requirements", ""))
+                if "temporary" not in data:
+                    with db() as c:
+                        last = next(({**json.loads(r["payload"]), "temporary": content_quality.reusable_temporary(json.loads(r["payload"]), r["updated_at"], setting("limits").get("temporary_ttl_hours", 24))} for r in c.execute(
+                            "SELECT payload,updated_at FROM tasks WHERE project_id=? AND kind='original' AND state='SUCCEEDED' ORDER BY created_at DESC,rowid DESC",
+                            (project_id,),
+                        ) if json.loads(r["payload"]).get("source_id") == brief_id), {})
+                    data["temporary"] = last.get("temporary", "")
             else:
+                if any(not isinstance(data.get(k, ""), str) for k in ("topic", "keyword")):
+                    raise Error("创作主题与搜索词必须是文本")
                 brief = {
                     "platform": data.get("platform"),
                     "topic": str(data.get("topic", "")).strip(),
                     "keyword": str(data.get("keyword", "")).strip()[:60],
+                    "goal": data.get("goal", "leads"),
                 }
                 if brief["platform"] not in ("xhs", "douyin"):
                     raise Error("请选择小红书或抖音")
                 if not 2 <= len(brief["topic"]) <= 200:
                     raise Error("请填写 2 到 200 字的创作主题")
                 requirements = data.get("requirements", "")
+            brief["goal"] = content_quality.goal(brief["goal"])
             if any(x not in available for x in selected):
                 raise Error("所选资料不存在或不属于当前项目")
             temporary = data.get("temporary", "")
@@ -801,6 +912,16 @@ class Handler(BaseHTTPRequestHandler):
                         (int(bool(data.get("saved"))), ident),
                     )
             return self.send({"ok": True})
+        match = re.fullmatch(r"/api/results/([a-f0-9]+)", path)
+        if match and method == "POST":
+            ident = match.group(1)
+            results = content_quality.clean_results(data.get("results"))
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                if not c.execute("SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL", (ident, project_id)).fetchone():
+                    raise Error("稿件不存在", 404)
+                c.execute("INSERT OR REPLACE INTO creation_results VALUES (?,?,?,?)", (ident, project_id, dumps(results), now()))
+            return self.send({"ok": True})
         match = re.fullmatch(r"/api/tracking/([a-f0-9]+)", path)
         if match and method == "POST":
             ident = match.group(1)
@@ -896,15 +1017,25 @@ class Handler(BaseHTTPRequestHandler):
                 "工序状态",
                 "发布账号",
                 "发布时间",
+                "创作目标",
+                "交付检查",
+                "发布前待补充",
+                "浏览次数",
+                "有效咨询",
+                "订单数",
+                "推广花费",
+                "效果备注",
+                "效果记录时间",
             ]
         ]
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,k.status AS track_status,k.published_at,a.name AS account_name FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,k.status AS track_status,k.published_at,a.name AS account_name,f.data AS result_data,f.updated_at AS result_time FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id LEFT JOIN creation_results f ON f.creation_id=o.id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
                 src = json.loads(r["source_data"] or "{}")
+                effect = json.loads(r["result_data"] or "{}")
                 rows.append(
                     [
                         r["id"],
@@ -935,6 +1066,11 @@ class Handler(BaseHTTPRequestHandler):
                         r["created_at"],
                     ]
                     + tracking_columns(r)
+                    + [content_quality.GOALS.get(d.get("goal"), ("",))[0],
+                       {"checked": "基础检查通过，事实仍需核对", "needs_input": "发布前需补充"}.get(d.get("quality", {}).get("status"), "历史稿件未检查"),
+                       "\n".join(d.get("quality", {}).get("issues", [])),
+                       *(effect.get(k, "") for k in ("views", "leads", "orders", "spend", "note")),
+                       r["result_time"] or ""]
                 )
         if fmt == "xlsx":
             out = io.BytesIO()
@@ -1250,8 +1386,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({"ok": True})
         if path == "/api/admin/password" and method == "POST":
             password = str(data.get("password", ""))
-            if len(password) < 8:
-                raise Error("新密码至少 8 位")
+            if not 8 <= len(password) <= 1024:
+                raise Error("新密码需要 8 到 1024 位")
             with db() as c:
                 if not c.execute(
                     "UPDATE users SET password=? WHERE id=?",
@@ -1444,7 +1580,7 @@ def main():
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
     print(f"DAOLOOK ready: http://{host}:{port}", flush=True)
-    ThreadingHTTPServer((host, port), Handler).serve_forever()
+    BoundedHTTPServer((host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

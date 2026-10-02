@@ -1,10 +1,40 @@
-import json, queue, threading, traceback
+import hashlib, json, queue, threading, traceback
 from .db import db, uid, now, dumps, setting, ledger
 from . import adapters, covers, discovery
 
-Q = queue.Queue()
+MAX_USER_ACTIVE = 20
+MAX_GLOBAL_ACTIVE = 200
+Q = queue.Queue(maxsize=MAX_GLOBAL_ACTIVE)
 TERMINAL = ("SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED")
 DISCOVERY = ("creator", "keyword")
+
+
+class TaskAdmissionError(ValueError):
+    def __init__(self, message, status=429, retry_after=30):
+        super().__init__(message)
+        self.status = status
+        self.retry_after = retry_after
+
+
+def history_results(project, platform, goal):
+    """Only this project's same-platform, same-objective published results."""
+    with db() as c:
+        rows = c.execute(
+            "SELECT o.data,r.data AS results,r.updated_at,k.published_at FROM creation_results r "
+            "JOIN creation_outputs o ON o.id=r.creation_id JOIN source_contents s ON s.id=o.source_id "
+            "JOIN creation_tracking k ON k.creation_id=o.id "
+            "WHERE o.project_id=? AND s.platform=? AND k.status='published' AND o.deleted_at IS NULL "
+            "ORDER BY r.updated_at DESC LIMIT 100", (project, platform),
+        ).fetchall()
+    result = []
+    for row in rows:
+        output = json.loads(row["data"])
+        if output.get("goal") != goal or output.get("demo"):
+            continue
+        result.append({"title": output.get("title"), "angle": output.get("angle"),
+                       "results": json.loads(row["results"]), "source": "用户手动记录，未经平台验证",
+                       "published_at": row["published_at"], "recorded_at": row["updated_at"]})
+    return result[:12]
 
 
 def discover_pick():
@@ -28,7 +58,18 @@ def submit(user, project, kind, payload):
     return submit_many(user, project, kind, [payload])[0]
 
 
+def submission_fingerprint(kind, payload):
+    # Generated metadata must not make a double click look like a new request.
+    omitted = {"execution_mode", "unit_cost", "pick", "asset_snapshot"}
+    if kind == "original":
+        omitted.add("source_id")
+    value = {k: v for k, v in payload.items() if k not in omitted}
+    return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
 def submit_many(user, project, kind, payloads):
+    if not payloads or len(payloads) > MAX_USER_ACTIVE:
+        raise ValueError("一次提交的任务过多，请分批提交")
     rules = setting("rules")
     costs = [task_cost(kind, payload, rules) for payload in payloads]
     ids = [uid() for _ in payloads]
@@ -39,6 +80,26 @@ def submit_many(user, project, kind, payloads):
             "SELECT 1 FROM projects WHERE id=? AND user_id=?", (project, user)
         ).fetchone():
             raise ValueError("项目不存在或无访问权限")
+        active = c.execute(
+            "SELECT project_id,kind,payload FROM tasks WHERE user_id=? AND state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')",
+            (user,),
+        ).fetchall()
+        if len(active) + len(payloads) > MAX_USER_ACTIVE:
+            raise TaskAdmissionError("进行中的任务较多，请等待完成后再提交")
+        total_active = c.execute(
+            "SELECT count(*) FROM tasks WHERE state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')"
+        ).fetchone()[0]
+        if total_active + len(payloads) > MAX_GLOBAL_ACTIVE:
+            raise TaskAdmissionError("当前排队人数较多，请稍后重试", 503)
+        existing = {
+            submission_fingerprint(kind, json.loads(row["payload"]))
+            for row in active if row["project_id"] == project and row["kind"] == kind
+        }
+        for payload in payloads:
+            fingerprint = submission_fingerprint(kind, payload)
+            if fingerprint in existing:
+                raise TaskAdmissionError("相同任务正在处理中，请在任务进度中查看，无需重复提交", 409, None)
+            existing.add(fingerprint)
         if not c.execute(
             "UPDATE credit_accounts SET balance=balance-?,frozen=frozen+? WHERE user_id=? AND balance>=?",
             (total, total, user, total),
@@ -82,8 +143,13 @@ def submit_many(user, project, kind, payloads):
                 ),
             )
             ledger(c, user, ident, "FREEZE", -cost, "冻结：" + kind)
-    for ident in ids:
-        Q.put(ident)
+        # Nonblocking bounded handoff while holding the DB write transaction.
+        # Workers can only claim after commit; a full queue rolls back all credits.
+        try:
+            for ident in ids:
+                Q.put(ident, block=False)
+        except queue.Full:
+            raise TaskAdmissionError("当前排队人数较多，请稍后重试", 503)
     return ids
 
 
@@ -107,10 +173,16 @@ def cancel(ident, user):
 
 def state(ident, s):
     with db() as c:
-        c.execute(
+        return bool(c.execute(
             "UPDATE tasks SET state=?,updated_at=? WHERE id=? AND state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')",
             (s, now(), ident),
-        )
+        ).rowcount)
+
+
+def active(ident):
+    with db() as c:
+        row = c.execute("SELECT state FROM tasks WHERE id=?", (ident,)).fetchone()
+    return bool(row and row["state"] not in TERMINAL)
 
 
 def fail(ident, error):
@@ -131,6 +203,14 @@ def fail(ident, error):
 
 
 def run(ident):
+    with adapters.task_scope(lambda: active(ident)):
+        try:
+            return _run(ident)
+        except adapters.TaskCancelled:
+            return
+
+
+def _run(ident):
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
         if not c.execute(
@@ -173,7 +253,8 @@ def run(ident):
             raise ValueError("未找到已发布的拆解/创作 Skill")
     prompt = version["prompt"] if version else ""
     if kind == "analyze":
-        state(ident, "FETCHING")
+        if not state(ident, "FETCHING"):
+            return
         entry = payload.get("entry", "single")
         if demo:
             indexes = (
@@ -206,6 +287,8 @@ def run(ident):
                 for item in discovery.pick(
                     items, payload.get("pick") or discover_pick(), field, base
                 ):
+                    if not active(ident):
+                        return
                     try:
                         content = adapter.getContentDetail(item["url"], p)
                     except Exception as e:
@@ -218,13 +301,18 @@ def run(ident):
                             content[key] = item[key]
                     content["selection"] = item["selection"]
                     contents.append(content)
-        state(ident, "ANALYZING")
+        if not state(ident, "ANALYZING"):
+            return
         for content in contents:
+            if not active(ident):
+                return
             provided = payload.get("transcript", "") if entry == "single" else ""
             if not content.get("demo") and (
                 provided or content.get("media_url") or content["platform"] == "douyin"
             ):
                 adapters.attach_transcript(content, provided)
+            if not active(ident):
+                return
             try:
                 analysis, model = adapters.analyze(content, prompt)
             except Exception as e:
@@ -247,7 +335,8 @@ def run(ident):
                 + (failures[0]["error"] if failures else "没有可用内容")
             )
     elif kind == "create":
-        state(ident, "GENERATING")
+        if not state(ident, "GENERATING"):
+            return
         with db() as c:
             assets = [
                 dict(r)
@@ -285,10 +374,12 @@ def run(ident):
                     )
                 )
             ]
-        assets = payload.get("asset_snapshot", assets)
+        assets = list(payload.get("asset_snapshot", assets))
         if payload.get("temporary"):
-            assets.append({"name": "临时资料", "content": payload["temporary"]})
+            assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
+        if not active(ident):
+            return
         outputs, model = adapters.create(
             content,
             assets,
@@ -298,16 +389,20 @@ def run(ident):
             analysis=analysis,
             previous=previous,
             demo=demo,
+            goal=payload.get("goal", "leads"),
+            history_results=history_results(t["project_id"], content["platform"], payload.get("goal", "leads")),
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
     elif kind == "original":
         brief = payload["brief"]
-        state(ident, "FETCHING")
+        if not state(ident, "FETCHING"):
+            return
         benchmark = adapters.fetch_benchmark(
             brief.get("keyword") or brief["topic"], brief["platform"], demo
         )
-        state(ident, "GENERATING")
+        if not state(ident, "GENERATING"):
+            return
         with db() as c:
             batch = 1 + c.execute(
                 "SELECT count(DISTINCT task_id) FROM creation_outputs WHERE source_id=?",
@@ -325,8 +420,10 @@ def run(ident):
             ]
         assets = list(payload.get("asset_snapshot", []))
         if payload.get("temporary"):
-            assets.append({"name": "临时资料", "content": payload["temporary"]})
+            assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
+        if not active(ident):
+            return
         outputs, model = adapters.create_original(
             brief,
             benchmark,
@@ -336,6 +433,7 @@ def run(ident):
             batch,
             previous=previous,
             demo=demo,
+            history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -343,7 +441,8 @@ def run(ident):
             if demo:
                 output["demo"] = True
     else:
-        state(ident, "GENERATING")
+        if not state(ident, "GENERATING"):
+            return
         with db() as c:
             output = c.execute(
                 "SELECT data FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL",

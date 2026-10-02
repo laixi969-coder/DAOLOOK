@@ -26,7 +26,11 @@
           "storyboard",
           "shooting_list",
           "missing",
-          "hook"
+          "hook",
+          "audience",
+          "value",
+          "cta",
+          "evidence"
         ],
         "properties": {
           "direction": {
@@ -100,6 +104,38 @@
           "hook": {
             "type": "string",
             "minLength": 1
+          },
+          "audience": {
+            "type": "string",
+            "description": "具体目标人群"
+          },
+          "value": {
+            "type": "string",
+            "description": "读者的具体收获"
+          },
+          "cta": {
+            "type": "string",
+            "description": "与正文结尾一致的一句行动引导"
+          },
+          "evidence": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "asset_id",
+                "quote"
+              ],
+              "properties": {
+                "asset_id": {
+                  "type": "string"
+                },
+                "quote": {
+                  "type": "string",
+                  "minLength": 4
+                }
+              }
+            },
+            "description": "仅引用本次用户文字资料的原文；无法引用时空数组并记录缺项"
           }
         }
       }

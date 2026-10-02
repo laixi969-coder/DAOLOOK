@@ -1,0 +1,79 @@
+- complementary:
+  - link "DAOLOOK ✳":
+    - /url: "#discover"
+    - text: DAOLOOK
+    - generic: ✳
+  - generic: 有依据 · 有灵感 · 有表达
+  - button "我的灵感空间 个人工作空间 ⌄":
+    - text: 我的灵感空间
+    - generic: 个人工作空间
+    - generic: ⌄
+  - generic: WORKSPACE
+  - navigation "工作空间":
+    - button "开始创作":
+      - text: 开始创作
+    - button "参考收藏":
+      - text: 参考收藏
+    - button "我的创作 8":
+      - text: 我的创作
+      - generic: "8"
+    - button "项目资料":
+      - text: 项目资料
+  - generic: MANAGE
+  - navigation:
+    - button "任务记录":
+      - text: 任务记录
+    - button "积分账本":
+      - text: 积分账本
+  - text: 创作积分
+  - generic: 85可用积分
+  - button "查看积分与消耗":
+    - text: 查看积分与消耗
+  - button "W 账号与项目 个人创作者":
+    - generic: W
+    - text: 账号与项目
+    - generic: 个人创作者
+- main:
+  - generic: /
+  - generic: 我的灵感空间
+  - generic: /
+  - strong: 积分账本
+  - generic: 演示模式 · 仅体验模板
+  - button "使用指南":
+    - text: 使用指南
+  - generic: W
+  - generic: CREDIT ACCOUNT
+  - heading "积分与使用记录" [level=1]
+  - paragraph: 生成前可查看费用；成功后扣除，失败或取消会退回。
+  - paragraph: 当前可用积分
+  - strong: "85"
+  - paragraph: 正在冻结
+  - strong: "0"
+  - paragraph: 创作一批内容
+  - strong: 15 积分
+  - generic: 暂不支持在线充值，积分由管理员发放。已完成稿件的主动删除不会退还积分；封面生成单独计费，每次 8 积分。
+  - paragraph: 提交时预留积分，成功后确认扣除；结算行显示 0 表示没有再次扣款。
+  - table:
+    - rowgroup:
+      - row "流水说明 类型 可用积分变动 时间":
+        - columnheader "流水说明"
+        - columnheader "类型"
+        - columnheader "可用积分变动"
+        - columnheader "时间"
+    - rowgroup:
+      - row "结算：内容创作 结算 0 10/02 06:37":
+        - cell "结算：内容创作"
+        - cell "结算"
+        - cell "0"
+        - cell "10/02 06:37"
+      - row "冻结：内容创作 冻结 -15 10/02 06:37":
+        - cell "冻结：内容创作"
+        - cell "冻结"
+        - cell "-15"
+        - cell "10/02 06:37"
+      - row "欢迎积分 发放 +100 10/02 06:36":
+        - cell "欢迎积分"
+        - cell "发放"
+        - cell "+100"
+        - cell "10/02 06:36"
+- status

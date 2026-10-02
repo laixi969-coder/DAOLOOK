@@ -1,0 +1,111 @@
+- complementary:
+  - link "DAOLOOK ✳":
+    - /url: "#discover"
+    - text: DAOLOOK
+    - generic: ✳
+  - generic: 有依据 · 有灵感 · 有表达
+  - button "我的灵感空间 个人工作空间 ⌄":
+    - text: 我的灵感空间
+    - generic: 个人工作空间
+    - generic: ⌄
+  - generic: WORKSPACE
+  - navigation "工作空间":
+    - button "开始创作":
+      - text: 开始创作
+    - button "参考收藏":
+      - text: 参考收藏
+    - button "我的创作 8":
+      - text: 我的创作
+      - generic: "8"
+    - button "项目资料":
+      - text: 项目资料
+  - generic: MANAGE
+  - navigation:
+    - button "任务记录":
+      - text: 任务记录
+    - button "积分账本":
+      - text: 积分账本
+  - text: 创作积分
+  - generic: 85可用积分
+  - button "查看积分与消耗":
+    - text: 查看积分与消耗
+  - button "W 账号与项目 个人创作者":
+    - generic: W
+    - text: 账号与项目
+    - generic: 个人创作者
+- main:
+  - generic: /
+  - generic: 我的灵感空间
+  - generic: /
+  - strong: 开始创作
+  - generic: 演示模式 · 仅体验模板
+  - button "使用指南":
+    - text: 使用指南
+  - generic: W
+  - generic: YOUR NEXT GREAT IDEA STARTS HERE
+  - heading "把你的生意，讲给对的人。" [level=1]
+  - paragraph: 给一份业务资料，选一个目标，拿到能用的文案。
+  - generic: 01 选目标
+  - generic: →
+  - generic: 02 给资料
+  - generic: →
+  - generic: 03 拿文案
+  - tablist "参考入口":
+    - tab "用我的资料创作" [selected]:
+      - text: 用我的资料创作
+    - tab "单条链接":
+      - text: 单条链接
+    - tab "批量链接":
+      - text: 批量链接
+    - tab "博主主页":
+      - text: 博主主页
+    - tab "关键词 / 品类":
+      - text: 关键词 / 品类
+    - generic: 把你的产品和服务讲清楚
+  - generic: 这次最想要什么？
+  - combobox "这次最想要什么？":
+    - option "更多人看到"
+    - option "更多人咨询"
+    - option "更多人下单" [selected]
+  - generic: 发到哪里？
+  - combobox "发到哪里？":
+    - option "小红书图文" [selected]
+    - option "抖音脚本"
+  - generic: 想介绍什么？
+  - textbox "想介绍什么？":
+    - /placeholder: 例如：店里的冷萃挂耳咖啡
+    - text: 刷新后仍保留的冷萃咖啡
+  - generic: 把业务资料给我
+  - textbox "把业务资料给我 已有资料可在下方勾选。输入会在当前标签页保留 24 小时，退出账号后清除。":
+    - /placeholder: 直接粘贴产品介绍、客户常问的问题或服务说明。比如：卖给谁、能解决什么、有什么真实特点、怎么咨询或购买。
+    - text: 每盒10包，45元。适合办公室冲泡，店内购买。
+  - generic: 已有资料可在下方勾选。输入会在当前标签页保留 24 小时，退出账号后清除。
+  - text: 上传业务文档
+  - text: 添加产品 / 人物照片
+  - generic "使用已保存的资料（共 1 份，已选 0 份）"
+  - generic "还有想补充的？（可选）"
+  - generic: 当前为演示模式，生成的是体验模板
+  - generic: 预计 15 积分 · 失败自动退还
+  - button "帮我写好":
+    - text: 帮我写好
+  - generic "想找一些写法参考？（可选）"
+  - option "全部来源" [selected]
+  - option "真实参考"
+  - option "演示样本"
+  - option "全部" [selected]
+  - option "全部平台" [selected]
+  - option "小红书"
+  - option "抖音"
+  - option "最近拆解" [selected]
+  - option "点赞最多"
+  - option "相对表现（未校准）"
+  - option "粉丝效率"
+- dialog "项目设置":
+  - heading "项目设置" [level=2]
+  - button "关闭" [active]:
+  - generic: 项目名称
+  - textbox "项目名称": 我的灵感空间
+  - generic: 项目介绍
+  - textbox "项目介绍": 从好内容出发，找到自己的表达。
+  - button "保存设置"
+- status

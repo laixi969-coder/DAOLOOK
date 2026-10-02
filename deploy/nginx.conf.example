@@ -1,0 +1,69 @@
+# Include inside nginx's http {} context; replace domain and certificate paths.
+# The app listens only on 127.0.0.1:8000. Never expose that port to the Internet.
+limit_req_zone $binary_remote_addr zone=daolook_all:10m rate=20r/s;
+map $uri $daolook_auth_key {
+    default "";
+    ~^/api/auth/(login|register|code|reset|demo)$ $binary_remote_addr;
+}
+limit_req_zone $daolook_auth_key zone=daolook_auth:10m rate=15r/m;
+limit_conn_zone $binary_remote_addr zone=daolook_conn:10m;
+
+server {
+    listen 80;
+    server_name daolook.example;
+    return 301 https://daolook.example$request_uri;
+}
+
+server {
+    listen 443 ssl;
+    server_name daolook.example;
+    ssl_certificate /etc/letsencrypt/live/daolook.example/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/daolook.example/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 3000000;
+    client_header_timeout 10s;
+    client_body_timeout 15s;
+    send_timeout 15s;
+    keepalive_timeout 15s;
+    large_client_header_buffers 4 8k;
+    limit_req zone=daolook_all burst=60 nodelay;
+    limit_req zone=daolook_auth burst=15 nodelay;
+    limit_req_status 429;
+    limit_conn daolook_conn 20;
+    limit_conn_status 503;
+    error_page 429 =429 @rate_limited;
+    error_page 503 =503 @busy;
+
+    add_header Strict-Transport-Security "max-age=31536000" always;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host $host;
+        # OVERWRITE untrusted incoming values; app trusts only this proxy peer.
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+        proxy_http_version 1.1;
+        proxy_request_buffering on;
+        proxy_buffering on;
+        proxy_connect_timeout 3s;
+        proxy_read_timeout 180s;
+        proxy_send_timeout 15s;
+        # Never cache API/session/export responses at the proxy.
+        proxy_cache off;
+    }
+    location @rate_limited {
+        default_type application/json;
+        add_header Retry-After 60 always;
+        add_header Cache-Control "private, no-store" always;
+        return 429 '{"error":"操作较频繁，请稍后重试"}';
+    }
+    location @busy {
+        default_type application/json;
+        add_header Retry-After 5 always;
+        add_header Cache-Control "private, no-store" always;
+        return 503 '{"error":"服务繁忙，请稍后重试"}';
+    }
+}

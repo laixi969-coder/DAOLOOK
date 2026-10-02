@@ -1,0 +1,328 @@
+- complementary:
+  - link "DAOLOOK ✳":
+    - /url: "#discover"
+    - text: DAOLOOK
+    - generic: ✳
+  - generic: 有依据 · 有灵感 · 有表达
+  - button "我的灵感空间 个人工作空间 ⌄":
+    - text: 我的灵感空间
+    - generic: 个人工作空间
+    - generic: ⌄
+  - generic: WORKSPACE
+  - navigation "工作空间":
+    - button "开始创作":
+      - text: 开始创作
+    - button "参考收藏":
+      - text: 参考收藏
+    - button "我的创作 8":
+      - text: 我的创作
+      - generic: "8"
+    - button "项目资料":
+      - text: 项目资料
+  - generic: MANAGE
+  - navigation:
+    - button "任务记录":
+      - text: 任务记录
+    - button "积分账本":
+      - text: 积分账本
+  - text: 创作积分
+  - generic: 85可用积分
+  - button "每一个好想法，都值得被实现":
+    - text: 每一个好想法，都值得被实现
+  - button "W walkthrough-before-20261002 个人创作者":
+    - generic: W
+    - text: walkthrough-before-20261002
+    - generic: 个人创作者
+- main:
+  - generic: /
+  - generic: 我的灵感空间
+  - generic: /
+  - strong: 我的创作
+  - generic: 演示模式
+  - button "使用指南":
+    - text: 使用指南
+  - generic: W
+  - generic: MADE BY YOU, INSPIRED BY THE WORLD
+  - heading "你的表达，在这里生长。" [level=1]
+  - paragraph: 每次生成都是新的可能。历史版本持续保留，随时复制、收藏与导出。
+  - button "Excel 导出":
+    - text: Excel 导出
+  - button "CSV 导出":
+    - text: CSV 导出
+  - button "开始新创作":
+    - text: 开始新创作
+  - paragraph: 自主创作 · 小红书
+  - heading "办公室咖啡" [level=2]
+  - button "再来一批":
+    - text: 再来一批
+  - paragraph: 依据：你选的 1 份项目资料。再来一批沿用目标、资料及尚未过期的临时资料。资料已过期时，请重新补充。
+  - generic: 演示样本，不是真实搜索结果
+  - generic "赛道参考：「办公室咖啡」候选 6 条，互动中位数 3.1w；只用来看写法"
+  - paragraph: 已发布内容
+  - strong: 0 / 8
+  - paragraph: 浏览次数
+  - strong: —
+  - paragraph: 有效咨询
+  - strong: —
+  - paragraph: 订单数
+  - strong: —
+  - paragraph: 0 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。
+  - paragraph: 在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。
+  - button "全部 8"
+  - button "待发布 8"
+  - button "已发布 0"
+  - button "第一小时进行中 0"
+  - heading "全部稿件 8 条" [level=2]:
+    - text: 全部稿件
+    - generic: 8 条
+  - button "仅看收藏"
+  - button "查看全部稿件"
+  - article:
+    - generic: 自主创作 · 小红书图文 · 真实困惑
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "钓鱼帖｜真实困惑：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【钓鱼帖 · 真实困惑】 这篇只处理办公室咖啡里的一个切角：真实困惑。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 对照说明
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "测评｜对照说明：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【测评 · 对照说明】 这篇只处理办公室咖啡里的一个切角：对照说明。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 选择困难
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "钓鱼帖｜选择困难：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【钓鱼帖 · 选择困难】 这篇只处理办公室咖啡里的一个切角：选择困难。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 使用前后
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "测评｜使用前后：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【测评 · 使用前后】 这篇只处理办公室咖啡里的一个切角：使用前后。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 场景求助
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "钓鱼帖｜场景求助：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【钓鱼帖 · 场景求助】 这篇只处理办公室咖啡里的一个切角：场景求助。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 避坑清单
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "测评｜避坑清单：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【测评 · 避坑清单】 这篇只处理办公室咖啡里的一个切角：避坑清单。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 提问截流
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "钓鱼帖｜提问截流：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【钓鱼帖 · 提问截流】 这篇只处理办公室咖啡里的一个切角：提问截流。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+  - article:
+    - generic: 自主创作 · 小红书图文 · 标准对比
+    - generic: 10/02 06:27
+    - generic: 更多人咨询
+    - generic: 正在了解这个主题的人
+    - strong: 发布前还需补充
+    - list:
+      - listitem: 这是演示模板，请切换真实服务后生成正式内容
+      - listitem: 文案含未填写内容，请补齐后再发布
+      - listitem: 业务事实缺少可核对的文字依据，请补充产品或服务资料
+      - listitem: 请核实并补充真实事实；这是演示模板，未调用 AI 模型。
+    - button "补充资料再写":
+      - text: 补充资料再写
+    - heading "测评｜标准对比：办公室咖啡" [level=3]
+    - generic: 演示稿件 · 模板示例，未调用 AI 模型
+    - generic: 【测评 · 标准对比】 这篇只处理办公室咖啡里的一个切角：标准对比。 [请补充你的真实场景、产品和可核实的事实。演示模板不编造经历或效果。] 你会先看哪一个差别？
+    - generic: "#生活方式 #创作灵感 #日常记录"
+    - generic "标题备选、配图与素材提示"
+    - generic "可用的评论回复"
+    - generic: 待发布
+    - button "已在平台发布":
+      - text: 已在平台发布
+    - generic: 浏览 — · 有效咨询 — · 订单 —
+    - button "记录效果"
+    - button "复制待完善稿":
+      - text: 复制待完善稿
+    - button "收藏":
+      - text: 收藏
+    - button "封面":
+      - text: 封面
+    - button "删除此稿件":
+- status: 8 条自主创作稿件已生成

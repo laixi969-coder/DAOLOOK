@@ -1,0 +1,79 @@
+- complementary:
+  - link "DAOLOOK ✳":
+    - /url: "#discover"
+    - text: DAOLOOK
+    - generic: ✳
+  - generic: 有依据 · 有灵感 · 有表达
+  - button "我的灵感空间 个人工作空间 ⌄":
+    - text: 我的灵感空间
+    - generic: 个人工作空间
+    - generic: ⌄
+  - generic: WORKSPACE
+  - navigation "工作空间":
+    - button "开始创作":
+      - text: 开始创作
+    - button "参考收藏":
+      - text: 参考收藏
+    - button "我的创作 0":
+      - text: 我的创作
+      - generic: "0"
+    - button "项目资料":
+      - text: 项目资料
+  - generic: MANAGE
+  - navigation:
+    - button "任务记录":
+      - text: 任务记录
+    - button "积分账本":
+      - text: 积分账本
+  - text: 创作积分
+  - generic: 100可用积分
+  - button "每一个好想法，都值得被实现":
+    - text: 每一个好想法，都值得被实现
+  - button "W walkthrough-before-20261002 个人创作者":
+    - generic: W
+    - text: walkthrough-before-20261002
+    - generic: 个人创作者
+- main:
+  - generic: /
+  - generic: 我的灵感空间
+  - generic: /
+  - strong: 项目资料
+  - generic: 演示模式
+  - button "使用指南":
+    - text: 使用指南
+  - generic: W
+  - generic: YOUR BRAND, IN CONTEXT
+  - heading "让 AI 更了解你的品牌" [level=1]
+  - paragraph: 沉淀品牌、产品和受众信息。创作时按需选择，让表达有据可依。
+  - button "添加资料":
+    - text: 添加资料
+  - heading "把品牌资料放进来" [level=3]
+  - paragraph:
+    - text: 添加品牌介绍、产品卖点、受众画像或禁用词，
+    - text: 创作时选择使用，资料不会自动全选。
+  - button "添加第一份资料":
+    - text: 添加第一份资料
+- dialog "添加项目资料":
+  - heading "添加项目资料" [level=2]
+  - button "关闭":
+  - generic: 资料名称
+  - textbox "资料名称": 办公室咖啡产品资料
+  - generic: 资料类型
+  - combobox "资料类型":
+    - option "品牌资料"
+    - option "产品信息" [selected]
+    - option "受众画像"
+    - option "禁用词"
+    - option "账号"
+    - option "图片"
+    - option "其他"
+  - generic: 资料内容
+  - textbox "资料内容" [active]:
+    - /placeholder: 请输入真实的品牌、产品或受众信息
+    - text: 每包12克，一盒10包，39元。适合办公室通勤人群，店内购买。
+  - generic: 上传文件 · 文本 / 图片
+  - button "上传文件 · 文本 / 图片 文本、Word（.docx）、PDF 自动提取文字；文件最大 2 MB。资料不会自动在创作中全选。"
+  - generic: 文本、Word（.docx）、PDF 自动提取文字；文件最大 2 MB。资料不会自动在创作中全选。
+  - button "保存资料":
+    - text: 保存资料
+- status

@@ -16,9 +16,17 @@ def cleanup():
             (cutoff,),
         ).fetchall():
             payload = json.loads(row["payload"])
+            changed = False
             if payload.get("temporary"):
                 payload["temporary"] = ""
                 payload["temporary_expired"] = True
+                changed = True
+            # Snapshots are job inputs, not permanent copies of deleted assets.
+            # Subsequent batches select the current saved assets by ID.
+            if "asset_snapshot" in payload:
+                del payload["asset_snapshot"]
+                changed = True
+            if changed:
                 c.execute(
                     "UPDATE tasks SET payload=? WHERE id=?", (dumps(payload), row["id"])
                 )
