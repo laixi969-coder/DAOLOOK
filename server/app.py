@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing
 from .ranking import score
 from .skills import SKILL_NAMES
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
@@ -292,6 +292,8 @@ class Handler(BaseHTTPRequestHandler):
         except jobs.TaskAdmissionError as e:
             headers = {"Retry-After": str(e.retry_after)} if e.retry_after is not None else None
             self.send({"error": str(e)}, e.status, headers=headers)
+        except editing.EditError as e:
+            self.send({"error": str(e)}, e.status)
         except (ValueError, KeyError, TypeError, RecursionError) as e:
             self.send({"error": str(e)}, 400)
         except Exception:
@@ -533,7 +535,7 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 }
                 for r in c.execute(
-                    "SELECT * FROM creation_outputs WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
+                    "SELECT o.*,(SELECT COALESCE(MAX(revision),0) FROM creation_revisions r WHERE r.creation_id=o.id) AS revision FROM creation_outputs o WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
                     (project_id,),
                 ):
                     d = dict(r)
@@ -855,6 +857,18 @@ class Handler(BaseHTTPRequestHandler):
                     ),
                 )
             return self.send({"id": ident})
+        match = re.fullmatch(r"/api/creations/([a-f0-9]+)/(revisions|edit|restore)", path)
+        if match:
+            ident, operation = match.groups()
+            if operation == "revisions" and method == "GET":
+                return self.send(editing.history(ident, project_id))
+            if operation in ("edit", "restore") and method == "POST":
+                if operation == "restore" and type(data.get("restore_revision")) is not int:
+                    raise Error("请选择要恢复的版本")
+                return self.send(editing.save(ident, project_id, data.get("revision"),
+                                             changes=data.get("changes"),
+                                             restore=data.get("restore_revision") if operation == "restore" else None))
+            raise Error("不支持的操作", 405)
         match = re.fullmatch(r"/api/(sources|creations|assets)/([a-f0-9]+)", path)
         if match and method in ("PATCH", "DELETE"):
             kind, ident = match.groups()
@@ -1067,7 +1081,7 @@ class Handler(BaseHTTPRequestHandler):
                     ]
                     + tracking_columns(r)
                     + [content_quality.GOALS.get(d.get("goal"), ("",))[0],
-                       {"checked": "基础检查通过，事实仍需核对", "needs_input": "发布前需补充"}.get(d.get("quality", {}).get("status"), "历史稿件未检查"),
+                       {"checked": "基础检查通过，事实仍需核对", "needs_input": "发布前需补充", "review": "已编辑，事实仍需核对"}.get(d.get("quality", {}).get("status"), "历史稿件未检查"),
                        "\n".join(d.get("quality", {}).get("issues", [])),
                        *(effect.get(k, "") for k in ("views", "leads", "orders", "spend", "note")),
                        r["result_time"] or ""]

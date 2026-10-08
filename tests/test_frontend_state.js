@@ -22,7 +22,8 @@ console.log('Draft persistence: isolation, expiry, logout, storage failure passe
 const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require.resolve('../web/app.js'),'utf8');
-const context = vm.createContext({createDraftStore, console, localStorage:storage, sessionStorage:storage,
+const CreationTools = require('../web/creation-tools.js');
+const context = vm.createContext({createDraftStore, CreationTools, console, localStorage:storage, sessionStorage:storage,
   document:{querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){}},
   window:{addEventListener(){}},location:{hash:''},setTimeout(){},clearTimeout(){},assert});
 vm.runInContext(source.slice(0,source.lastIndexOf('(async () => {')),context);

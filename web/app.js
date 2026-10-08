@@ -82,6 +82,11 @@ const drafts = createDraftStore({
   get length() { return sessionStorage.length; },
 });
 const workspaceKey = () => S.boot ? `${S.boot.user.id}:${S.project}` : '';
+const editStore = CreationTools.createEditStore({
+  getItem: key => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value),
+  removeItem: key => sessionStorage.removeItem(key), key: i => sessionStorage.key(i),
+  get length() { return sessionStorage.length; },
+});
 function saveDraft() { if (S.workspaceKey && S.workspaceKey === workspaceKey()) S.draftSaved = drafts.save(S.workspaceKey, S.original); }
 function showFormError(form, message) {
   let error = form?.querySelector('.form-error');
@@ -400,8 +405,8 @@ function creations() {
     );
   return (
     heading(
-      "你的表达，在这里生长。",
-      "每次生成都是新的可能。历史版本持续保留，随时复制、收藏与导出。",
+      "把今天这篇，准备好。",
+      "先选一篇，直接修改并预览，再复制发布。编辑免费，已保存的版本随时可恢复。",
       `<div class="actions">${button("Excel 导出", "export-xlsx", "secondary", "download")}${button("CSV 导出", "export-csv", "secondary", "download")}${button("开始新创作", "discover", "primary", "plus")}</div>`,
       "MADE BY YOU, INSPIRED BY THE WORLD",
     ) +
@@ -411,16 +416,21 @@ function creations() {
         ? sourcePanel(sourceOf(S.creationSource))
         : "") +
     productionBoard(scoped) +
-    `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? `<div class="creation-grid">${items.map(draftCard).join("")}</div>` : empty("从你的业务资料开始", "选一个目标，粘贴或上传产品与服务资料，就能开始创作。", button("开始创作", "discover", "primary", "spark"))}`
+    `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? creationSelection(items) : empty("从你的业务资料开始", "选一个目标，粘贴或上传产品与服务资料，就能开始创作。", button("开始创作", "discover", "primary", "spark"))}`
   );
 }
-function draftCard(c) {
+function creationSelection(items) {
+  const selection = CreationTools.shortlist(items, S.workspace);
+  if (!selection) return `<div class="creation-grid">${items.map(c => draftCard(c)).join("")}</div>`;
+  return `<section class="creation-picks"><div class="pick-intro"><p class="eyebrow">先完成一篇</p><h2>建议从这篇开始</h2><p>${selection.reasons.map(esc).join("；")}。</p><small>按本批稿件的待补项与现有图片排序，不预测流量。全部稿件均保留。</small></div><div class="pick-layout">${draftCard(selection.main, true)}${selection.alternatives.length ? `<aside class="pick-alternatives"><h3>也可以试试这些方向</h3>${selection.alternatives.map(c => `<article><p class="muted">${esc(c.data.angle || c.data.direction || "另一种表达")}</p><h4>${esc(c.data.title)}</h4><p>${esc((c.data.body || "").slice(0, 100))}${(c.data.body || "").length > 100 ? "…" : ""}</p>${button("打开并编辑", "edit-draft", "secondary small", "edit", `data-id="${c.id}"`)}</article>`).join("")}</aside>` : ""}</div></section>${selection.rest.length ? `<details class="other-creations"><summary>展开其他稿件与历史内容（${selection.rest.length} 条）</summary><div class="creation-grid">${selection.rest.map(c => draftCard(c)).join("")}</div></details>` : ""}`;
+}
+function draftCard(c, featured = false) {
   const d = c.data;
   const source =
     S.workspace.sources.find((s) => s.id === c.source_id) ||
     briefOf(c.source_id);
   const images = S.workspace.images.filter((i) => i.creation_id === c.id);
-  return `<article class="draft"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal ? `<div class="draft-direction"><span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}<h3>${esc(d.title)}</h3>${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal ? `<div class="draft-direction"><span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
@@ -469,7 +479,93 @@ function originalForm() {
 function deliveryStatus(d) {
   const q = d.quality;
   if (!q) return '<p class="hint">历史稿件，请在发布前核对业务信息。</p>';
-  return `<div class="delivery-status ${q.status === "checked" ? "checked" : ""}"><strong>${q.status === "checked" ? "基础检查通过，请核对后发布" : "发布前还需补充"}</strong>${q.issues.length ? `<ul>${q.issues.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : `<p>${esc(q.note)}</p>`}</div>`;
+  return `<div class="delivery-status ${q.status === "checked" ? "checked" : ""}"><strong>${q.status === "checked" ? "基础检查通过，请核对后发布" : q.status === "review" ? "已编辑，请核对后发布" : "发布前还需补充"}</strong>${q.issues?.length ? `<ul>${q.issues.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}<p>${esc(q.note || "")}</p></div>`;
+}
+
+function editorValues() {
+  const result = {};
+  $$("#draft-editor [data-edit-field]").forEach(el => {
+    const key = el.dataset.editField;
+    if (key === "tags") result.tags = el.value.split(/[\s#,，]+/).filter(Boolean);
+    else if (key.startsWith("comment-")) (result.comments ||= {})[key.slice(8)] = el.value;
+    else result[key] = el.value;
+  });
+  return result;
+}
+function editorPreview(values, imageURL = "") {
+  return `<div class="post-preview">${imageURL ? `<img src="${esc(safeImage(imageURL))}" alt="已保存封面，文字修改后请核对图片">` : `<div class="preview-placeholder">${icon("image")}<span>正文准备好后，可用产品照片制作封面</span></div>`}<div class="post-preview-copy"><h3>${esc(values.title)}</h3><p>${esc(values.body)}</p><div class="tags">${(values.tags || []).map(t => "#" + esc(t)).join(" ")}</div></div></div>`;
+}
+function updateEditorPreview() {
+  const session = S.editSession;
+  if (!session || session.key !== workspaceKey() || !$("#draft-editor")) return;
+  const values = editorValues();
+  session.dirty = CreationTools.fingerprint(values) !== session.baseline;
+  $("#editor-feedback").innerHTML = session.dirty
+    ? '<div class="notice">当前修改尚未保存，旧的检查结果不适用于这份改稿。保存后会重新检查占位内容和标题等基础问题，业务事实仍需你核对。</div>'
+    : session.savedFeedback;
+  $("#draft-live-preview").innerHTML = editorPreview(values, session.imageURL);
+  $("#editor-length").textContent = `标题 ${[...values.title].length} 字 · 正文 ${[...values.body].length} 字`;
+  const saved = session.readonly || !session.dirty || editStore.save(session.storageKey, session.revision, values);
+  if (!session.dirty) editStore.remove(session.storageKey);
+  $("#editor-save-status").textContent = session.readonly ? "已发布或已记录效果，原文只读" : session.dirty ? (saved ? "修改暂存在当前标签页，保存后同步到项目" : "浏览器无法暂存，请及时保存修改") : "当前显示已保存内容";
+  $$("[data-action=restore-draft]").forEach(el => { el.disabled = session.readonly || session.dirty; });
+}
+async function openDraftEditor(id) {
+  const c = S.workspace.creations.find(x => x.id === id);
+  if (!c) throw new Error("稿件不存在，请刷新后再试");
+  const key = workspaceKey();
+  const storageKey = `${key}:${id}`;
+  const readonly = c.tracking?.status === "published" || !!c.results?.recorded_at;
+  const local = readonly ? null : editStore.read(storageKey);
+  const values = local?.changes || CreationTools.editable(c.data);
+  const image = S.workspace.images.filter(i => i.creation_id === id).sort((a,b) => b.created_at.localeCompare(a.created_at))[0];
+  const input = (key, label, rows, max) => `<label class="field"><span>${label}</span><${rows ? "textarea" : "input"} id="edit-${key}" data-edit-field="${key}" maxlength="${max}" ${rows ? `rows="${rows}"` : `value="${esc(values[key] || "")}"`} ${["title", "body"].includes(key) ? "required" : ""}>${rows ? esc(values[key] || "") + "</textarea>" : ""}</label>`;
+  const comments = values.comments;
+  modal("编辑与发布准备", `<p class="subtext">直接修改这篇，同步查看正文效果。保存和恢复版本不消耗积分。</p>${local ? `<div class="notice">已找回本标签页未保存的修改。${local.revision !== (c.revision || 0) ? "服务器已有更新；请先复制备份，再打开最新稿。" : ""}</div>` : ""}${readonly ? '<div class="notice">已发布或已记录效果的稿件保留原文，可复制与查看历史。</div>' : ""}<div class="draft-editor-layout"><form id="draft-editor"><div id="editor-feedback">${deliveryStatus(c.data)}</div><fieldset ${readonly ? "disabled" : ""}>${input("title", "标题", 0, 300)}${input("body", "正文", 12, 30000)}<label class="field"><span>话题（用空格分隔）</span><input id="edit-tags" data-edit-field="tags" maxlength="1220" value="${esc((values.tags || []).join(" "))}"></label><details class="editor-extra"><summary>封面文字、开头与评论</summary>${input("cover_text", "封面文字", 2, 300)}${input("hook", "开头 / 口播钩子", 3, 2000)}${input("cta", "正文中的下一步行动", 2, 2000)}${comments ? Object.entries({atmosphere:"互动提问",knowledge:"补充说明",pinned:"置顶评论"}).map(([k,label])=>`<label class="field"><span>${label}</span><textarea id="edit-comment-${k}" data-edit-field="comment-${k}" rows="3" maxlength="4000">${esc(comments[k])}</textarea></label>`).join("") : ""}</details></fieldset><p class="hint" id="editor-save-status" aria-live="polite"></p><div class="editor-actions">${!readonly ? '<button class="btn primary" type="submit">保存修改</button>' : ""}<button class="btn secondary" type="button" data-action="copy-editor">复制当前正文</button><button class="text-btn" type="button" data-action="download-editor">下载正文 TXT</button></div><button class="text-btn editor-reload" type="button" data-action="latest-draft" ${local ? "" : "hidden"}>放弃本地修改，打开最新稿</button></form><aside class="draft-preview"><div class="preview-label"><span>正文预览</span><small id="editor-length"></small></div><div id="draft-live-preview"></div><p class="hint">预览用于检查内容与阅读顺序，实际排版以发布平台为准。${image ? "已保存封面不会随改稿自动更新。" : ""}</p>${image ? coverCard(image) : button("制作封面", "editor-cover", "secondary small", "image")}<details class="editor-history"><summary>已保存的历史版本</summary><p class="hint">恢复会新增一个版本。请先保存当前修改。</p><div id="editor-history-list">正在读取…</div></details></aside></div>`, true);
+  $(".dialog").classList.add("draft-editor-dialog");
+  const session = {id, key, project: S.project, storageKey, revision: local?.revision ?? c.revision ?? 0, readonly, imageURL: image?.data.url || "", savedFeedback: deliveryStatus(c.data), baseline: CreationTools.fingerprint(CreationTools.editable(c.data)), dirty: false};
+  S.editSession = session;
+  updateEditorPreview();
+  try {
+    const history = await api(`/api/creations/${id}/revisions?project_id=${session.project}`);
+    if (S.editSession !== session || key !== workspaceKey()) return;
+    $("#editor-history-list").innerHTML = history.map(v => `<details class="revision-item"><summary>版本 ${v.revision} · ${esc(v.reason)} · ${date(v.created_at)}</summary><h4>${esc(v.data.title)}</h4><p>${esc(v.data.body)}</p>${!readonly && v.revision !== session.revision ? `<button class="btn secondary small" type="button" data-action="restore-draft" data-revision="${v.revision}" ${session.dirty ? "disabled" : ""}>恢复此版本</button>` : ""}</details>`).join("");
+  } catch (error) {
+    if (S.editSession === session) $("#editor-history-list").textContent = error.message;
+  }
+}
+async function saveDraftEdit(restoreRevision) {
+  const session = S.editSession;
+  if (!session || session.key !== workspaceKey() || session.saving) return;
+  if (restoreRevision !== undefined && session.dirty) throw new Error("请先保存当前修改，再恢复历史版本");
+  const form = $("#draft-editor");
+  const changes = editorValues();
+  session.saving = true;
+  form.querySelector("fieldset").disabled = true;
+  $$(".draft-editor-dialog button").forEach(el => { el.disabled = true; });
+  try {
+    const result = await post(`/api/creations/${session.id}/${restoreRevision === undefined ? "edit" : "restore"}`, {project_id: session.project, revision: session.revision, ...(restoreRevision === undefined ? {changes} : {restore_revision: restoreRevision})});
+    const cached = editStore.read(session.storageKey);
+    if (!cached || (cached.revision === session.revision && CreationTools.fingerprint(cached.changes) === CreationTools.fingerprint(changes))) editStore.remove(session.storageKey);
+    if (session.key !== workspaceKey()) return;
+    const c = S.workspace.creations.find(x => x.id === session.id);
+    if (c) { c.data = result.data; c.revision = result.revision; }
+    render();
+    if (S.editSession === session) await openDraftEditor(session.id);
+    toast(restoreRevision === undefined ? "修改已保存，可继续复制或制作封面" : "历史版本已恢复，原有版本仍保留");
+  } catch (error) {
+    if (S.editSession === session) {
+      showFormError(form, error.message);
+      form.querySelector(".editor-reload").hidden = false;
+    }
+  } finally {
+    session.saving = false;
+    if (S.editSession === session) {
+      form.querySelector("fieldset").disabled = session.readonly;
+      $$(".draft-editor-dialog button").forEach(el => { el.disabled = false; });
+      updateEditorPreview();
+    }
+  }
 }
 
 function resultSummary(c) {
@@ -515,7 +611,7 @@ function productionBoard(items) {
     ["firsthour", "第一小时进行中", count("firsthour")],
   ];
   const stage = S.stage || "all";
-  return `<section class="panel board"><div class="board-stats"><div><p>已发布内容</p><strong>${published}<small> / ${items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div></div><p class="board-hint">${recorded.length} 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。</p>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。</p>`}<div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
+  return `<section class="panel board"><details class="board-overview"><summary>发布与效果 · 已发布 ${published} 条 · ${recorded.length} 条已记录效果</summary><div class="board-stats"><div><p>已发布内容</p><strong>${published}<small> / ${items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div></div><p class="board-hint">${recorded.length} 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。</p>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。</p>`}</details><div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
 }
 function pipeline(c, source) {
   const t = c.tracking || { status: "draft" };
@@ -829,6 +925,7 @@ async function previewCover() {
   }
 }
 document.addEventListener("input", (e) => {
+  if (e.target.matches?.("#draft-editor [data-edit-field]")) updateEditorPreview();
   if (!e.target.closest(".cover-controls")) return;
   ++coverPreviewSequence;
   const save = $('[data-action="generate-cover"]');
@@ -875,6 +972,7 @@ function coverCard(i) {
 }
 
 function modal(title, content, wide = false) {
+  S.editSession = null;
   S.modalFocus = document.activeElement;
   $("#overlay").innerHTML =
     `<div class="overlay"><section class="dialog ${wide ? "wide" : ""}" role="dialog" aria-modal="true" aria-label="${esc(title)}"><div class="dialog-head"><h2>${title}</h2><button class="close" data-action="close" aria-label="关闭">${icon("close")}</button></div>${content}</section></div>`;
@@ -887,6 +985,7 @@ function modal(title, content, wide = false) {
   );
 }
 function close() {
+  S.editSession = null;
   $("#overlay").innerHTML = "";
   S.modalFocus?.focus();
 }
@@ -1122,6 +1221,38 @@ function providerModal(id) {
   );
 }
 const actions = {
+  "edit-draft": el => openDraftEditor(el.dataset.id),
+  "restore-draft": el => saveDraftEdit(Number(el.dataset.revision)),
+  "copy-editor": async () => {
+    await navigator.clipboard.writeText(CreationTools.publicCopy(editorValues()));
+    toast("当前正文已复制，请核对业务信息后发布");
+  },
+  "download-editor": () => {
+    const text = CreationTools.publicCopy(editorValues());
+    const url = URL.createObjectURL(new Blob([text], {type:"text/plain;charset=utf-8"}));
+    const link = document.createElement("a");
+    link.href = url; link.download = "DAOLOOK-正文.txt"; link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("正文已下载");
+  },
+  "latest-draft": async () => {
+    const session = S.editSession;
+    if (!session) return;
+    await refresh();
+    if (S.editSession !== session || workspaceKey() !== session.key) return;
+    editStore.remove(session.storageKey);
+    await openDraftEditor(session.id);
+  },
+  "editor-cover": async () => {
+    const session = S.editSession;
+    if (!session) return;
+    if (session.dirty) {
+      await saveDraftEdit();
+      if (S.editSession?.dirty || S.editSession?.id !== session.id) return;
+    }
+    if (workspaceKey() !== session.key) return;
+    await actions.cover({dataset:{id:session.id}});
+  },
   "improve-draft": async (el) => {
     const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
     const brief = briefOf(c.source_id);
@@ -1208,6 +1339,7 @@ const actions = {
     await post("/api/auth/logout", {});
     close();
     drafts.clearUser(S.boot.user.id);
+    editStore.clearUser(S.boot.user.id);
     S.watching = null; S.busy = false; S.workspaceKey = null;
     S.boot = null;
     location.hash = "login";
@@ -1541,6 +1673,7 @@ document.addEventListener("submit", async (e) => {
   e.preventDefault();
   const submit = e.target.querySelector("[type=submit]");
   try {
+    if (e.target.id === "draft-editor") return await saveDraftEdit();
     if (e.target.id === "analyze-form") return await startAnalyze();
     if (e.target.id === "create-form") return await startCreate();
     if (e.target.id === "original-form") return await startOriginal();

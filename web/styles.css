@@ -991,6 +991,54 @@ svg.icon {
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 20px;
 }
+.creation-picks { margin: 20px 0 30px; }
+.board-overview > summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
+.board-overview[open] > summary { margin-bottom: 18px; }
+.pick-intro { margin-bottom: 20px; }
+.pick-intro h2 { margin: 6px 0 10px; }
+.pick-intro p, .pick-intro small { color: var(--ink-2); line-height: 1.8; }
+.pick-intro small { display: block; margin-top: 4px; }
+.pick-layout { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(220px, 1fr); gap: 24px; align-items: start; }
+.draft-featured { border-color: #afc979; box-shadow: 0 6px 24px #26332108; }
+.draft-featured .draft-body { color: var(--ink); font-size: 16px; }
+.draft-start { margin: 0 0 18px; }
+.pick-alternatives h3 { font-size: 15px; margin-bottom: 12px; }
+.pick-alternatives article { border-top: 1px solid var(--line); padding: 22px 0; }
+.pick-alternatives h4 { margin: 8px 0; font-size: 17px; }
+.pick-alternatives p { font-size: 14px; line-height: 1.8; overflow-wrap: anywhere; }
+.pick-alternatives .btn { margin-top: 14px; }
+.other-creations > summary { cursor: pointer; padding: 16px 0; font-weight: 600; }
+.other-creations .creation-grid { margin-top: 16px; }
+.dialog.wide.draft-editor-dialog { width: 1080px; }
+.draft-editor-layout { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 30px; align-items: start; }
+#draft-editor, .draft-preview { min-width: 0; }
+#draft-editor fieldset { border: 0; padding: 0; margin: 0; min-width: 0; }
+#draft-editor textarea { resize: vertical; }
+.editor-extra { margin: 16px 0; }
+.editor-extra summary, .editor-history summary { cursor: pointer; padding: 10px 0; }
+.editor-extra .field { margin-top: 14px; }
+.editor-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; }
+.editor-reload[hidden] { display: none; }
+.preview-label { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 12px; font-size: 13px; color: var(--ink-2); }
+.post-preview { border: 1px solid var(--line); border-radius: 14px; background: var(--panel); overflow: hidden; }
+.post-preview > img { display: block; width: 100%; max-height: 360px; object-fit: contain; background: var(--wash); }
+.preview-placeholder { min-height: 130px; padding: 24px; display: flex; align-items: center; gap: 12px; background: var(--wash); color: var(--ink-2); font-size: 13px; }
+.post-preview-copy { padding: 24px; overflow-wrap: anywhere; }
+.post-preview-copy h3 { font-size: 19px; margin-bottom: 16px; }
+.post-preview-copy p, .revision-item p { white-space: pre-wrap; line-height: 1.9; font-size: 14px; overflow-wrap: anywhere; }
+.post-preview-copy .tags { margin-top: 18px; color: var(--ink-2); font-size: 13px; }
+.draft-preview .generated-cover > img { display: none; }
+.editor-history { margin-top: 24px; border-top: 1px solid var(--line); }
+.revision-item { padding: 8px 0; border-top: 1px solid var(--line); }
+.revision-item h4 { margin: 12px 0; }
+.revision-item .btn { margin-top: 12px; }
+.draft h3, .draft-body { overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .pick-layout, .draft-editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .dialog.draft-editor-dialog { padding: 20px; max-height: 94dvh; }
+  .editor-actions .btn { flex: 1; }
+  .post-preview-copy { padding: 18px; }
+}
 .draft {
   border: 1px solid var(--line);
   border-radius: 13px;
