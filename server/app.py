@@ -1081,6 +1081,7 @@ class Handler(BaseHTTPRequestHandler):
                 "效果记录时间",
                 "海外目标市场", "台词语言", "目标时长（秒）", "完整口播", "口播中文翻译", "创新算子", "原创变化", "Hook备选", "循环结尾", "平台适配", "讨论问题",
                 "第一秒画面", "观众误判", "公平伏笔", "结尾反转", "产品角色", "收尾方式", "出镜方式", "产品揭晓镜号", "产品揭晓", "制作路径", "成本依据",
+                "创意", "AI镜头提示词",
             ]
         ]
         with db() as c:
@@ -1130,7 +1131,8 @@ class Handler(BaseHTTPRequestHandler):
                         d.get('script',''),d.get('translation_zh',''),d.get('operator',''),d.get('innovation',''),
                         '\n'.join(f"{h.get('visual','')} | {h.get('line','')} | {h.get('translation_zh','')} | {h.get('sfx','')}" for h in d.get('hooks',[])),
                         d.get('loop',''),d.get('adaptation',''),'\n'.join(d.get('comments',[])),
-                        *(d.get(k,'') for k in ('first_second','misread','clue','reveal','product_role','ending_type','casting','reveal_shot','product_reveal','production_method','cost_basis'))]
+                        *(d.get(k,'') for k in ('first_second','misread','clue','reveal','product_role','ending_type','casting','reveal_shot','product_reveal','production_method','cost_basis')),
+                        d.get('concept',''), '\n\n'.join(f"镜头 {i+1}\n{s.get('ai_prompt','')}" for i,s in enumerate(d.get('shots',[])))]
                 )
         if fmt == "xlsx":
             out = io.BytesIO()

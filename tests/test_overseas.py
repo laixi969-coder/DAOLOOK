@@ -195,7 +195,7 @@ class OverseasStructureTests(unittest.TestCase):
 
     def test_coverage_hooks_bilingual_and_originality_are_checked(self):
         overseas.validate({'outputs':self.outputs},self.brief,[])
-        for mutate in (lambda o:o[0]['shots'][1].update(start=2),lambda o:o[0].update(translation_zh=''),lambda o:o[0]['hooks'].pop(),lambda o:o[0].update(script=o[1]['script']),lambda o:o[0].update(target_platform='youtube'),lambda o:o[0].update(evidence=[{'asset_id':'other','quote':'not provided'}]),lambda o:o[0].update(clue=''),lambda o:o[0]['shots'][0].update(implementation=''),lambda o:o[0].update(ending_type='悬念')):
+        for mutate in (lambda o:o[0]['shots'][1].update(start=2),lambda o:o[0].update(translation_zh=''),lambda o:o[0]['hooks'].pop(),lambda o:o[0].update(script=o[1]['script']),lambda o:o[0].update(target_platform='youtube'),lambda o:o[0].update(evidence=[{'asset_id':'other','quote':'not provided'}]),lambda o:o[0].update(clue=''),lambda o:o[0]['shots'][0].update(implementation=''),lambda o:o[0].update(ending_type='悬念'),lambda o:o[0].update(concept=''),lambda o:o[0]['shots'][0].update(ai_prompt='')):
             outputs=copy.deepcopy(self.outputs);mutate(outputs)
             with self.assertRaises(ValueError):overseas.validate({'outputs':outputs},self.brief,[])
 

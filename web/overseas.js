@@ -139,13 +139,29 @@ async function startOverseas(briefId) {
     });
   } finally {if(key===workspaceKey()){S.busy=false;render();}}
 }
+function overseasShots(d) {
+  return d.shots?.length ? d.shots : (d.storyboard||[]).map(action=>({camera:"",action}));
+}
+function overseasAiPrompt(d,shot) {
+  if(shot.ai_prompt) return shot.ai_prompt;
+  return ["9:16竖屏，真实摄影质感。",shot.camera,shot.action,"沿用相同场景和参考素材，产品外观、比例与材质保持一致。",d.casting==="无人"?"画面中没有人物、手部、身体或人物倒影。":"","不生成字幕或品牌标识，文字在后期添加。"].filter(Boolean).join("\n");
+}
+function overseasConcept(d) {
+  if(d.concept) return d.concept;
+  return [d.first_second,d.reveal].filter(Boolean).join(" ").replace(/(?:这是结构占位|演示占位|演示模板|具体故事需用实际产品)[^。]*。?/g,"") || d.hook || "";
+}
+function overseasCard(c,number=0) {
+  const d=c.data;
+  const titles=[...new Set(d.titles||[])].filter(t=>t&&t!==d.title);
+  return `<article class="draft overseas-card"><div class="draft-top"><span>${number?`<span class="direction-badge">建议 ${number}</span> `:""}${platformLabel(d.overseas.platform)} · ${d.overseas.duration} 秒${d.demo?' · 演示':""}</span><span>${date(c.created_at)}</span></div><h3>${esc(d.title)}</h3>${overseasDetails(c)}${titles.length?`<section class="overseas-output-section"><h4>标题备选</h4><ul>${titles.map(t=>`<li>${esc(t)}</li>`).join("")}</ul></section>`:""}<section class="overseas-output-section"><h4>发布内容 / Tags</h4><p class="draft-body">${esc(d.body)}</p>${d.tags?.length?`<div class="tags">${d.tags.map(t=>"#"+esc(t)).join(" ")}</div>`:""}</section><div class="actions">${button("复制内容","copy","secondary small","copy",`data-id="${c.id}"`)}${button("复制脚本","copy-overseas-script","secondary small","copy",`data-id="${c.id}"`)}${button("下载创意 TXT","download-overseas-plan","secondary small","download",`data-id="${c.id}"`)}${button("编辑标题与内容","edit-draft","secondary small","edit",`data-id="${c.id}"`)}${button(c.saved?"已收藏":"收藏","save-creation","secondary small",c.saved?"check":"star",`data-id="${c.id}"`)}${button("删除","delete-creation","secondary small","trash",`data-id="${c.id}"`)}</div></article>`;
+}
 function overseasDetails(c) {
   const d=c.data;if(!d.overseas) return "";
-  const narrative=d.first_second ? `<section class="overseas-story"><h4>故事结构</h4><p><strong>第一秒：</strong>${esc(d.first_second)}</p><p><strong>观众以为：</strong>${esc(d.misread)}</p><p><strong>公平伏笔：</strong>${esc(d.clue)}</p><p><strong>结尾反转：</strong>${esc(d.reveal)}</p><p><strong>产品角色：</strong>${esc(d.product_role)}</p><p><strong>收尾：</strong>${esc(d.ending_type)}</p>${d.casting?`<p><strong>出镜方式：</strong>${esc(d.casting)}</p><p><strong>产品揭晓：</strong>第 ${d.reveal_shot} 镜 · ${esc(d.product_reveal)}</p>`:""}</section>` : `<section class="overseas-story"><h4>旧版创意方法</h4><p>${esc(d.operator||"")}</p><p>${esc(d.innovation||"")}</p></section>`;
-  return `<section class="overseas-output"><p class="hint">${platformLabel(d.overseas.platform)} · ${esc(d.overseas.market)} · ${d.overseas.duration} 秒 · ${esc(d.overseas.skill)}</p><div class="actions">${button("复制口播与中译","copy-overseas-script","secondary small","copy",`data-id="${c.id}"`)}${button("下载完整方案","download-overseas-plan","secondary small","download",`data-id="${c.id}"`)}</div>${narrative}<section class="overseas-output-section"><h4>三个 Hook 测试选项</h4>${(d.hooks||[]).map((h,i)=>`<div class="overseas-hook"><strong>Hook ${"ABC"[i]}</strong><p>${esc(h.visual)}</p><p>${esc(h.line)}<br>${esc(h.translation_zh)}</p><small>${esc(h.sfx)}</small></div>`).join("")}</section><section class="overseas-output-section"><h4>完整口播与中文翻译</h4><p><strong>口播</strong><br>${esc(d.script)}</p><p><strong>中文翻译</strong><br>${esc(d.translation_zh)}</p></section><section class="overseas-output-section"><h4>分镜与实现 · ${d.shots?.length||0} 镜</h4><div class="table-wrap overseas-shots"><table><thead><tr><th>秒</th><th>景别 / 画面</th><th>台词 / 中译</th><th>实拍或 AI 实现</th></tr></thead><tbody>${(d.shots||[]).map(s=>`<tr><td>${s.start}–${s.end}</td><td>${esc(s.camera)}<br>${esc(s.action)}</td><td>${esc(s.line)}<br>${esc(s.translation_zh)}</td><td>${esc(s.implementation||"")}<br>${esc(s.screen_text)} / ${esc(s.sfx)}</td></tr>`).join("")}</tbody></table></div></section>${d.production_method?`<section class="overseas-output-section"><h4>制作路径与成本</h4><p>${esc(d.production_method)}</p><p>${esc(d.cost_basis)}</p></section>`:""}<section class="overseas-output-section"><h4>平台适配与讨论问题</h4>${d.loop?`<p>${esc(d.loop)}</p>`:""}<p>${esc(d.adaptation)}</p><ul>${(d.comments||[]).map(t=>`<li>${esc(t)}</li>`).join("")}</ul></section></section>`;
+  const shots=overseasShots(d);
+  return `<div class="overseas-delivery"><section class="overseas-output-section"><h4>创意</h4><p>${esc(overseasConcept(d))}</p></section><section class="overseas-output-section"><h4>画面描述</h4>${shots.map((shot,i)=>`<div class="overseas-shot"><h5>镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}</h5>${shot.camera?`<p>${esc(shot.camera)}</p>`:""}<p>${esc(shot.action)}</p></div>`).join("")}</section><section class="overseas-output-section"><h4>脚本</h4><p>${esc(d.script||d.body)}</p>${d.translation_zh?`<h5>中文翻译</h5><p>${esc(d.translation_zh)}</p>`:""}</section><section class="overseas-output-section"><h4>AI 生成提示词</h4>${shots.map((shot,i)=>`<div class="overseas-ai-prompt"><div class="pipeline-head"><h5>镜头 ${i+1}</h5>${button("复制提示词","copy-overseas-prompt","secondary small","copy",`data-id="${c.id}" data-shot="${i}"`)}</div><pre>${esc(overseasAiPrompt(d,shot))}</pre></div>`).join("")}</section></div>`;
 }
 function overseasPlanText(d) {
-  return [d.title,`平台：${platformLabel(d.overseas.platform)} · 市场：${d.overseas.market} · ${d.overseas.duration} 秒`,"第一秒",d.first_second,"观众以为",d.misread,"公平伏笔",d.clue,"结尾反转",d.reveal,"产品角色",d.product_role,"收尾方式",d.ending_type,"出镜方式",d.casting,"产品揭晓",d.product_reveal,"制作路径",d.production_method,"成本依据",d.cost_basis,"Hook备选",...(d.hooks||[]).map((h,i)=>`${"ABC"[i]}: ${h.visual}\n${h.line}\n${h.translation_zh}\n${h.sfx}`),"完整口播",d.script,"中文翻译",d.translation_zh,"分镜与实现",...(d.storyboard||[]),"拍摄清单",...(d.shooting_list||[]),"平台适配",d.adaptation,"讨论问题",...(d.comments||[]),"发布文案",CreationTools.publicCopy(d),"待核对",...(d.quality?.issues||[]),...(d.missing||[])].filter(v=>v!==undefined&&v!==null).join("\n\n");
+  return [d.title,"创意",overseasConcept(d),"画面描述",...overseasShots(d).map((shot,i)=>`镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}\n${shot.camera||""}\n${shot.action}`),"脚本",d.script||d.body,"中文翻译",d.translation_zh,"AI 生成提示词",...overseasShots(d).map((shot,i)=>`镜头 ${i+1}\n${overseasAiPrompt(d,shot)}`),"标题备选",...(d.titles||[]),"发布内容 / Tags",CreationTools.publicCopy(d)].filter(Boolean).join("\n\n");
 }
 
 Object.assign(actions,{
@@ -168,7 +184,8 @@ Object.assign(actions,{
   },
   "clear-overseas-reference":()=>{saveOverseasDraft();S.overseasForm.reference_id="";S.overseasReferenceTitle="";drafts.save(workspaceKey()+":overseas",S.overseasForm);render();},
   "overseas-again":el=>startOverseas(el.dataset.id),
-  "copy-overseas-script":async el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id).data;await navigator.clipboard.writeText(d.script+"\n\n"+d.translation_zh);toast("口播与中译已复制，请核对后使用");},
+  "copy-overseas-prompt":async el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id)?.data;if(!d)return;const shot=overseasShots(d)[Number(el.dataset.shot)];if(!shot)return;await navigator.clipboard.writeText(overseasAiPrompt(d,shot));toast("提示词已复制");},
+  "copy-overseas-script":async el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id).data;await navigator.clipboard.writeText([d.script||d.body,d.translation_zh].filter(Boolean).join("\n\n"));toast("脚本已复制");},
   "download-overseas-plan":el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id).data;const url=URL.createObjectURL(new Blob([overseasPlanText(d)],{type:"text/plain;charset=utf-8"}));const link=document.createElement("a");link.href=url;link.download="DAOLOOK-海外创意方案.txt";link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},
 });
 document.addEventListener("input",e=>{if(e.target.closest?.("#overseas-form"))saveOverseasDraft();});

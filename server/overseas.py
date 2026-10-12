@@ -14,11 +14,11 @@ def string_fields(names):
 
 OUTPUT_SCHEMA = {
     'type':'object', 'properties':{
-        **string_fields(('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','adaptation','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal')),
+        **string_fields(('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','concept','adaptation','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal')),
         'reveal_shot':{'type':'integer','minimum':1,'maximum':6},
         **{k:{'type':'array','items':{'type':'string'}} for k in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments')},
         'hooks':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'object','properties':string_fields(('visual','line','translation_zh','sfx')),'required':['visual','line','translation_zh','sfx']}},
-        'shots':{'type':'array','items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','sfx','implementation')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','sfx','implementation']}},
+        'shots':{'type':'array','items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt']}},
         'evidence':{'type':'array','items':{'type':'object','properties':string_fields(('asset_id','quote')),'required':['asset_id','quote']}},
         'target_platform':{'type':'string','enum':list(SOCIAL_PLATFORMS)},
     },
@@ -34,7 +34,7 @@ def validate(result,brief,assets,previous=None):
     for output in outputs:
         if not isinstance(output,dict): raise ValueError('创意方案格式错误')
         if output.get('target_platform') not in SOCIAL_PLATFORMS or (brief['platform']!='overseas' and output['target_platform']!=brief['platform']): raise ValueError('方案的平台与要求不一致')
-        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
+        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','concept','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
             if not isinstance(output.get(key),str) or not output[key].strip() or len(output[key])>30000: raise ValueError('创意缺少有效字段：'+key)
         if output['ending_type'] not in ENDINGS: raise ValueError('收尾方式无效')
         if output['casting'] not in ('有人','仅手部','无人'): raise ValueError('请标明有人、仅手部或无人出镜')
@@ -55,10 +55,11 @@ def validate(result,brief,assets,previous=None):
         if output['ending_type']=='故事翻牌' and reveal_shot!=len(shots): raise ValueError('故事翻牌需要在最后一镜首次揭晓产品')
         cursor=0
         for shot in shots:
-            if not isinstance(shot,dict) or any(not isinstance(shot.get(k),str) or len(shot[k])>6000 for k in ('camera','action','line','translation_zh','screen_text','sfx','implementation')): raise ValueError('分镜字段无效')
+            if not isinstance(shot,dict) or any(not isinstance(shot.get(k),str) or len(shot[k])>6000 for k in ('camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt')): raise ValueError('分镜字段无效')
             start,end=shot.get('start'),shot.get('end')
             if type(start) not in (int,float) or type(end) not in (int,float) or abs(start-cursor)>.01 or not start<end<=brief['duration']: raise ValueError('分镜时间必须从0秒连续覆盖目标时长')
             if not shot['camera'].strip() or not shot['action'].strip() or not shot['implementation'].strip(): raise ValueError('分镜缺少具体画面动作或实现方法')
+            if not shot['ai_prompt'].strip(): raise ValueError('分镜缺少可复制的AI生成提示词')
             cursor=end
         if abs(cursor-brief['duration'])>.01: raise ValueError('分镜总时长与目标时长不一致')
         evidence=output.get('evidence')
@@ -117,7 +118,8 @@ def demo_outputs(brief,assets,batch):
         target=list(SOCIAL_PLATFORMS)[index] if brief['platform']=='overseas' else brief['platform']
         shots=[{'start':start,'end':end,'camera':'手机固定，保持主体居中与同轴空间关系','action':idea['actions'][i],
                 'line':idea['line'] if i==4 else '', 'translation_zh':idea['translation'] if i==4 else '',
-                'screen_text':'', 'sfx':'现场环境音', 'implementation':idea['implementation']}
+                'screen_text':'', 'sfx':'现场环境音', 'implementation':idea['implementation'],
+                'ai_prompt':f"9:16竖屏，真实摄影质感，固定桌面场景与自然光。主体居中，手机固定机位。{idea['actions'][i]}。单个连续镜头，保持前后空间关系。{'画面中没有人物、手部或人物倒影。' if idea['casting']=='无人' else '沿用同一人物外观和服装。'}{'采用用户产品参考图，外观、材质与比例保持一致。' if i==4 else '不出现可辨认产品、品牌、包装或产品倒影。'}不生成字幕与标识，文字在后期添加。"}
                for i,(start,end) in enumerate(zip(times,times[1:]))]
         outputs.append({
             'target_platform':target,'title':f"{brief['topic'][:40]} · {idea['name']} {batch}",
@@ -126,6 +128,7 @@ def demo_outputs(brief,assets,batch):
             'role':'提供一个独立可选的拍摄方向','audience':brief['market']+'的潜在客户',
             'value':'以'+idea['angle']+'引起对产品的注意','cta':'Look closer.',
             'script':idea['line']+' Look closer.','translation_zh':idea['translation']+'再看仔细一点。',
+            'concept':idea['first_second']+' '+idea['reveal'],
             'first_second':idea['first_second'],'misread':idea['misread'],'clue':idea['clue'],
             'reveal':idea['reveal'],'product_role':idea['product_role'],'ending_type':'故事翻牌',
             'casting':idea['casting'],'reveal_shot':5,'product_reveal':'最后第5镜首次揭晓产品。'+idea['reveal'],

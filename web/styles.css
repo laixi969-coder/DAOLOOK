@@ -1020,6 +1020,10 @@ svg.icon {
 .draft-output-section p { margin: 0; white-space: pre-wrap; line-height: 1.8; }
 .draft-output-section ul { margin: 0; padding-left: 20px; line-height: 1.8; }
 .draft-output-section li + li { margin-top: 5px; }
+.overseas-delivery p, .overseas-card .overseas-output-section p { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.8; }
+.overseas-shot + .overseas-shot, .overseas-ai-prompt + .overseas-ai-prompt { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+.overseas-shot h5, .overseas-ai-prompt h5 { margin: 0 0 8px; font-size: 14px; }
+.overseas-ai-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; padding: 12px; background: var(--wash); border-radius: 8px; margin-top: 10px; }
 .overseas-hook { border-top: 1px solid var(--line); padding: 14px 0; }
 .overseas-shots table { min-width: 660px; }
 .overseas-shots td { white-space: pre-wrap; min-width: 140px; vertical-align: top; }
