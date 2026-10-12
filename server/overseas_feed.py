@@ -14,9 +14,14 @@ from zoneinfo import ZoneInfo
 from .db import db, dumps, now, uid
 from .adapters import NoCredentialRedirect, read_bounded
 
-SOURCES = json.loads((Path(__file__).parent / 'resources/hiccai-pop/daily-sources.json').read_text())
+RESOURCE = Path(__file__).parent / 'resources/hiccai-pop'
+YOUTUBE_SOURCES = json.loads((RESOURCE / 'daily-sources.json').read_text())
+SOURCES = json.loads((RESOURCE / 'tiktok-sources.json').read_text())
+CASES = json.loads((RESOURCE / 'tiktok-cases.json').read_text())
 NS = {'a':'http://www.w3.org/2005/Atom', 'y':'http://www.youtube.com/xml/schemas/2015', 'm':'http://search.yahoo.com/mrss/'}
 MAX_AGE_DAYS = 180
+SELECTION_VERSION = 2
+STORY_CUES = r'\b(robbers?|robbery|waiter|evicted|exposed|uploading grandpa|not an egg|paging|date a daddy|plot twist|unexpected|turns out|what could go wrong|when|monsters?)\b'
 CATEGORY_WORDS = {
     'A':('charger','charging','usb','iphone','phone','microphone','car mount'),
     'B':('nail','nails','mani','manis','lash','lashes','lipstick','makeup','hair','skin'),
@@ -26,7 +31,7 @@ CATEGORY_WORDS = {
     'F':('ferrofluid','fidget','toy','toys','magnetic field'),
     'G':('tool','tools','flashlight','camping','soldering','drill','saw'),
     'H':('screenbar','keyboard','desk','monitor','water filter','filter pitcher','lifestraw','door lock')}
-CATEGORY_NAMES = {s['category']:s['category_name'] for s in SOURCES}
+CATEGORY_NAMES = {s['category']:s['category_name'] for s in YOUTUBE_SOURCES}
 
 
 def category(title, source):
@@ -45,6 +50,10 @@ def timestamp(value):
 
 
 def fetch(source):
+    if source.get('platform')=='tiktok':
+        handle=source['handle']
+        if not re.fullmatch(r'[A-Za-z0-9_.]{1,40}',handle):raise ValueError('TikTok账号无效')
+        return fetch_page('https://www.tiktok.com/embed/@'+handle)
     channel=source['channel_id']
     if not re.fullmatch(r'UC[A-Za-z0-9_-]{22}',channel):
         raise ValueError('视频频道编号无效')
@@ -56,6 +65,7 @@ def fetch(source):
 
 
 def parse(blob, source):
+    if source.get('platform')=='tiktok':return parse_tiktok(blob,source)
     if b'<!DOCTYPE' in blob.upper() or b'<!ENTITY' in blob.upper():
         raise ValueError('视频订阅格式无效')
     root=ET.fromstring(blob)
@@ -97,6 +107,80 @@ def parse(blob, source):
     return items
 
 
+def fetch_page(url):
+    # Both URLs are constructed from validated provider IDs, never arbitrary input.
+    request=urllib.request.Request(url,headers={'User-Agent':'Mozilla/5.0'})
+    with urllib.request.build_opener(NoCredentialRedirect()).open(request,timeout=12) as response:
+        return read_bounded(response,6*1024*1024,12)
+
+
+def script_json(blob, ident):
+    match=re.search(r'<script\b[^>]*\bid=["\']'+re.escape(ident)+r'["\'][^>]*>(.*?)</script>',blob.decode('utf-8'),re.S)
+    if not match:raise ValueError('公开视频数据暂时不可用')
+    return json.loads(match.group(1))
+
+
+def parse_tiktok(blob, source):
+    state=script_json(blob,'__FRONTITY_CONNECT_STATE__')
+    page=state['source']['data']['/embed/@'+source['handle']]
+    owner=page.get('userInfo') or {}
+    if page.get('isError') or owner.get('privateAccount') or owner.get('uniqueId','').lower()!=source['handle'].lower():
+        raise ValueError('TikTok公开账号不可用')
+    items=[];seen=set()
+    for entry in page.get('videoList',[])[:10]:
+        ident=entry.get('id');caption=entry.get('desc','')
+        if not isinstance(caption,str):continue
+        caption=caption.strip()
+        if not isinstance(ident,str) or not re.fullmatch(r'\d{15,25}',ident) or ident in seen or not caption or entry.get('privateItem'):
+            continue
+        if str(entry.get('authorUniqueId','')).lower()!=source['handle'].lower():continue
+        height,width=entry.get('height'),entry.get('width')
+        if not isinstance(height,(int,float)) or not isinstance(width,(int,float)) or width<=0 or height/width<1.3:continue
+        if re.search(r'\b(unboxing|review|tutorial|giveaway|tickets|tour dates|in theaters|in cinemas|interview|episode drops|keep your eyes peeled)\b',caption,re.I):continue
+        if re.search(r'\b(no purchase necessary|official rules|sweepstakes|pre-order)\b',caption,re.I):continue
+        story=bool(re.search(STORY_CUES,caption,re.I))
+        brand=source['handle'] in ('scrubdaddy','liquiddeath')
+        if brand and not story and ident not in CASES:continue
+        seen.add(ident)
+        url='https://www.tiktok.com/@'+source['handle']+'/video/'+ident
+        key='feed_'+hashlib.sha256(url.encode()).hexdigest()[:32]
+        publisher=owner.get('nickname') or source['publisher']
+        product_category=category(caption,source)
+        video={'url':url,'title':caption,'publisher':publisher,'publisher_url':'https://www.tiktok.com/@'+source['handle'],
+               'thumbnail':entry.get('coverUrl',''),'platform':'tiktok','source':'TikTok官方公开嵌入','relation':'来源视频'}
+        item={'id':key,'feed_id':key,'source_id':source['source_id'],'url':url,'title':caption[:200],'summary':caption[:20000],
+              'platform':'tiktok','category':product_category,'category_name':CATEGORY_NAMES.get(product_category,''),
+              'source_kind':'daily_feed','source':video['source'],'publisher':publisher,'reference_video':video,'metrics':{},
+              'story_candidate':story,'selection_version':SELECTION_VERSION}
+        if ident in CASES:
+            case=CASES[ident];item.update(title=case['title'],summary=case['summary'],category=case['category'],case_review=case)
+            item['category_name']=CATEGORY_NAMES[case['category']]
+        items.append(item)
+    return items
+
+
+def tiktok_details(item):
+    current=reference(item['id'])
+    if current and current.get('duration') and current.get('published_at'):
+        details={key:current[key] for key in ('duration','published_at')}
+    else:
+        try:
+            raw=script_json(fetch_page(item['url']),'__UNIVERSAL_DATA_FOR_REHYDRATION__')
+            details=raw['__DEFAULT_SCOPE__']['webapp.video-detail']['itemInfo']['itemStruct']
+            if details.get('id')!=item['url'].rsplit('/',1)[-1] or details.get('author',{}).get('uniqueId','').lower()!=item['url'].split('/@',1)[1].split('/')[0].lower():return None
+            duration=details.get('video',{}).get('duration')
+            created=datetime.datetime.fromtimestamp(int(details['createTime']),datetime.timezone.utc)
+            details={'duration':duration,'published_at':created.isoformat()}
+        except (KeyError,ValueError,TypeError,OverflowError,OSError):return None
+    stamp=timestamp(now());published=timestamp(details['published_at']);duration=details['duration']
+    if type(duration) not in (int,float) or not 3<=duration<=90 or not published or not stamp-datetime.timedelta(days=MAX_AGE_DAYS)<=published<=stamp+datetime.timedelta(minutes=15):return None
+    return {**item,**details,'reference_video':{**item['reference_video'],'published_at':details['published_at'],'duration':duration}}
+
+
+def sources_revision():
+    return hashlib.sha256(json.dumps([SELECTION_VERSION,SOURCES],sort_keys=True).encode()).hexdigest()[:16]
+
+
 def videos():
     with db() as c:
         return [json.loads(row['data']) for row in c.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600')]
@@ -114,12 +198,13 @@ def status():
         count=c.execute('SELECT count(*) FROM overseas_feed_videos').fetchone()[0]
     if state.get('state')=='running' and (timestamp(now())-timestamp(state['last_attempt_at'])).total_seconds()>600:
         state['state']='failed'
-    return {k:v for k,v in {**state,'pool_size':count,'source_count':len(SOURCES),'daily':True}.items() if k!='run_id'}
+    return {k:v for k,v in {**state,'pool_size':count,'source_count':len(SOURCES),'daily':True,'primary_platform':'tiktok'}.items() if k!='run_id'}
 
 
 def _claim(force):
     stamp=timestamp(now())
     zone=ZoneInfo(os.environ.get('DAOLOOK_FEED_TIMEZONE','America/New_York'))
+    revision=sources_revision()
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         state=json.loads(c.execute('SELECT data FROM overseas_feed_state WHERE id=1').fetchone()[0])
@@ -131,7 +216,7 @@ def _claim(force):
             return None
         checked=timestamp(state.get('last_checked_at'))
         expired=state.get('state')=='running' and elapsed>=600
-        if not force and not expired and ((state.get('state')=='succeeded' and checked and checked.astimezone(zone).date()==stamp.astimezone(zone).date()) or elapsed<3600):
+        if not force and not expired and state.get('sources_revision')==revision and ((state.get('state')=='succeeded' and checked and checked.astimezone(zone).date()==stamp.astimezone(zone).date()) or elapsed<3600):
             return None
         token=uid()
         state.update(state='running',run_id=token,last_attempt_at=stamp.isoformat(),errors=[])
@@ -150,6 +235,11 @@ def _sync(token):
             except Exception:
                 errors.append(source['publisher'])
     stamp=now();added=changed=0
+    candidates=[i for i in items if i['platform']=='tiktok']
+    if candidates:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as pool:
+            accepted=[value for value in pool.map(tiktok_details,candidates) if value]
+        items=[i for i in items if i['platform']!='tiktok']+accepted
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
         state=json.loads(c.execute('SELECT data FROM overseas_feed_state WHERE id=1').fetchone()[0])
@@ -164,13 +254,16 @@ def _sync(token):
                       (item['id'],item['url'],dumps(item),item['published_at'],stamp,stamp))
         cutoff=(timestamp(stamp)-datetime.timedelta(days=MAX_AGE_DAYS)).isoformat()
         removed=c.execute('DELETE FROM overseas_feed_videos WHERE published_at<?',(cutoff,)).rowcount
-        channels={s['channel_id'] for s in SOURCES}
+        channels={s['channel_id'] for s in SOURCES if s.get('channel_id')}
+        tiktok_sources={s['source_id'] for s in SOURCES if s.get('source_id')}
         for row in c.execute('SELECT id,data FROM overseas_feed_videos').fetchall():
-            if json.loads(row['data']).get('channel_id') not in channels:
+            data=json.loads(row['data'])
+            retired=(data.get('platform')=='tiktok' and (data.get('source_id') not in tiktok_sources or data.get('selection_version')!=SELECTION_VERSION)) or (channels and data.get('platform')=='youtube' and data.get('channel_id') not in channels)
+            if successes and retired:
                 removed+=c.execute('DELETE FROM overseas_feed_videos WHERE id=?',(row['id'],)).rowcount
         state.update(state='succeeded' if successes==len(SOURCES) else ('partial' if successes else 'failed'),
                      last_attempt_finished_at=stamp,added_count=added,changed_count=changed,errors=errors,
-                     successful_sources=successes,removed_count=removed)
+                     successful_sources=successes,removed_count=removed,sources_revision=sources_revision())
         if successes:state['last_checked_at']=stamp
         if added or changed or removed:state['last_updated_at']=stamp
         c.execute('UPDATE overseas_feed_state SET data=? WHERE id=1',(dumps(state),))

@@ -175,7 +175,7 @@ async function refresh() {
     S.overseasForm = {...overseasDefaults(), ...(drafts.read(key+":overseas")||{})};
     S.overseasReferenceTitle = "";
     S.overseasLibrary = null;
-    S.overseasFilters = {query:"",category:"",platform:"all",saved:false};
+    S.overseasFilters = {query:"",category:"",platform:"tiktok",saved:false};
     S.overseasMessage = ""; S.overseasSearching = false; S.overseasRefreshing = null; S.overseasLoadToken = 0;
   }
   S.workspaceKey = key;

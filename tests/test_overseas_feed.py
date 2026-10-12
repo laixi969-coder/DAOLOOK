@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape
 from tests import test_original as fixture
 from server import overseas_feed as feed, overseas_library
 
-SOURCE=feed.SOURCES[0]
+SOURCE=feed.YOUTUBE_SOURCES[0]
 DAY='2026-10-12T15:00:00+00:00'
 
 
@@ -22,6 +22,20 @@ def atom(entries, source=SOURCE):
 
 OLD=('abcdefghijk','Charger unfolds','2026-10-10T14:00:00Z','Three devices charge on one desk.')
 NEW=('newvideoxyz','A new charging idea','2026-10-13T14:00:00Z','A small charger transforms the desk.')
+
+
+def tiktok_html(source,entries):
+    data={'source':{'data':{'/embed/@'+source['handle']:{'userInfo':{'uniqueId':source['handle'],'nickname':source['publisher'],'privateAccount':False},'videoList':entries}}}}
+    return ('<script id="__FRONTITY_CONNECT_STATE__" type="application/json">'+json.dumps(data)+'</script>').encode()
+
+
+def tiktok_entry(source,ident='7680599033039179038',caption='An unexpected ending'):
+    return {'id':ident,'desc':caption,'authorUniqueId':source['handle'],'height':1280,'width':720,'coverUrl':'https://example.com/cover.jpg'}
+
+
+def detail_html(item,duration=33,created=1791817200):
+    detail={'id':item['url'].rsplit('/',1)[-1],'author':{'uniqueId':item['url'].split('/@',1)[1].split('/')[0]},'video':{'duration':duration},'createTime':str(created)}
+    return ('<script id="__UNIVERSAL_DATA_FOR_REHYDRATION__">'+json.dumps({'__DEFAULT_SCOPE__':{'webapp.video-detail':{'itemInfo':{'itemStruct':detail}}}})+'</script>').encode()
 
 
 class DailyVideoTests(unittest.TestCase):
@@ -78,7 +92,7 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(result['last_updated_at'],first['last_updated_at'])
 
     def test_partial_refresh_keeps_successes_and_retries_after_one_hour(self):
-        other={**SOURCE,'channel_id':feed.SOURCES[1]['channel_id'],'publisher':'Second publisher'}
+        other={**SOURCE,'channel_id':feed.YOUTUBE_SOURCES[1]['channel_id'],'publisher':'Second publisher'}
         def fetch(source):
             if source['publisher']=='Second publisher':raise OSError('unavailable')
             return atom([OLD])
@@ -134,6 +148,32 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(snapshot['reference_video'],idea['reference_video'])
         self.assertEqual(len({(i.get('reference_video') or {}).get('url') or i['url'] for i in overseas_library.recommendations(self.p)}),len(overseas_library.recommendations(self.p)))
 
+    def test_tiktok_defaults_and_source_change_keep_optional_youtube_references(self):
+        self.sync(atom([OLD]))
+        source=feed.SOURCES[-1]
+        with patch.object(feed,'SOURCES',[source]),patch.object(feed,'now',return_value=DAY),patch.object(feed,'fetch',return_value=tiktok_html(source,[tiktok_entry(source)])),patch.object(feed,'fetch_page',side_effect=lambda url:detail_html({'url':url})):
+            result=feed.refresh(background=False)
+        self.assertFalse(result['cached'])
+        self.assertEqual(result['added_count'],1)
+        public=self.c.req('/api/overseas/ideas?project_id='+self.p)[1]['items']
+        self.assertEqual(len(public),1)
+        self.assertTrue(all(i['reference_video']['platform']=='tiktok' for i in public))
+        self.assertEqual(public[0]['duration'],33)
+        self.assertEqual(len(overseas_library.recommendations(self.p,platform='youtube')),61)
+        self.assertEqual(overseas_library.recommendations(self.p)[0]['platform'],'tiktok')
+        saved=self.post('/api/overseas/ideas',{'feed_id':public[0]['id']})[1]
+        # Signed covers refresh without replacing a private collection's creative text.
+        with fixture.D.db() as c:
+            row=json.loads(c.execute('SELECT data FROM overseas_ideas WHERE id=?',(saved['id'],)).fetchone()[0])
+            row['summary']='My own creative note'
+            c.execute('UPDATE overseas_ideas SET data=? WHERE id=?',(json.dumps(row),saved['id']))
+            current=json.loads(c.execute('SELECT data FROM overseas_feed_videos WHERE id=?',(public[0]['id'],)).fetchone()[0])
+            current['reference_video']['thumbnail']='https://example.com/refreshed-cover.jpg'
+            c.execute('UPDATE overseas_feed_videos SET data=? WHERE id=?',(json.dumps(current),public[0]['id']))
+        hydrated=overseas_library.reference(self.p,saved['id'])
+        self.assertEqual(hydrated['summary'],'My own creative note')
+        self.assertEqual(hydrated['reference_video']['thumbnail'],'https://example.com/refreshed-cover.jpg')
+
     def test_pruning_old_public_pool_retains_saved_reference(self):
         self.sync(atom([OLD]))
         item=self.post('/api/overseas/ideas',{'feed_id':feed.videos()[0]['id']})[1]
@@ -154,6 +194,50 @@ class DailyVideoTests(unittest.TestCase):
 
 
 class FeedParsingTests(unittest.TestCase):
+    def test_tiktok_filters_private_horizontal_and_generic_reviews(self):
+        source=feed.SOURCES[0]
+        valid=tiktok_entry(source,ident='7694716128580357398',caption='Adam and Eve get evicted')
+        entries=[valid,{**valid,'privateItem':True},{**valid,'id':'7694716128580357399','width':1920,'height':1080},
+                 {**valid,'id':'7694716128580357400','desc':'New charger unboxing review'},
+                 {**valid,'id':'7694716128580357401','authorUniqueId':'another_person'}]
+        items=feed.parse(tiktok_html(source,entries),source)
+        self.assertEqual(len(items),1)
+        self.assertEqual(items[0]['reference_video']['platform'],'tiktok')
+        self.assertNotIn('published_at',items[0])
+        self.assertEqual(items[0]['metrics'],{})
+        self.assertEqual(items[0]['url'],'https://www.tiktok.com/@adrianbliss/video/7694716128580357398')
+
+    def test_tiktok_duration_and_timestamp_require_real_provider_metadata(self):
+        source=feed.SOURCES[0]
+        item=feed.parse(tiktok_html(source,[tiktok_entry(source)]),source)[0]
+        with patch.object(feed,'reference',return_value=None),patch.object(feed,'now',return_value=DAY):
+            for duration,created in ((120,1791817200),(30,1600000000),(30,1890000000)):
+                with patch.object(feed,'fetch_page',return_value=detail_html(item,duration,created)):
+                    self.assertIsNone(feed.tiktok_details(item))
+            with patch.object(feed,'fetch_page',return_value=detail_html(item)):
+                accepted=feed.tiktok_details(item)
+        self.assertEqual(accepted['duration'],33)
+        self.assertEqual(accepted['reference_video']['published_at'],accepted['published_at'])
+        previous={**accepted,'summary':'Old caption'}
+        changed={**item,'summary':'New caption'}
+        with patch.object(feed,'reference',return_value=previous),patch.object(feed,'now',return_value=DAY),patch.object(feed,'fetch_page') as fetch:
+            self.assertEqual(feed.tiktok_details(changed)['summary'],'New caption')
+            fetch.assert_not_called()
+
+    def test_tiktok_sources_are_story_and_brand_accounts(self):
+        self.assertTrue(all(s['platform']=='tiktok' for s in feed.SOURCES))
+        self.assertEqual(len({s['handle'] for s in feed.SOURCES}),len(feed.SOURCES))
+        self.assertTrue({'adrianbliss','liquiddeath','scrubdaddy'}<={s['handle'] for s in feed.SOURCES})
+
+    def test_brand_promotions_do_not_fill_the_story_recommendations(self):
+        source=next(s for s in feed.SOURCES if s['handle']=='scrubdaddy')
+        entries=[tiktok_entry(source,'7694716128580357398','Grab our new product on Amazon today'),
+                 tiktok_entry(source,'7694716128580357399','Date a Daddy they said…'),
+                 tiktok_entry(source,'7694716128580357400','Unexpected gift! No purchase necessary. Official rules apply.')]
+        items=feed.parse(tiktok_html(source,entries),source)
+        self.assertEqual(len(items),1)
+        self.assertEqual(items[0]['summary'],'Date a Daddy they said…')
+
     def test_parser_rejects_wrong_channels_entities_stale_future_and_invalid_ids(self):
         entries=[OLD,OLD,('bad','Invalid id','2026-10-10T14:00:00Z',''),('oldvideoxyz','Old','2020-10-10T14:00:00Z',''),NEW]
         with patch.object(feed,'now',return_value=DAY):
@@ -173,9 +257,9 @@ class FeedParsingTests(unittest.TestCase):
         self.assertEqual(items[0]['summary'],'A different scene 0')
 
     def test_verified_sources_cover_every_product_category(self):
-        self.assertEqual({s['category'] for s in feed.SOURCES},set('ABCDEFGH'))
-        self.assertEqual(len({s['channel_id'] for s in feed.SOURCES}),len(feed.SOURCES))
-        for source in feed.SOURCES:
+        self.assertEqual({s['category'] for s in feed.YOUTUBE_SOURCES},set('ABCDEFGH'))
+        self.assertEqual(len({s['channel_id'] for s in feed.YOUTUBE_SOURCES}),len(feed.YOUTUBE_SOURCES))
+        for source in feed.YOUTUBE_SOURCES:
             self.assertRegex(source['channel_id'],r'^UC[A-Za-z0-9_-]{22}$')
             self.assertEqual(source['feed_url'],'https://www.youtube.com/feeds/videos.xml?channel_id='+source['channel_id'])
 

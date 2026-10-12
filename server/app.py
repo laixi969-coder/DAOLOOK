@@ -505,7 +505,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/api/overseas/ideas' and method == 'GET':
             query = q.get('query', [''])[0]
             if len(query)>100: raise Error('搜索词最多100字')
-            return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], q.get('saved',['0'])[0]=='1', q.get('platform',['all'])[0]),
+            saved=q.get('saved',['0'])[0]=='1'
+            return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved, q.get('platform',['all' if saved else 'tiktok'])[0]),
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),

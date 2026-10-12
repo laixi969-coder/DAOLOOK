@@ -78,6 +78,9 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    const freshVideo={...referenceItem,id:'feed_new',source_kind:'daily_feed',reference_video:{...referenceItem.reference_video,relation:'来源视频',published_at:'2026-10-12T14:00:00Z'}};
    assert.equal(overseasReferenceVideo(freshVideo).includes('来源视频 · YouTube'),true);
    assert.equal(overseasReferenceVideo(freshVideo).includes('发布于'),true);
+   const tikVideo={...freshVideo,reference_video:{...freshVideo.reference_video,platform:'tiktok',url:'https://www.tiktok.com/@adrianbliss/video/7694716128580357398'}};
+   assert.equal(overseasReferenceVideo(tikVideo).includes('来源视频 · TikTok'),true);
+   assert.equal(overseasReferenceVideo(tikVideo).includes('YouTube'),false);
    assert.equal(overseasFeedStatus({state:'succeeded',added_count:5,last_checked_at:'2026-10-12T15:00:00Z'}).includes('上次新增 5 条'),true);
    // Public daily recommendations are collected through the verified source ID.
    S.overseasLibrary={items:[freshVideo]};

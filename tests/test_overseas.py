@@ -22,7 +22,7 @@ class OverseasApiTests(unittest.TestCase):
         return result
 
     def ideas(self,query=''):
-        return self.c.req('/api/overseas/ideas?project_id='+self.p+query)
+        return self.c.req('/api/overseas/ideas?project_id='+self.p+'&platform=all'+query)
 
     def test_skill_import_and_existing_config_migration_is_idempotent(self):
         with fixture.D.db() as c:

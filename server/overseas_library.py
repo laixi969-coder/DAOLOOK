@@ -49,6 +49,9 @@ def canonical_url(value):
 def with_reference_video(value):
     ident=value.get('archetype_id') or value.get('id')
     video=REFERENCE_VIDEOS.get(ident)
+    if not video and value.get('feed_id'):
+        current=overseas_feed.reference(value['feed_id'])
+        if current and current.get('url')==value.get('url'):video=current.get('reference_video')
     return {**value,'reference_video':copy.deepcopy(video)} if video else value
 
 
@@ -126,8 +129,9 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         link=(item.get('reference_video') or {}).get('url') or item.get('url') or item['id']
         if link in seen:continue
         if saved and not item['saved']: continue
-        if category and item.get('category')!=category: continue
-        if platform!='all' and item.get('platform') not in (platform,'all'): continue
+        if category and item.get('category') not in (category,''): continue
+        actual_platform=(item.get('reference_video') or {}).get('platform') or item.get('platform')
+        if platform!='all' and actual_platform!=platform: continue
         corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','category_name','mechanism','reflex','technique')).lower()
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
         hits=[t for t in tokens if t in corpus or t in ALIASES.get(item.get('category'),'') or t in direct]
@@ -137,7 +141,10 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         value={**item,'recommendation':reason}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
-        scored.append((-(4*len(direct)+len(hits)),kind,-published.timestamp() if published else 0,i,value))
+        reviewed=0 if item.get('case_review') else 1
+        platform_rank=0 if actual_platform=='tiktok' else 1
+        story_rank=0 if item.get('story_candidate') else 1
+        scored.append((-(4*len(direct)+len(hits)),reviewed,platform_rank,story_rank,kind,-published.timestamp() if published else 0,i,value))
     return [value for *_,value in sorted(scored)][:120]
 
 
