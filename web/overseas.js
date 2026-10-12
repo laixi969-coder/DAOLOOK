@@ -1,6 +1,7 @@
 "use strict";
 
 const OVERSEAS_NAMES = {overseas:"三平台 · 3 个不同创意",tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube Shorts"};
+let overseasRefreshTimer;
 function platformLabel(p) { return OVERSEAS_NAMES[p] || (p === "douyin" ? "抖音脚本" : "小红书图文"); }
 function overseasDefaults() { return {platform:"overseas",goal:"leads",topic:"",market:"United States",language:"en-zh",duration:24,temporary:"",requirements:"",assets:[],reference_id:""}; }
 function overseasFormValues() {
@@ -80,19 +81,27 @@ function overseasPage() {
 function overseasIdeasPage() {
   const lib=S.overseasLibrary;
   const filters=S.overseasFilters || {query:"",category:"",platform:"all",saved:false};
-  return heading("把值得借鉴的海外创意，收进来。", "搜索平台内容、收集原始链接，或浏览 60 条创意说明与真实参考视频。收藏后可直接带入创作。",`<div class="actions">${button("收集链接","collect-overseas","secondary","plus")}${button("开始海外创作","overseas","primary","spark")}</div>`,"OVERSEAS INSPIRATION")+
+  const updating=S.overseasRefreshing===workspaceKey() || lib?.refresh?.state==="running";
+  return heading("把值得借鉴的海外创意，收进来。", "每天同步新的创意与参考视频，收藏后可直接带入创作。",`<div class="actions"><button class="btn secondary" data-action="refresh-overseas-ideas" ${updating?"disabled":""}>${icon("refresh")}${updating?"正在更新…":"更新推荐"}</button>${button("收集链接","collect-overseas","secondary","plus")}${button("开始海外创作","overseas","primary","spark")}</div>`,"OVERSEAS INSPIRATION")+
     `<section class="panel overseas-library-controls"><div class="overseas-library-tabs"><button class="chip ${!filters.saved?"active":""}" data-action="overseas-tab" data-saved="0">创意推荐</button><button class="chip ${filters.saved?"active":""}" data-action="overseas-tab" data-saved="1">我的收藏</button></div><form id="overseas-filter-form"><label class="field"><span>关键词 / 产品</span><input id="overseas-query" maxlength="100" value="${esc(filters.query)}" placeholder="charger / 收纳 / cleaning"></label><label class="field"><span>品类</span><select id="overseas-category"><option value="">全部品类</option>${Object.entries(lib?.categories||{}).map(([id,label])=>`<option value="${id}" ${filters.category===id?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label class="field"><span>平台</span><select id="overseas-filter-platform"><option value="all">全部平台</option>${Object.entries(OVERSEAS_NAMES).filter(([id])=>id!=="overseas").map(([id,label])=>`<option value="${id}" ${filters.platform===id?"selected":""}>${label}</option>`).join("")}</select></label><button class="btn secondary" type="submit">筛选推荐</button><button class="btn primary" type="button" data-action="search-overseas" ${S.overseasSearching?"disabled":""}>${S.overseasSearching?"正在搜索…":"搜索平台内容"}</button></form><p class="hint">平台搜索请填写关键词并选择一个平台；可能产生数据源费用。${lib?.search_available?"":"当前实时数据源未启用，仍可浏览创意和收集链接。"}</p>${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`+
-    (lib?`<div class="section-head"><h2>${filters.saved?"收藏的创意":"推荐创意"} <span>${lib.items.length} 条</span></h2><span class="muted">已附视频 ${lib.items.filter(i=>i.reference_video?.url||i.url).length} / ${lib.items.length} 条</span></div>${lib.items.length?`<div class="overseas-idea-grid">${lib.items.map(overseasIdeaCard).join("")}</div>`:empty("暂时没有匹配的创意","试试其他关键词、取消筛选，或收集一条你发现的链接。",button("收集链接","collect-overseas","primary","plus"))}`:'<div class="loading-line">正在读取海外创意库…</div>');
+    (lib?`${overseasFeedStatus(lib.refresh)}<div class="section-head"><h2>${filters.saved?"收藏的创意":"推荐创意"} <span>${lib.items.length} 条</span></h2><span class="muted">已附视频 ${lib.items.filter(i=>i.reference_video?.url||i.url).length} / ${lib.items.length} 条</span></div>${lib.items.length?`<div class="overseas-idea-grid">${lib.items.map(overseasIdeaCard).join("")}</div>`:empty("暂时没有匹配的创意","试试其他关键词、取消筛选，或收集一条你发现的链接。",button("收集链接","collect-overseas","primary","plus"))}`:'<div class="loading-line">正在读取海外创意库…</div>');
+}
+function overseasFeedStatus(sync) {
+  if(!sync) return "";
+  const checked=sync.last_checked_at?new Date(sync.last_checked_at).toLocaleString("zh-CN",{month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit"}):"尚未同步";
+  const message=sync.state==="running"?"正在读取新视频…":sync.state==="failed"?"本次更新未完成，可稍后重试":`最近检查：${checked} · 上次新增 ${sync.added_count||0} 条`;
+  return `<p class="overseas-feed-status" role="status">每日更新 · ${esc(message)}</p>`;
 }
 function overseasIdeaCard(item) {
   return `<article class="overseas-idea-card"><h3>${esc(item.title)}</h3><p class="idea-summary">${esc(item.summary||"尚未补充创意说明")}</p>${overseasReferenceVideo(item)}<div class="actions">${button(item.saved?"已收藏":"收藏","save-overseas-idea","secondary small",item.saved?"check":"star",`data-id="${item.id}"`)}${button("用这个创意创作","use-overseas-idea","primary small","spark",`data-id="${item.id}"`)}</div></article>`;
 }
 function overseasReferenceVideo(item) {
   const video=item.reference_video;
-  if(video?.url) return `<a class="overseas-reference-video" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${video.thumbnail?`<img src="${esc(safeImage(video.thumbnail))}" alt="${esc(video.title)}" loading="lazy" referrerpolicy="no-referrer">`:""}<span class="video-source">同类产品参考 · YouTube</span><strong>${esc(video.title)}</strong><span class="video-source">发布者：${esc(video.publisher)}</span><span class="video-watch">观看参考视频 ↗</span></a>`;
+  if(video?.url) return `<a class="overseas-reference-video" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${video.thumbnail?`<img src="${esc(safeImage(video.thumbnail))}" alt="${esc(video.title)}" loading="lazy" referrerpolicy="no-referrer">`:""}<span class="video-source">${video.relation==="来源视频"?"来源视频":"同类产品参考"} · YouTube</span><strong>${esc(video.title)}</strong><span class="video-source">发布者：${esc(video.publisher)}</span>${video.published_at?`<span class="video-source">发布于 ${date(video.published_at)}</span>`:""}<span class="video-watch">观看参考视频 ↗</span></a>`;
   return item.url?`<a class="video-watch" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">查看原始内容 ↗</a>`:"";
 }
 async function loadOverseasIdeas() {
+  clearTimeout(overseasRefreshTimer);
   const key=workspaceKey(); const request=++S.overseasLoadToken;
   const f=S.overseasFilters;
   const params=new URLSearchParams({project_id:S.project,query:f.query,category:f.category,platform:f.platform,saved:f.saved?"1":"0"});
@@ -100,14 +109,34 @@ async function loadOverseasIdeas() {
     const library=await api("/api/overseas/ideas?"+params);
     if(key!==workspaceKey() || request!==S.overseasLoadToken) return;
     S.overseasLibrary=library;
+    if(library.refresh?.daily && S.page==="overseas-ideas") {
+      overseasRefreshTimer=setTimeout(()=>{
+        if(key===workspaceKey() && request===S.overseasLoadToken && S.page==="overseas-ideas") loadOverseasIdeas();
+      },library.refresh.state==="running"?3000:600000);
+    }
   } catch(error) { if(key===workspaceKey() && request===S.overseasLoadToken) {S.overseasMessage=error.message;S.overseasLibrary={items:[],categories:{}};} }
   if(key===workspaceKey() && S.page==="overseas-ideas") render();
+}
+async function refreshOverseasIdeas() {
+  const key=workspaceKey();
+  if(S.overseasRefreshing===key || S.overseasLibrary?.refresh?.state==="running") return;
+  readOverseasFilters();S.overseasRefreshing=key;S.overseasMessage="";render();
+  try {
+    const result=await post("/api/overseas/refresh",body({}));
+    if(key!==workspaceKey())return;
+    if(result.cached && ["succeeded","partial"].includes(result.state)) S.overseasMessage="刚刚检查过推荐，稍后可再次更新。";
+    await loadOverseasIdeas();
+  } finally {
+    if(S.overseasRefreshing===key)S.overseasRefreshing=null;
+    if(key===workspaceKey() && S.page==="overseas-ideas") render();
+  }
 }
 function readOverseasFilters() {
   S.overseasFilters={...S.overseasFilters,query:$("#overseas-query").value.trim(),category:$("#overseas-category").value,platform:$("#overseas-filter-platform").value};
 }
 async function searchOverseas() {
   if(S.overseasSearching) return;
+  clearTimeout(overseasRefreshTimer);
   readOverseasFilters(); const f={...S.overseasFilters},key=workspaceKey();
   if(!f.query || f.platform==="all") throw new Error("请填写关键词，并选择TikTok、Reels或Shorts中的一个平台");
   S.overseasSearching=true; S.overseasMessage=""; render();
@@ -175,12 +204,14 @@ function overseasPlanText(d) {
 Object.assign(actions,{
   "focus-overseas-creation":el=>{S.focusCreation=el.dataset.id;render();window.scrollTo({top:0});},
   overseas:()=>navigate("overseas"),"overseas-ideas":()=>navigate("overseas-ideas"),
+  "refresh-overseas-ideas":refreshOverseasIdeas,
   "collect-overseas":collectOverseasModal,"search-overseas":searchOverseas,
   "overseas-tab":async el=>{readOverseasFilters();S.overseasFilters.saved=el.dataset.saved==="1";S.overseasMessage="";await loadOverseasIdeas();},
   "save-overseas-idea":async el=>{
     const key=workspaceKey(),item=S.overseasLibrary.items.find(i=>i.id===el.dataset.id);
     if(!item) return;
     if(item.id.startsWith("archetype_")) await post("/api/overseas/ideas",body({archetype_id:item.id}));
+    else if(item.id.startsWith("feed_")) await post("/api/overseas/ideas",body({feed_id:item.id}));
     else await api("/api/overseas/ideas/"+item.id,{method:"PATCH",body:JSON.stringify(body({saved:!item.saved}))});
     if(key!==workspaceKey()) return;
     await loadOverseasIdeas();toast(item.saved?"已取消收藏":"创意已收藏");

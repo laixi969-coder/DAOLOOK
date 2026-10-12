@@ -7,6 +7,7 @@ import urllib.parse
 from pathlib import Path
 from .db import db, dumps, uid, now, setting
 from .discovery import parse_count
+from . import overseas_feed
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
@@ -61,6 +62,8 @@ def list_ideas(project):
 
 
 def reference(project, ident):
+    if ident.startswith('feed_'):
+        return overseas_feed.reference(ident)
     if ident.startswith('archetype_'):
         value=next((a for a in ARCHETYPES if a['id']==ident), None)
         return with_reference_video(copy.deepcopy(value)) if value else None
@@ -86,7 +89,12 @@ def store(project, value, saved=False):
 
 
 def collect(project, data):
-    if data.get('archetype_id'):
+    if data.get('feed_id'):
+        ident=text(data['feed_id'],'推荐编号',80,True)
+        value=overseas_feed.reference(ident)
+        if not value:raise ValueError('推荐创意不存在')
+        value.pop('id')
+    elif data.get('archetype_id'):
         ident=text(data['archetype_id'],'原型号',40,True)
         value=reference(project,ident)
         if not value: raise ValueError('创意原型不存在')
@@ -109,10 +117,14 @@ def recommendations(project, query='', category='', saved=False, platform='all')
     if platform not in (*PLATFORMS,'all'): raise ValueError('平台无效')
     records=list_ideas(project)
     existing={r.get('archetype_id'):r for r in records if r.get('archetype_id')}
-    items=records if saved else [r for r in records if not r.get('archetype_id')] + [existing.get(a['id'],{**with_reference_video(a),'saved':False}) for a in ARCHETYPES]
+    by_url={r.get('url'):r for r in records if r.get('url')}
+    fresh=[by_url.get(item['url'],{**item,'saved':False}) for item in overseas_feed.videos()] if not saved else []
+    items=records if saved else fresh+[r for r in records if not r.get('archetype_id')] + [existing.get(a['id'],{**with_reference_video(a),'saved':False}) for a in ARCHETYPES]
     tokens=[t for t in re.split(r'\s+',query.lower()) if t]
-    scored=[]
+    scored=[];seen=set()
     for i,item in enumerate(items):
+        link=(item.get('reference_video') or {}).get('url') or item.get('url') or item['id']
+        if link in seen:continue
         if saved and not item['saved']: continue
         if category and item.get('category')!=category: continue
         if platform!='all' and item.get('platform') not in (platform,'all'): continue
@@ -120,10 +132,13 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
         hits=[t for t in tokens if t in corpus or t in ALIASES.get(item.get('category'),'') or t in direct]
         if tokens and not hits: continue
+        seen.add(link)
         reason='匹配关键词：'+'、'.join(direct) if direct else ('同类创意：'+item.get('category_name','') if hits else ('匹配所选品类' if category else '可复用的创意结构，按资料顺序展示'))
         value={**item,'recommendation':reason}
-        scored.append((-(4*len(direct)+len(hits)),i,value))
-    return [value for _,_,value in sorted(scored)][:120]
+        published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
+        kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
+        scored.append((-(4*len(direct)+len(hits)),kind,-published.timestamp() if published else 0,i,value))
+    return [value for *_,value in sorted(scored)][:120]
 
 
 def normalize(raw,p):

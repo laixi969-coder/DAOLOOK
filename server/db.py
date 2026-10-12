@@ -58,10 +58,13 @@ def init():
         CREATE TABLE IF NOT EXISTS creation_revisions(creation_id TEXT NOT NULL REFERENCES creation_outputs(id),revision INTEGER NOT NULL,data TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(creation_id,revision));
         CREATE TABLE IF NOT EXISTS overseas_ideas(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),source_key TEXT NOT NULL,data TEXT NOT NULL,saved INTEGER NOT NULL DEFAULT 0,deleted_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(project_id,source_key));
         CREATE TABLE IF NOT EXISTS overseas_searches(project_id TEXT NOT NULL REFERENCES projects(id),platform TEXT NOT NULL,query TEXT NOT NULL,ids TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,platform,query));
+        CREATE TABLE IF NOT EXISTS overseas_feed_videos(id TEXT PRIMARY KEY,url TEXT NOT NULL UNIQUE,data TEXT NOT NULL,published_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS overseas_feed_state(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
         """)
+        c.execute("INSERT OR IGNORE INTO overseas_feed_state VALUES (1,?)",(dumps({'state':'idle','added_count':0,'changed_count':0}),))
         defaults = {
             "mode": os.environ.get("DAOLOOK_MODE", "demo"),
             "rules": {"analyze": 5, "create": 15, "cover": 8, "original": 15},

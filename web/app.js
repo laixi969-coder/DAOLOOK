@@ -176,7 +176,7 @@ async function refresh() {
     S.overseasReferenceTitle = "";
     S.overseasLibrary = null;
     S.overseasFilters = {query:"",category:"",platform:"all",saved:false};
-    S.overseasMessage = ""; S.overseasSearching = false; S.overseasLoadToken = 0;
+    S.overseasMessage = ""; S.overseasSearching = false; S.overseasRefreshing = null; S.overseasLoadToken = 0;
   }
   S.workspaceKey = key;
   const [workspace, tasks, boot] = await Promise.all([

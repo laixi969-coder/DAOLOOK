@@ -75,6 +75,31 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.equal(overseasReferenceVideo(referenceItem).includes('<details'),false);
    assert.equal(overseasReferenceVideo({}), '');
    assert.equal(overseasReferenceVideo({url:'https://www.youtube.com/watch?v=abcdefghijk'}).includes('查看原始内容'),true);
+   const freshVideo={...referenceItem,id:'feed_new',source_kind:'daily_feed',reference_video:{...referenceItem.reference_video,relation:'来源视频',published_at:'2026-10-12T14:00:00Z'}};
+   assert.equal(overseasReferenceVideo(freshVideo).includes('来源视频 · YouTube'),true);
+   assert.equal(overseasReferenceVideo(freshVideo).includes('发布于'),true);
+   assert.equal(overseasFeedStatus({state:'succeeded',added_count:5,last_checked_at:'2026-10-12T15:00:00Z'}).includes('上次新增 5 条'),true);
+   // Public daily recommendations are collected through the verified source ID.
+   S.overseasLibrary={items:[freshVideo]};
+   let collected;
+   api=async(path,options)=>{
+     if(options?.body) {collected=JSON.parse(options.body);return {id:'saved-feed'};}
+     return {items:[{...freshVideo,id:'saved-feed',saved:true}]};
+   };
+   await actions['save-overseas-idea']({dataset:{id:'feed_new'}});
+   assert.equal(collected.feed_id,'feed_new');
+   assert.equal(collected.project_id,'b');
+   // A delayed manual refresh cannot replace the library in another project.
+   const filterFields={'#overseas-query':{value:'charger'},'#overseas-category':{value:''},'#overseas-filter-platform':{value:'all'}};
+   document.querySelector=key=>filterFields[key]||null;
+   let resolveRefresh;
+   api=()=>new Promise(resolve=>{resolveRefresh=resolve;});
+   const pendingRefresh=refreshOverseasIdeas();
+   S.project='c';S.overseasLibrary={items:[{id:'project-c'}]};
+   resolveRefresh({state:'succeeded',cached:false});await pendingRefresh;
+   assert.equal(S.overseasLibrary.items[0].id,'project-c');
+   assert.equal(S.overseasRefreshing,null);
+   S.project='b';
    // Mixed uploads persist and select both documents and image posters.
    S.page='overseas';S.busy=false;S.workspace={assets:[]};S.overseasForm=overseasDefaults();
    saveOverseasDraft=()=>{};

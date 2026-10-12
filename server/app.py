@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed
 from .ranking import score
 from .skills import SKILL_NAMES
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
@@ -508,9 +508,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], q.get('saved',['0'])[0]=='1', q.get('platform',['all'])[0]),
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
+                              'refresh':overseas_feed.status(),
                               'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60,'reference_videos':len(overseas_library.REFERENCE_VIDEOS)}})
         if path == '/api/overseas/ideas' and method == 'POST':
             return self.send(overseas_library.collect(project_id,data))
+        if path == '/api/overseas/refresh' and method == 'POST':
+            RATE.check(('overseas-refresh',u['id']),3)
+            return self.send(overseas_feed.refresh(force=True))
         overseas_match=re.fullmatch(r'/api/overseas/ideas/([a-f0-9]+)',path)
         if overseas_match and method == 'PATCH':
             ident=overseas_match.group(1)
@@ -1642,6 +1646,7 @@ def main():
                 )
     jobs.start()
     maintenance.start()
+    overseas_feed.start()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))
     print(f"DAOLOOK ready: http://{host}:{port}", flush=True)
