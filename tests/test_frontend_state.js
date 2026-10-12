@@ -60,14 +60,18 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    drafts.save('alice:b:overseas',{platform:'overseas',topic:'Charger',market:'Germany',language:'de-zh',duration:32,reference_id:'one',temporary:'facts',password:'secret'});
    const recovered=drafts.read('alice:b:overseas');
    assert.equal(recovered.language,'de-zh');assert.equal(recovered.duration,32);assert.equal(recovered.password,undefined);
-   // Reference video title, publisher and watch link are visible outside the source fold.
-   const referenceItem={id:'archetype_03',title:'三合一充电器',source_kind:'archetype',reference_video:{url:'https://www.youtube.com/watch?v=E8rFu6YYzsw',title:'Review <test>',publisher:'Creator & brand',thumbnail:'https://i.ytimg.com/vi/E8rFu6YYzsw/hqdefault.jpg'}};
+   // Cards show the idea and video without method labels or recommendation logic.
+   const referenceItem={id:'archetype_03',title:'三合一充电器',summary:'创意画面：充电器展开后同时为三台设备供电。',source_kind:'archetype',reflex:'痛觉共鸣',technique:'T6 POV',mechanism:'先反转再揭晓',recommendation:'按方法排序',source:'viral v1.0.0',note:'方法论说明',category_name:'数码分类',metrics:{views:999},reference_video:{url:'https://www.youtube.com/watch?v=E8rFu6YYzsw',title:'Review <test>',publisher:'Creator & brand',thumbnail:'https://i.ytimg.com/vi/E8rFu6YYzsw/hqdefault.jpg'}};
    const referenceCard=overseasIdeaCard(referenceItem);
    assert.equal(referenceCard.includes('同类产品参考 · YouTube'),true);
    assert.equal(referenceCard.includes('Review &lt;test&gt;'),true);
    assert.equal(referenceCard.includes('发布者：Creator &amp; brand'),true);
    assert.equal(referenceCard.includes('href="'+referenceItem.reference_video.url+'"'),true);
-   assert.equal(referenceCard.indexOf('观看参考视频')<referenceCard.indexOf('<details'),true);
+   assert.equal(referenceCard.includes(referenceItem.summary),true);
+   for(const internal of ['痛觉共鸣','T6 POV','先反转再揭晓','按方法排序','viral v1.0.0','方法论说明','数码分类','播放 999','来源与推荐依据','<details']) assert.equal(referenceCard.includes(internal),false);
+   assert.equal(referenceCard.includes('观看参考视频'),true);
+   assert.equal(referenceCard.includes('save-overseas-idea'),true);
+   assert.equal(referenceCard.includes('use-overseas-idea'),true);
    assert.equal(overseasReferenceVideo(referenceItem).includes('<details'),false);
    assert.equal(overseasReferenceVideo({}), '');
    assert.equal(overseasReferenceVideo({url:'https://www.youtube.com/watch?v=abcdefghijk'}).includes('查看原始内容'),true);

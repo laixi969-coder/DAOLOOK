@@ -994,8 +994,6 @@ svg.icon {
 .creation-picks { margin: 20px 0 30px; }
 .board-overview > summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
 .overseas-studio { width: 100%; max-width: 960px; }
-.overseas-methods { display: flex; flex-wrap: wrap; gap: 7px; margin: 16px 0; }
-.overseas-methods span { font-size: 12px; border: 1px solid var(--line); border-radius: 6px; padding: 5px 8px; color: var(--ink-2); }
 .overseas-library-tabs { display: flex; gap: 10px; margin-bottom: 18px; }
 #overseas-filter-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 #overseas-filter-form .field { flex: 1; min-width: 140px; margin-bottom: 0; }
@@ -1003,12 +1001,9 @@ svg.icon {
 .overseas-library-controls > .hint { margin-top: 14px; }
 .overseas-idea-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .overseas-idea-card { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); padding: 24px; min-width: 0; display: flex; flex-direction: column; }
-.idea-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--ink-3); font-size: 12px; }
-.overseas-idea-card h3 { margin: 18px 0 12px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
-.idea-summary { white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: var(--ink-2); max-height: 180px; overflow: auto; overflow-wrap: anywhere; }
-.idea-reason { font-size: 12px; color: var(--ink-2); background: var(--wash); padding: 10px; margin-top: 18px; border-radius: 6px; }
+.overseas-idea-card h3 { margin: 0 0 12px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
+.idea-summary { white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
 .overseas-idea-card .actions { margin-top: auto; padding-top: 20px; }
-.overseas-idea-card .source-evidence { margin-top: 12px; }
 .overseas-reference-video { display: grid; gap: 8px; padding: 12px; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); text-decoration: none; }
 .overseas-reference-video img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
 .overseas-reference-video strong { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }

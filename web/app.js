@@ -1706,7 +1706,7 @@ document.addEventListener("submit", async (e) => {
         await startOverseas();break;
       case "overseas-collect-form": {
         const key=S.overseasCollectKey;
-        await post("/api/overseas/ideas",body({url:$("#collect-overseas-url").value,title:$("#collect-overseas-title").value,category:$("#collect-overseas-category").value,summary:$("#collect-overseas-summary").value,mechanism:$("#collect-overseas-mechanism").value}));
+        await post("/api/overseas/ideas",body({url:$("#collect-overseas-url").value,title:$("#collect-overseas-title").value,category:$("#collect-overseas-category").value,summary:$("#collect-overseas-summary").value}));
         if(key!==workspaceKey())return;
         close();S.overseasFilters={query:"",category:"",platform:"all",saved:true};await loadOverseasIdeas();toast("已收集到当前项目的海外收藏");break;
       }
