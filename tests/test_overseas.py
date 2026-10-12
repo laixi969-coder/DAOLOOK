@@ -217,3 +217,17 @@ class OverseasStructureTests(unittest.TestCase):
             outputs[1][field]=outputs[0][field]
             with self.assertRaisesRegex(ValueError,'方案不能重复'):
                 overseas.validate({'outputs':outputs},self.brief,[])
+
+    def test_silent_visuals_are_valid_and_video_copy_needs_translation(self):
+        outputs=copy.deepcopy(self.outputs)
+        for output in outputs:
+            output['script']=output['translation_zh']=''
+            for hook in output['hooks']:hook['line']=hook['translation_zh']=''
+            for shot in output['shots']:
+                shot['line']=shot['translation_zh']=shot['screen_text']=shot['screen_text_zh']=''
+        overseas.validate({'outputs':outputs},self.brief,[])
+        outputs[0]['shots'][0]['screen_text']='Wait.'
+        with self.assertRaisesRegex(ValueError,'屏幕文案'):
+            overseas.validate({'outputs':outputs},self.brief,[])
+        outputs[0]['shots'][0]['screen_text_zh']='等一下。'
+        overseas.validate({'outputs':outputs},self.brief,[])

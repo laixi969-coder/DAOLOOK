@@ -1024,6 +1024,8 @@ svg.icon {
 .overseas-shot + .overseas-shot, .overseas-ai-prompt + .overseas-ai-prompt { margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
 .overseas-shot h5, .overseas-ai-prompt h5 { margin: 0 0 8px; font-size: 14px; }
 .overseas-ai-prompt pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.8; padding: 12px; background: var(--wash); border-radius: 8px; margin-top: 10px; }
+.overseas-video-copy { margin-top: 12px; padding: 12px; border-radius: 8px; background: var(--wash); }
+.overseas-video-copy p { margin-bottom: 4px; }
 .overseas-hook { border-top: 1px solid var(--line); padding: 14px 0; }
 .overseas-shots table { min-width: 660px; }
 .overseas-shots td { white-space: pre-wrap; min-width: 140px; vertical-align: top; }

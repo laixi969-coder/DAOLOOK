@@ -233,6 +233,9 @@ RELEASES.append(("skill_release_2026_10_12_overseas_choices", {
 RELEASES.append(("skill_release_2026_10_12_overseas_delivery", {
     p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
 }))
+RELEASES.append(("skill_release_2026_10_12_overseas_video_copy", {
+    p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
+}))
 SKILL_NAMES = [
     "xhs_analysis",
     "douyin_analysis",

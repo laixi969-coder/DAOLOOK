@@ -18,7 +18,7 @@ OUTPUT_SCHEMA = {
         'reveal_shot':{'type':'integer','minimum':1,'maximum':6},
         **{k:{'type':'array','items':{'type':'string'}} for k in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments')},
         'hooks':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'object','properties':string_fields(('visual','line','translation_zh','sfx')),'required':['visual','line','translation_zh','sfx']}},
-        'shots':{'type':'array','items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt']}},
+        'shots':{'type':'array','items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt']}},
         'evidence':{'type':'array','items':{'type':'object','properties':string_fields(('asset_id','quote')),'required':['asset_id','quote']}},
         'target_platform':{'type':'string','enum':list(SOCIAL_PLATFORMS)},
     },
@@ -34,8 +34,11 @@ def validate(result,brief,assets,previous=None):
     for output in outputs:
         if not isinstance(output,dict): raise ValueError('创意方案格式错误')
         if output.get('target_platform') not in SOCIAL_PLATFORMS or (brief['platform']!='overseas' and output['target_platform']!=brief['platform']): raise ValueError('方案的平台与要求不一致')
-        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','concept','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
+        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','concept','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
             if not isinstance(output.get(key),str) or not output[key].strip() or len(output[key])>30000: raise ValueError('创意缺少有效字段：'+key)
+        for key in ('script','translation_zh'):
+            if not isinstance(output.get(key),str) or len(output[key])>30000: raise ValueError('口播格式无效')
+        if bool(output['script'].strip()) != bool(output['translation_zh'].strip()): raise ValueError('有口播时须同时提供中文翻译')
         if output['ending_type'] not in ENDINGS: raise ValueError('收尾方式无效')
         if output['casting'] not in ('有人','仅手部','无人'): raise ValueError('请标明有人、仅手部或无人出镜')
         for key in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments'):
@@ -46,7 +49,8 @@ def validate(result,brief,assets,previous=None):
         hooks=output.get('hooks')
         if not isinstance(hooks,list) or len(hooks)!=3: raise ValueError('每个方案必须有3个Hook')
         for hook in hooks:
-            if not isinstance(hook,dict) or any(not isinstance(hook.get(k),str) or not hook[k].strip() or len(hook[k])>4000 for k in ('visual','line','translation_zh','sfx')): raise ValueError('Hook缺少画面、台词、中译或音效')
+            if not isinstance(hook,dict) or any(not isinstance(hook.get(k),str) or len(hook[k])>4000 for k in ('visual','line','translation_zh','sfx')) or not hook['visual'].strip(): raise ValueError('Hook缺少有效画面或文案')
+            if bool(hook['line'].strip()) != bool(hook['translation_zh'].strip()): raise ValueError('Hook口播须同时提供中文翻译')
         if len({content_quality.normalized(h['visual']+h['line']) for h in hooks})!=3: raise ValueError('3个Hook不能只是换标点')
         shots=output.get('shots')
         if not isinstance(shots,list) or not 3<=len(shots)<=6: raise ValueError('默认拍摄方案需要3–6镜')
@@ -55,7 +59,9 @@ def validate(result,brief,assets,previous=None):
         if output['ending_type']=='故事翻牌' and reveal_shot!=len(shots): raise ValueError('故事翻牌需要在最后一镜首次揭晓产品')
         cursor=0
         for shot in shots:
-            if not isinstance(shot,dict) or any(not isinstance(shot.get(k),str) or len(shot[k])>6000 for k in ('camera','action','line','translation_zh','screen_text','sfx','implementation','ai_prompt')): raise ValueError('分镜字段无效')
+            if not isinstance(shot,dict) or any(not isinstance(shot.get(k),str) or len(shot[k])>6000 for k in ('camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt')): raise ValueError('分镜字段无效')
+            if bool(shot['line'].strip()) != bool(shot['translation_zh'].strip()): raise ValueError('镜头口播须同时提供中文翻译')
+            if bool(shot['screen_text'].strip()) != bool(shot['screen_text_zh'].strip()): raise ValueError('屏幕文案须同时提供中文翻译')
             start,end=shot.get('start'),shot.get('end')
             if type(start) not in (int,float) or type(end) not in (int,float) or abs(start-cursor)>.01 or not start<end<=brief['duration']: raise ValueError('分镜时间必须从0秒连续覆盖目标时长')
             if not shot['camera'].strip() or not shot['action'].strip() or not shot['implementation'].strip(): raise ValueError('分镜缺少具体画面动作或实现方法')
@@ -64,8 +70,10 @@ def validate(result,brief,assets,previous=None):
         if abs(cursor-brief['duration'])>.01: raise ValueError('分镜总时长与目标时长不一致')
         evidence=output.get('evidence')
         if not isinstance(evidence,list) or (evidence and not content_quality.evidence_valid(output,assets)): raise ValueError('业务事实引用未匹配所选资料')
-    for field in ('title','script','body','angle','first_second','misread','reveal'):
+    for field in ('title','body','angle','first_second','misread','reveal'):
         if len({content_quality.normalized(o[field]) for o in outputs})!=3: raise ValueError('方案不能重复：'+field)
+    scripts=[content_quality.normalized(o['script']) for o in outputs if o['script'].strip()]
+    if len(set(scripts))!=len(scripts): raise ValueError('方案不能重复：script')
     if {content_quality.normalized(o['title']) for o in outputs} & {content_quality.normalized(o.get('title','')) for o in previous or []}: raise ValueError('请避开历史创意标题')
 
 
@@ -118,7 +126,8 @@ def demo_outputs(brief,assets,batch):
         target=list(SOCIAL_PLATFORMS)[index] if brief['platform']=='overseas' else brief['platform']
         shots=[{'start':start,'end':end,'camera':'手机固定，保持主体居中与同轴空间关系','action':idea['actions'][i],
                 'line':idea['line'] if i==4 else '', 'translation_zh':idea['translation'] if i==4 else '',
-                'screen_text':'', 'sfx':'现场环境音', 'implementation':idea['implementation'],
+                'screen_text':idea['line'] if i==4 else '', 'screen_text_zh':idea['translation'] if i==4 else '',
+                'sfx':'现场环境音', 'implementation':idea['implementation'],
                 'ai_prompt':f"9:16竖屏，真实摄影质感，固定桌面场景与自然光。主体居中，手机固定机位。{idea['actions'][i]}。单个连续镜头，保持前后空间关系。{'画面中没有人物、手部或人物倒影。' if idea['casting']=='无人' else '沿用同一人物外观和服装。'}{'采用用户产品参考图，外观、材质与比例保持一致。' if i==4 else '不出现可辨认产品、品牌、包装或产品倒影。'}不生成字幕与标识，文字在后期添加。"}
                for i,(start,end) in enumerate(zip(times,times[1:]))]
         outputs.append({
