@@ -10,6 +10,7 @@ from .discovery import parse_count
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
+REFERENCE_VIDEOS = {v['archetype_id']:v for v in json.loads((Path(__file__).parent / 'resources/hiccai-pop/reference-videos.json').read_text())}
 CATEGORIES = {a['category']: a['category_name'] for a in ARCHETYPES}
 ALIASES = {'A':'tech charger charging phone car 数码 充电 手机 汽车', 'B':'beauty skin makeup 美妆 护肤', 'C':'home kitchen cleaning storage coffee 家居 厨房 清洁 收纳 咖啡', 'D':'pet baby dog cat 宠物 母婴 猫 狗', 'E':'fashion clothing shoes 服饰 鞋 包', 'F':'toy light asmr 玩具 解压 灯', 'G':'outdoor tools camping 户外 工具 露营', 'H':'safety desk keyboard 独居 安全 桌面 键盘'}
 KEYWORDS = {'charger':'充电','charging':'充电','wireless':'无线','foldable':'折叠','phone':'手机','car':'车','beauty':'美妆','makeup':'妆','skin':'皮肤','cleaning':'清洁','storage':'收纳','coffee':'咖啡','kitchen':'厨房','dog':'狗','cat':'猫','baby':'儿童','pet':'宠物','shoes':'鞋','clothing':'衣','toy':'玩具','camping':'露营','keyboard':'键盘'}
@@ -44,8 +45,14 @@ def canonical_url(value):
     return p, urllib.parse.urlunsplit(('https',host,path,'',''))
 
 
+def with_reference_video(value):
+    ident=value.get('archetype_id') or value.get('id')
+    video=REFERENCE_VIDEOS.get(ident)
+    return {**value,'reference_video':copy.deepcopy(video)} if video else value
+
+
 def view(row):
-    return {**json.loads(row['data']), 'id':row['id'], 'saved':bool(row['saved']), 'collected_at':row['created_at'], 'updated_at':row['updated_at']}
+    return with_reference_video({**json.loads(row['data']), 'id':row['id'], 'saved':bool(row['saved']), 'collected_at':row['created_at'], 'updated_at':row['updated_at']})
 
 
 def list_ideas(project):
@@ -55,7 +62,8 @@ def list_ideas(project):
 
 def reference(project, ident):
     if ident.startswith('archetype_'):
-        return copy.deepcopy(next((a for a in ARCHETYPES if a['id']==ident), None))
+        value=next((a for a in ARCHETYPES if a['id']==ident), None)
+        return with_reference_video(copy.deepcopy(value)) if value else None
     with db() as c:
         row = c.execute('SELECT * FROM overseas_ideas WHERE id=? AND project_id=? AND deleted_at IS NULL',(ident,project)).fetchone()
         return view(row) if row else None
@@ -101,7 +109,7 @@ def recommendations(project, query='', category='', saved=False, platform='all')
     if platform not in (*PLATFORMS,'all'): raise ValueError('平台无效')
     records=list_ideas(project)
     existing={r.get('archetype_id'):r for r in records if r.get('archetype_id')}
-    items=records if saved else [r for r in records if not r.get('archetype_id')] + [existing.get(a['id'],{**a,'saved':False}) for a in ARCHETYPES]
+    items=records if saved else [r for r in records if not r.get('archetype_id')] + [existing.get(a['id'],{**with_reference_video(a),'saved':False}) for a in ARCHETYPES]
     tokens=[t for t in re.split(r'\s+',query.lower()) if t]
     scored=[]
     for i,item in enumerate(items):

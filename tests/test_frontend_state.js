@@ -60,6 +60,17 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    drafts.save('alice:b:overseas',{platform:'overseas',topic:'Charger',market:'Germany',language:'de-zh',duration:32,reference_id:'one',temporary:'facts',password:'secret'});
    const recovered=drafts.read('alice:b:overseas');
    assert.equal(recovered.language,'de-zh');assert.equal(recovered.duration,32);assert.equal(recovered.password,undefined);
+   // Reference video title, publisher and watch link are visible outside the source fold.
+   const referenceItem={id:'archetype_03',title:'三合一充电器',source_kind:'archetype',reference_video:{url:'https://www.youtube.com/watch?v=E8rFu6YYzsw',title:'Review <test>',publisher:'Creator & brand',thumbnail:'https://i.ytimg.com/vi/E8rFu6YYzsw/hqdefault.jpg'}};
+   const referenceCard=overseasIdeaCard(referenceItem);
+   assert.equal(referenceCard.includes('同类产品参考 · YouTube'),true);
+   assert.equal(referenceCard.includes('Review &lt;test&gt;'),true);
+   assert.equal(referenceCard.includes('发布者：Creator &amp; brand'),true);
+   assert.equal(referenceCard.includes('href="'+referenceItem.reference_video.url+'"'),true);
+   assert.equal(referenceCard.indexOf('观看参考视频')<referenceCard.indexOf('<details'),true);
+   assert.equal(overseasReferenceVideo(referenceItem).includes('<details'),false);
+   assert.equal(overseasReferenceVideo({}), '');
+   assert.equal(overseasReferenceVideo({url:'https://www.youtube.com/watch?v=abcdefghijk'}).includes('查看原始内容'),true);
    // Mixed uploads persist and select both documents and image posters.
    S.page='overseas';S.busy=false;S.workspace={assets:[]};S.overseasForm=overseasDefaults();
    saveOverseasDraft=()=>{};

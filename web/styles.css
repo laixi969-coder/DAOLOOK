@@ -1009,6 +1009,11 @@ svg.icon {
 .idea-reason { font-size: 12px; color: var(--ink-2); background: var(--wash); padding: 10px; margin-top: 18px; border-radius: 6px; }
 .overseas-idea-card .actions { margin-top: auto; padding-top: 20px; }
 .overseas-idea-card .source-evidence { margin-top: 12px; }
+.overseas-reference-video { display: grid; gap: 8px; padding: 12px; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); text-decoration: none; }
+.overseas-reference-video img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }
+.overseas-reference-video strong { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.video-source { font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.video-watch { display: inline-block; color: var(--green); font-size: 14px; font-weight: 600; margin-top: 6px; }
 .overseas-output { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 14px; }
 .overseas-output p { white-space: pre-wrap; overflow-wrap: anywhere; }
 .overseas-output-section, .overseas-story { margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }

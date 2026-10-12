@@ -1,6 +1,7 @@
 import copy
 import json
 import unittest
+from pathlib import Path
 from unittest.mock import patch
 from tests import test_original as fixture
 from tests.test_app import Client
@@ -53,7 +54,9 @@ class OverseasApiTests(unittest.TestCase):
         status,result=self.ideas()
         self.assertEqual(status,200)
         self.assertEqual(len(result['items']),60)
+        self.assertEqual(result['skill']['reference_videos'],60)
         self.assertTrue(all(not i['url'] and not i['metrics'] for i in result['items']))
+        self.assertTrue(all(i['reference_video']['url'] and i['reference_video']['publisher'] for i in result['items']))
         self.assertFalse(result['search_available'])
         self.assertEqual(set(result['categories']),set('ABCDEFGH'))
         filtered=self.ideas('&query=charger')[1]['items']
@@ -63,6 +66,8 @@ class OverseasApiTests(unittest.TestCase):
         status,item=self.post('/api/overseas/ideas',{'archetype_id':'archetype_03'})
         self.assertEqual(status,200,item)
         self.assertTrue(item['saved'])
+        self.assertEqual(item['reference_video']['url'],'https://www.youtube.com/watch?v=E8rFu6YYzsw')
+        self.assertEqual(overseas_library.reference(self.p,item['id'])['reference_video'],item['reference_video'])
         self.assertEqual(len(self.ideas()[1]['items']),60)
         self.assertEqual(len(self.ideas('&saved=1')[1]['items']),1)
         # Duplicate collection updates the existing record.
@@ -71,6 +76,20 @@ class OverseasApiTests(unittest.TestCase):
         self.assertEqual(self.c.req('/api/overseas/ideas?project_id='+p2+'&saved=1')[1]['items'],[])
         self.assertEqual(self.c.req('/api/overseas/ideas/'+item['id'],'PATCH',{'project_id':p2,'saved':False})[0],404)
         self.assertEqual(self.post('/api/overseas/create',{'platform':'tiktok','topic':'Charger','reference_id':item['id'],'project_id':p2})[0],404)
+
+    def test_historical_collection_gets_video_without_changing_saved_state(self):
+        item=self.post('/api/overseas/ideas',{'archetype_id':'archetype_03'})[1]
+        with fixture.D.db() as c:
+            original=json.loads(c.execute('SELECT data FROM overseas_ideas WHERE id=?',(item['id'],)).fetchone()[0])
+            original.pop('reference_video')
+            c.execute('UPDATE overseas_ideas SET data=?,saved=0 WHERE id=?',(json.dumps(original),item['id']))
+        hydrated=overseas_library.reference(self.p,item['id'])
+        self.assertEqual(hydrated['reference_video'],item['reference_video'])
+        self.assertFalse(hydrated['saved'])
+        self.assertEqual(self.ideas('&saved=1')[1]['items'],[])
+        self.assertEqual(next(i for i in self.ideas()[1]['items'] if i.get('archetype_id')=='archetype_03')['reference_video'],item['reference_video'])
+        with fixture.D.db() as c:
+            self.assertEqual(json.loads(c.execute('SELECT data FROM overseas_ideas WHERE id=?',(item['id'],)).fetchone()[0]),original)
 
     def test_manual_collection_canonical_links_and_no_fabricated_metrics(self):
         status,item=self.post('/api/overseas/ideas',{'url':'https://youtu.be/abcdefghijk?utm_source=test','title':'Example','summary':'Before/after contrast','metrics':{'views':9999},'source_kind':'data_source'})
@@ -111,6 +130,7 @@ class OverseasApiTests(unittest.TestCase):
         brief=self.ws()['briefs'][0]['data']
         self.assertEqual(brief['language'],'de-zh')
         self.assertEqual(brief['reference_snapshot']['title'],item['title'])
+        self.assertEqual(brief['reference_snapshot']['reference_video'],item['reference_video'])
         status,again=self.post('/api/overseas/create',{'brief_id':result['brief_id']})
         self.run_task(again)
         self.assertTrue(all(o['data']['overseas']['duration']==32 for o in self.ws()['creations']))
@@ -192,6 +212,19 @@ class OverseasStructureTests(unittest.TestCase):
     def setUp(self):
         self.brief={'platform':'overseas','topic':'charger','goal':'leads','market':'US','duration':24,'language':'en-zh'}
         self.outputs=overseas.demo_outputs(self.brief,[],1)
+
+    def test_bundled_reference_videos_have_complete_primary_source_metadata(self):
+        bundle=json.loads((Path(overseas_library.__file__).parent/'resources/hiccai-pop/reference-videos.json').read_text())
+        self.assertEqual(len(bundle),60)
+        self.assertEqual({v['archetype_id'] for v in bundle},{a['id'] for a in overseas_library.ARCHETYPES})
+        self.assertEqual(len({v['url'] for v in bundle}),60)
+        for video in bundle:
+            self.assertEqual(overseas_library.canonical_url(video['url']),('youtube',video['url']))
+            self.assertTrue(video['title'] and video['publisher'])
+            self.assertTrue(video['publisher_url'].startswith('https://www.youtube.com/'))
+            self.assertTrue(video['thumbnail'].startswith('https://i.ytimg.com/vi/'))
+            self.assertEqual(video['relation'],'同类产品参考')
+            self.assertNotIn('metrics',video)
 
     def test_coverage_hooks_bilingual_and_originality_are_checked(self):
         overseas.validate({'outputs':self.outputs},self.brief,[])

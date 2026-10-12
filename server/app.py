@@ -508,7 +508,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], q.get('saved',['0'])[0]=='1', q.get('platform',['all'])[0]),
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
-                              'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60}})
+                              'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60,'reference_videos':len(overseas_library.REFERENCE_VIDEOS)}})
         if path == '/api/overseas/ideas' and method == 'POST':
             return self.send(overseas_library.collect(project_id,data))
         overseas_match=re.fullmatch(r'/api/overseas/ideas/([a-f0-9]+)',path)
