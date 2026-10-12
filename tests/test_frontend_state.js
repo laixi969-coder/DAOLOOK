@@ -94,6 +94,18 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    finishRead('old project document');await pendingUpload;
    assert.equal(S.workspace.assets.length,0);
    assert.equal(S.overseasForm.assets.length,0);
+   // A new batch must show every suggestion even after earlier filtering.
+   S.overseasForm.topic='Charger';S.onlyFavorites=true;S.stage='published';
+   api=async()=>({task_ids:['new-task'],brief_id:'new-brief'});
+   poll=async(ids,done)=>done();navigate=async()=>{};
+   await startOverseas();
+   assert.equal(S.onlyFavorites,false);assert.equal(S.stage,'all');
+   assert.equal(S.creationSource,'new-brief');
+   S.workspace={assets:[],sources:[],briefs:[],images:[],creations:[]};
+   const suggestions=[1,2,3].map(n=>({id:'suggestion-'+n,created_at:'2026-10-12',data:{title:'Idea '+n,body:'Full script '+n,overseas:{platform:'tiktok',market:'US',duration:24,skill:'hiccai-pop'}}}));
+   const displayed=creationSelection(suggestions);
+   for(let n=1;n<=3;n++) {assert.equal(displayed.includes('建议 '+n),true);assert.equal(displayed.includes('Full script '+n),true);}
+   assert.equal(displayed.includes('<details'),false);
  })()`,context);
  console.log('Frontend async regressions: project isolation, transcript preservation and overseas draft recovery passed');
 })().catch(e=>{console.error(e);process.exitCode=1;});

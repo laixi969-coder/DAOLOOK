@@ -91,6 +91,8 @@ class OverseasApiTests(unittest.TestCase):
         self.assertEqual({o['data']['overseas']['platform'] for o in outs},{'tiktok','instagram','youtube'})
         self.assertTrue(all(o['data']['demo'] for o in outs))
         self.assertTrue(all(len(o['data']['hooks'])==3 for o in outs))
+        self.assertEqual(len({o['data']['first_second'] for o in outs}),3)
+        self.assertEqual(len({o['data']['reveal'] for o in outs}),3)
         self.assertTrue(all(o['data']['shots'][-1]['end']==24 for o in outs))
         self.assertEqual(self.c.req('/api/bootstrap')[1]['credits']['balance'],before-15)
         status,again=self.post('/api/overseas/create',{'brief_id':result['brief_id']})
@@ -208,3 +210,10 @@ class OverseasStructureTests(unittest.TestCase):
         for change in ({'reveal_shot':1},{'reveal_shot':True},{'casting':'不露脸'}):
             outputs=copy.deepcopy(self.outputs);outputs[0].update(change)
             with self.assertRaises(ValueError):overseas.validate({'outputs':outputs},self.brief,[])
+
+    def test_different_titles_cannot_hide_the_same_creative_direction(self):
+        for field in ('angle','first_second','misread','reveal'):
+            outputs=copy.deepcopy(self.outputs)
+            outputs[1][field]=outputs[0][field]
+            with self.assertRaisesRegex(ValueError,'方案不能重复'):
+                overseas.validate({'outputs':outputs},self.brief,[])

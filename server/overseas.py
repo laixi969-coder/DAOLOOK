@@ -63,7 +63,7 @@ def validate(result,brief,assets,previous=None):
         if abs(cursor-brief['duration'])>.01: raise ValueError('分镜总时长与目标时长不一致')
         evidence=output.get('evidence')
         if not isinstance(evidence,list) or (evidence and not content_quality.evidence_valid(output,assets)): raise ValueError('业务事实引用未匹配所选资料')
-    for field in ('title','script','body'):
+    for field in ('title','script','body','angle','first_second','misread','reveal'):
         if len({content_quality.normalized(o[field]) for o in outputs})!=3: raise ValueError('方案不能重复：'+field)
     if {content_quality.normalized(o['title']) for o in outputs} & {content_quality.normalized(o.get('title','')) for o in previous or []}: raise ValueError('请避开历史创意标题')
 
@@ -74,25 +74,75 @@ def benchmark(project,brief):
 
 
 def demo_outputs(brief,assets,batch):
-    output=[];duration=brief['duration']
-    # Explicit demo templates; no fabricated product fact or AI translation.
-    for index,angle in enumerate(('便签遮挡','道具放错位置','同一物件的两种用途')):
+    """Three visibly different demo directions; product facts need live generation."""
+    ideas=[
+        {
+            'name':'放大的影子','angle':'尺度误判','casting':'无人',
+            'first_second':'墙面中央一块抽象影子突然变大，观众会问有什么巨物靠近。',
+            'misread':'观众以为一个很大的物体正向桌面靠近。',
+            'clue':'固定画面右下角始终可见台灯投出的光圈，影子与光圈方向一致。',
+            'reveal':'最后同轴宽景露出靠近台灯的小产品实物；先前看似巨物接近的影子其实是近距离投影。',
+            'product_role':'产品真实轮廓是影子的来源，不演示或宣称未知性能。',
+            'line':'A big shadow. A small surprise.','translation':'一个大影子，一个小惊喜。',
+            'props':'台灯、杯子','implementation':'手机固定拍墙面近景，灯和产品在画外；操作者画外调整灯位，末镜同轴切宽景，露出真实产品与灯的位置。',
+            'actions':['墙面中央出现一块不完整的抽象影子，杯子影子停在画面左下角','墙面影子变大，仍只拍局部形状，不露可辨认的产品轮廓','右下角的灯光光圈与影子的移动方向同时可见','影子停住，保持杯子和光圈位置；切同轴宽景','最后宽景首次露出真实产品、台灯和杯子的位置关系，解释刚才被放大的影子'],
+        },
+        {
+            'name':'桌面上的秘密检查','angle':'目的误判','casting':'有人',
+            'first_second':'一人将桌面中央的空白纸推到一旁，用尺子严肃地比划空位，观众会问他在查什么。',
+            'misread':'观众以为人物在寻找一件丢失物品留下的痕迹。',
+            'clue':'画面右边的白色反光卡与墙上柔和光斑一直可见，提示这里可能是拍摄布景。',
+            'reveal':'最后同角度宽景首次露出真实产品和拍摄手机；前面的测量与检查原来是在为产品照片布置位置。',
+            'product_role':'产品是前序布光与定位动作的目的；具体卖点需结合用户资料完善。',
+            'line':'Every detail has a purpose.','translation':'每个细节都有它的目的。',
+            'props':'尺子、反光纸卡','implementation':'手机固定于桌沿，一名演员从画面左侧进入；产品提前放在近景画外，末镜切到同轴宽景，露出完整布景。',
+            'actions':['人物从画面左侧把白纸推开，在桌面中央用尺子比划一个空位','近景拍人物把尺子挪一格，认真观察空位，产品仍在画外','人物调整画面右侧的反光纸卡，墙上光斑移动','人物举起另一部拍摄手机，近景仅拍手机背面，随后切同轴宽景','最后宽景首次露出产品在预留位置、反光卡与拍摄手机，解释之前的测量是在布置产品照片'],
+        },
+        {
+            'name':'缺了一块的图案','angle':'身份误判','casting':'无人',
+            'first_second':'桌面中央两张卡片分开一格，露出一段弯曲线条，观众会问这是什么路线图。',
+            'misread':'观众以为画面里是正在拼合的一张路线图。',
+            'clue':'被露出的局部线条旁始终有真实产品照片的光影渐变，而不是地图标记。',
+            'reveal':'最后两张卡片移到两边，首次完整露出用户产品照片；先前的路线其实是产品外形边缘。',
+            'product_role':'产品真实外观让图案获得新的含义；使用用户产品照片，不虚构产品效果。',
+            'line':'Not the map you expected.','translation':'这不是你想象中的地图。',
+            'props':'两张遮挡纸卡','implementation':'使用用户产品照片或实拍打印图；手机俯拍，停机后移动纸卡再拍，操作者始终在画外，末镜完整揭开照片。',
+            'actions':['俯拍桌面中央两张遮挡卡片，只露出照片的一小段非识别性线条','停机移动左卡片一格，露出另一段弯曲线条，保持同机位','再露出一小块照片的光影渐变，仍遮住品牌与可辨认部件','两张卡片停在照片中央两侧，保留同一空间线索，切相同机位稍宽景','最后移开全部遮挡，首次完整露出真实产品照片，让之前的线条被理解为产品边缘'],
+        },
+    ]
+    outputs=[]
+    duration=brief['duration']
+    times=[0,1,round(duration*.25,2),round(duration*.55,2),round(duration*.8,2),duration]
+    for index,idea in enumerate(ideas):
         target=list(SOCIAL_PLATFORMS)[index] if brief['platform']=='overseas' else brief['platform']
-        line='Which detail would you check first?'
-        caption=f"A closer look at {brief['topic'][:60]}. {line}"
-        times=[0,1,round(duration*.25,2),round(duration*.55,2),round(duration*.8,2),duration]
-        casting=('无人','有人','无人')[index]
-        actions=['固定近景，桌面中央纸卡突然移动一格，画外操作，不露产品','同轴近景，纸卡旁的空隙保持可见，继续隐藏移动来源','固定近景，纸卡移动后留下位置线索，停顿让观众看见','切同轴稍宽景，保留原桌面位置线索；仍不出现产品或品牌','最后切同轴宽景，首次展示真实产品与道具的完整位置关系；正式反转需结合实际产品设计']
-        if casting=='有人': actions[1]='中景，人物站在桌面左侧，低头看纸卡的移动方向，产品仍在画外'
-        shots=[{'start':start,'end':end,'camera':'手机固定于桌沿高度，桌面近景，主体在画面中央','action':actions[i],'line':line if i==4 else 'Look at this detail.','translation_zh':'你会先检查哪个细节？' if i==4 else '看看这个细节。','screen_text':'Look closer','sfx':'纸张摩擦声','implementation':'一处桌面、固定手机机位，停机后移动道具再拍，操作者留在画外；检查倒影，最后一镜才加入产品实物。'} for i,(start,end) in enumerate(zip(times,times[1:]))]
-        data={'target_platform':target,'title':f"{brief['topic'][:50]} · Concept {batch}-{index+1}",'body':caption+f' #{index+1}', 'cover_text':'Look closer','hook':'把道具放进镜头，环境音Click后切到产品特写',
-              'direction':'低成本反转创意','angle':angle+f' {batch}','role':'吸引相关受众并引导真实讨论','audience':brief['market']+'的潜在客户','value':'理解产品在具体场景中的用途', 'cta':line,
-              'script':f"Concept {index+1}: Look at this detail. {line}", 'translation_zh':f"方案{index+1}：看看这个细节。你会先检查哪个细节？",'operator':'','innovation':'演示用占位故事，正式方案需围绕真实产品重新设计。','loop':'最后一镜构图可呼应开头，揭晓后不追加剧情。','adaptation':PLATFORMS[target]+'竖屏，字幕避开界面遮挡区域。',
-              'casting':casting,'reveal_shot':5,'product_reveal':'最后第5镜首次展示产品及其与道具的位置关系。演示占位，需用产品真实作用重新设计。','first_second':'纸卡在桌面中央移动一格，观众会问是谁移动了它。','misread':'观众以为纸卡由画外的人推动。','clue':'纸卡旁的空隙与运动方向始终可见。','reveal':'最后宽景用产品与道具的位置关系解释先前的移动；这是结构占位，需用真实产品完善因果。','product_role':'产品实物提供谜底；演示模板不宣称具体性能。','ending_type':'故事翻牌','production_method':'实拍：手机固定桌沿，停机移动纸卡后再拍，操作者始终在画外，最后同轴切宽景。','cost_basis':f'{1 if casting=="有人" else 0}人出镜、1人幕后操作，1处桌面，1张纸卡，5镜；固定机位和自然光，无需特效。',
-              'titles':[f'Look closer {index+1}','One detail to check','What would you choose?'],'tags':['product','creative'],'image_suggestions':['使用用户提供的真实产品照片'],'storyboard':[f"{s['start']}–{s['end']}s | {s['camera']} | {s['action']} | {s['line']} / {s['translation_zh']} | {s['sfx']}" for s in shots],
-              'shooting_list':['产品实物、桌面、便签、手机竖屏机位','确认实际卖点、拍摄假设与购买路径'], 'missing':['演示模板，请在真实服务中生成正式创意'],'comments':[line], 'hooks':[{'visual':v,'line':line,'translation_zh':'你会先检查哪个细节？','sfx':'纸张摩擦声'} for v in ('第一帧便签遮住产品一角','第一帧手指停在便签边缘','第一帧反向掀开便签露出轮廓')], 'shots':shots,'evidence':[], 'demo':True}
-        output.append(data)
-    return output
+        shots=[{'start':start,'end':end,'camera':'手机固定，保持主体居中与同轴空间关系','action':idea['actions'][i],
+                'line':idea['line'] if i==4 else '', 'translation_zh':idea['translation'] if i==4 else '',
+                'screen_text':'', 'sfx':'现场环境音', 'implementation':idea['implementation']}
+               for i,(start,end) in enumerate(zip(times,times[1:]))]
+        outputs.append({
+            'target_platform':target,'title':f"{brief['topic'][:40]} · {idea['name']} {batch}",
+            'body':idea['line']+f" Explore {brief['topic'][:60]}.",'cover_text':idea['name'],
+            'hook':idea['first_second'],'direction':'原创创意建议','angle':idea['angle'],
+            'role':'提供一个独立可选的拍摄方向','audience':brief['market']+'的潜在客户',
+            'value':'以'+idea['angle']+'引起对产品的注意','cta':'Look closer.',
+            'script':idea['line']+' Look closer.','translation_zh':idea['translation']+'再看仔细一点。',
+            'first_second':idea['first_second'],'misread':idea['misread'],'clue':idea['clue'],
+            'reveal':idea['reveal'],'product_role':idea['product_role'],'ending_type':'故事翻牌',
+            'casting':idea['casting'],'reveal_shot':5,'product_reveal':'最后第5镜首次揭晓产品。'+idea['reveal'],
+            'production_method':idea['implementation'],
+            'cost_basis':f"{1 if idea['casting']=='有人' else 0}人出镜、1人幕后操作，1处桌面，5镜；道具：{idea['props']}。利用固定机位和现有道具省去额外设备。",
+            'adaptation':PLATFORMS[target]+'竖屏，字幕避开界面遮挡。',
+            'titles':[idea['line'],idea['name'],'Look closer.'],'tags':['product','creative'],
+            'image_suggestions':['使用用户真实产品照片或实物，不改动其外观'],
+            'storyboard':[f"{shot['start']}–{shot['end']}s | {shot['action']}" for shot in shots],
+            'shooting_list':['手机、产品实物或真实产品照片',idea['props'],idea['implementation']],
+            'missing':['演示结构模板，未调用AI或实际翻译；正式创意须用真实资料完善产品因果和卖点。'],
+            'comments':['Which detail did you notice?' if index==0 else 'Did you guess the purpose?' if index==1 else 'What did the lines look like to you?'],
+            'hooks':[{'visual':visual,'line':idea['line'],'translation_zh':idea['translation'],'sfx':'现场环境音'}
+                     for visual in (idea['first_second'],'第一帧从另一侧机位拍摄：'+idea['actions'][0],'第一帧从近景切入：'+idea['actions'][2])],
+            'shots':shots,'evidence':[],'demo':True,
+        })
+    return outputs
 
 
 def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False,history_results=None):

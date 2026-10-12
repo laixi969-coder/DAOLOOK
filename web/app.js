@@ -418,11 +418,12 @@ function creations() {
         stageOf(c) === S.stage ||
         (S.stage === "published" && stageOf(c) === "firsthour"),
     );
+  const overseasView = scoped.length > 0 && scoped.every(c => c.data.overseas);
   return (
     heading(
-      "把今天这篇，准备好。",
-      "先选一篇，直接修改并预览，再复制发布。编辑免费，已保存的版本随时可恢复。",
-      `<div class="actions">${button("Excel 导出", "export-xlsx", "secondary", "download")}${button("CSV 导出", "export-csv", "secondary", "download")}${button("开始新创作", "discover", "primary", "plus")}</div>`,
+      overseasView ? "海外创意建议" : "把今天这篇，准备好。",
+      overseasView ? "对比不同开场与故事方向，每个建议都附完整口播、分镜和拍法。" : "先选一篇，直接修改并预览，再复制发布。编辑免费，已保存的版本随时可恢复。",
+      `<div class="actions">${button("Excel 导出", "export-xlsx", "secondary", "download")}${button("CSV 导出", "export-csv", "secondary", "download")}${button("开始新创作", overseasView ? "overseas" : "discover", "primary", "plus")}</div>`,
       "MADE BY YOU, INSPIRED BY THE WORLD",
     ) +
     (briefOf(S.creationSource)
@@ -431,13 +432,13 @@ function creations() {
         ? sourcePanel(sourceOf(S.creationSource))
         : "") +
     productionBoard(scoped) +
-    `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? creationSelection(items) : empty("从你的业务资料开始", "选一个目标，粘贴或上传产品与服务资料，就能开始创作。", button("开始创作", "discover", "primary", "spark"))}`
+    `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : overseasView ? "全部建议" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? creationSelection(items) : empty("从你的业务资料开始", "选一个目标，粘贴或上传产品与服务资料，就能开始创作。", button("开始创作", "discover", "primary", "spark"))}`
   );
 }
 function creationSelection(items) {
-  return `<div class="creation-grid">${items.map(c => draftCard(c)).join("")}</div>`;
+  return `<div class="creation-grid">${items.map((c,index) => draftCard(c,false,index+1)).join("")}</div>`;
 }
-function draftCard(c, featured = false) {
+function draftCard(c, featured = false, suggestionNumber = 0) {
   const d = c.data;
   const source =
     S.workspace.sources.find((s) => s.id === c.source_id) ||
@@ -450,7 +451,7 @@ function draftCard(c, featured = false) {
   const evidence = Array.isArray(d.evidence) && d.evidence.length
     ? `<section class="draft-output-section"><h4>资料依据</h4><ul>${d.evidence.map(e => { const asset=S.workspace.assets.find(a=>a.id===e.asset_id);return `<li>${esc(asset?.name||e.asset_id)}：${esc(e.quote)}</li>`; }).join("")}</ul></section>` : "";
   const supplementary = `<div class="draft-output-grid">${lineList("标题备选", d.titles)}${textBlock("封面文案", d.cover_text)}${lineList("配图建议", d.image_suggestions)}${!d.overseas ? lineList("分镜", d.storyboard) : ""}${lineList("拍摄清单", d.shooting_list)}${lineList("素材缺口", d.missing)}${textBlock("岗位", d.role)}${textBlock("内容价值", d.value)}${textBlock("行动引导", d.cta)}${textBlock("口播脚本", d.script)}${textBlock("中文翻译", d.translation_zh)}${textBlock("创意算子", d.operator)}${textBlock("创意方法", d.innovation)}${evidence}</div>`;
-  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${platformLabel(d.overseas?.platform || source?.platform)}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal || d.direction || d.audience ? `<div class="draft-direction">${d.goal ? `<span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>` : ""}${d.direction ? `<span class="direction-badge">${esc(d.direction)}</span>` : ""}${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}${supplementary}${overseasDetails(c)}${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${d.overseas && suggestionNumber ? `<span class="direction-badge">建议 ${suggestionNumber}</span> ` : ""}${source?.data?.kind === "brief" ? "自主创作 · " : ""}${platformLabel(d.overseas?.platform || source?.platform)}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal || d.direction || d.audience ? `<div class="draft-direction">${d.goal ? `<span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>` : ""}${d.direction ? `<span class="direction-badge">${esc(d.direction)}</span>` : ""}${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}${supplementary}${overseasDetails(c)}${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
