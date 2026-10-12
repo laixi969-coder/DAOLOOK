@@ -217,6 +217,16 @@ RELEASES = [
         {"xhs_original": XHS_ORIGINAL_V1, "douyin_original": DOUYIN_ORIGINAL_V1},
     ),
 ]
+from .overseas_prompt import PROMPT as OVERSEAS_PROMPT
+RELEASES.append(("skill_release_2026_10_12_viral", {
+    p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
+}))
+RELEASES.append(("skill_release_2026_10_12_hiccai_pop_2_1", {
+    p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
+}))
+RELEASES.append(("skill_release_2026_10_12_hiccai_pop_2_2_f7c717f", {
+    p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
+}))
 SKILL_NAMES = [
     "xhs_analysis",
     "douyin_analysis",
@@ -224,4 +234,8 @@ SKILL_NAMES = [
     "douyin_creation",
     "xhs_original",
     "douyin_original",
+    "tiktok_original",
+    "instagram_original",
+    "youtube_original",
+    "overseas_original",
 ]

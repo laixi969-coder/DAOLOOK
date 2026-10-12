@@ -3,6 +3,9 @@ Verified against TikHub's official App V2 guide and official SDK on 2026-09-23.
 """
 
 ENDPOINTS = {
+    "tiktok_search": {"path": "/api/v1/tiktok/web/fetch_search_video", "method": "GET", "params": {"keyword": "{text}", "count": 20, "offset": 0}},
+    "instagram_search": {"path": "/api/v1/instagram/v2/search_reels", "method": "GET", "params": {"keyword": "{text}"}},
+    "youtube_search": {"path": "/api/v1/youtube/web_v2/get_general_search_v2", "method": "GET", "params": {"keyword": "{text}", "type": "video", "duration": "short", "sort_by": "relevance"}},
     "xhs_detail": {
         "path": "/api/v1/xiaohongshu/app_v2/get_image_note_detail",
         "method": "GET",

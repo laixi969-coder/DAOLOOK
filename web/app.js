@@ -95,6 +95,8 @@ function showFormError(form, message) {
 }
 const pageNames = {
   discover: "开始创作",
+  overseas: "海外创作",
+  "overseas-ideas": "海外灵感",
   saved: "参考收藏",
   creations: "我的创作",
   assets: "项目资料",
@@ -165,10 +167,16 @@ async function refresh() {
     S.selectedAssets = [];
     S.requirements = S.temporary = S.entryText = S.transcript = "";
     S.creationSource = null;
+    S.focusCreation = null;
     S.goal = "leads";
     S.busy = false;
     S.watching = null;
     S.workspace = { sources: [], creations: [], assets: [], images: [] };
+    S.overseasForm = {...overseasDefaults(), ...(drafts.read(key+":overseas")||{})};
+    S.overseasReferenceTitle = "";
+    S.overseasLibrary = null;
+    S.overseasFilters = {query:"",category:"",platform:"all",saved:false};
+    S.overseasMessage = ""; S.overseasSearching = false; S.overseasLoadToken = 0;
   }
   S.workspaceKey = key;
   const [workspace, tasks, boot] = await Promise.all([
@@ -177,12 +185,15 @@ async function refresh() {
   if (workspaceKey() !== key) return;
   S.workspace = workspace; S.tasks = tasks; S.boot = boot;
   S.original.assets = S.original.assets.filter(id => workspace.assets.some(a => a.id === id));
+  S.overseasForm.assets = S.overseasForm.assets.filter(id => workspace.assets.some(a => a.id === id));
 }
 function shell() {
   const project = S.boot.projects.find((p) => p.id === S.project);
   const user = S.boot.user;
   return `<div class="shell"><aside class="sidebar"><button class="close sidebar-mobile-close" data-action="menu" aria-label="关闭菜单">${icon("close")}</button><a class="brand" href="#discover">DAOLOOK<span class="brand-dot">✳</span></a><div class="brand-sub">有依据 · 有灵感 · 有表达</div><button class="project-switch" data-action="projects"><span class="project-symbol">${icon("folder")}</span><span>${esc(project?.name || "选择项目")}<small>个人工作空间</small></span><span class="chevron">⌄</span></button><div class="nav-label">WORKSPACE</div><nav class="nav" aria-label="工作空间">${[
     ["discover", "spark", "开始创作"],
+    ["overseas", "trend", "海外创作"],
+    ["overseas-ideas", "grid", "海外灵感"],
     ["saved", "grid", "参考收藏"],
     ["creations", "edit", "我的创作"],
     ["assets", "folder", "项目资料"],
@@ -207,6 +218,10 @@ function pageContent() {
   switch (S.page) {
     case "discover":
       return discover();
+    case "overseas":
+      return overseasPage();
+    case "overseas-ideas":
+      return overseasIdeasPage();
     case "saved":
       return saved();
     case "detail":
@@ -421,8 +436,17 @@ function creations() {
 }
 function creationSelection(items) {
   const selection = CreationTools.shortlist(items, S.workspace);
+  const focused = items.find(c => c.id === S.focusCreation);
+  if (selection && focused) {
+    const others = [selection.main,...selection.alternatives,...selection.rest].filter(c=>c.id!==focused.id);
+    selection.main=focused;
+    selection.alternatives=others.filter(c=>c.task_id===focused.task_id).slice(0,2);
+    const shown=new Set([focused.id,...selection.alternatives.map(c=>c.id)]);
+    selection.rest=items.filter(c=>!shown.has(c.id));
+    selection.reasons=["当前展示你选择的创意，可展开Hook、口播与完整分镜"];
+  }
   if (!selection) return `<div class="creation-grid">${items.map(c => draftCard(c)).join("")}</div>`;
-  return `<section class="creation-picks"><div class="pick-intro"><p class="eyebrow">先完成一篇</p><h2>建议从这篇开始</h2><p>${selection.reasons.map(esc).join("；")}。</p><small>按本批稿件的待补项与现有图片排序，不预测流量。全部稿件均保留。</small></div><div class="pick-layout">${draftCard(selection.main, true)}${selection.alternatives.length ? `<aside class="pick-alternatives"><h3>也可以试试这些方向</h3>${selection.alternatives.map(c => `<article><p class="muted">${esc(c.data.angle || c.data.direction || "另一种表达")}</p><h4>${esc(c.data.title)}</h4><p>${esc((c.data.body || "").slice(0, 100))}${(c.data.body || "").length > 100 ? "…" : ""}</p>${button("打开并编辑", "edit-draft", "secondary small", "edit", `data-id="${c.id}"`)}</article>`).join("")}</aside>` : ""}</div></section>${selection.rest.length ? `<details class="other-creations"><summary>展开其他稿件与历史内容（${selection.rest.length} 条）</summary><div class="creation-grid">${selection.rest.map(c => draftCard(c)).join("")}</div></details>` : ""}`;
+  return `<section class="creation-picks"><div class="pick-intro"><p class="eyebrow">先完成一篇</p><h2>建议从这篇开始</h2><p>${selection.reasons.map(esc).join("；")}。</p><small>按本批稿件的待补项与现有图片排序，不预测流量。全部稿件均保留。</small></div><div class="pick-layout">${draftCard(selection.main, true)}${selection.alternatives.length ? `<aside class="pick-alternatives"><h3>也可以试试这些方向</h3>${selection.alternatives.map(c => `<article><p class="muted">${c.data.overseas ? platformLabel(c.data.overseas.platform) + " · " : ""}${esc(c.data.angle || c.data.direction || "另一种表达")}</p><h4>${esc(c.data.title)}</h4><p>${esc((c.data.body || "").slice(0, 100))}${(c.data.body || "").length > 100 ? "…" : ""}</p>${button(c.data.overseas ? "查看完整创意" : "打开并编辑", c.data.overseas ? "focus-overseas-creation" : "edit-draft", "secondary small", "edit", `data-id="${c.id}"`)}</article>`).join("")}</aside>` : ""}</div></section>${selection.rest.length ? `<details class="other-creations"><summary>展开其他稿件与历史内容（${selection.rest.length} 条）</summary><div class="creation-grid">${selection.rest.map(c => draftCard(c)).join("")}</div></details>` : ""}`;
 }
 function draftCard(c, featured = false) {
   const d = c.data;
@@ -430,7 +454,7 @@ function draftCard(c, featured = false) {
     S.workspace.sources.find((s) => s.id === c.source_id) ||
     briefOf(c.source_id);
   const images = S.workspace.images.filter((i) => i.creation_id === c.id);
-  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${source?.platform === "douyin" ? "♪ 抖音脚本" : "小红书图文"}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal ? `<div class="draft-direction"><span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${platformLabel(d.overseas?.platform || source?.platform)}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal ? `<div class="draft-direction"><span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${overseasDetails(c)}${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
@@ -644,6 +668,8 @@ function sourcePanel(s) {
   return `<section class="panel brief-panel"><div class="brief-head"><div><p class="eyebrow">再创作 · ${s.platform === "douyin" ? "抖音" : "小红书"}</p><h2>${esc(s.data.title || "参考内容")}</h2></div><div class="actions">${button("再来一批", "create-again", "primary small", "spark", `data-id="${s.id}"`)}${button("回到拆解", "open-source", "secondary small", "back", `data-id="${s.id}"`)}</div></div><p class="muted">再来一批沿用上次的目标、资料与尚未过期的临时资料；想换资料或要求，回到拆解页填写。预计消耗 ${S.boot.rules.create} 积分，失败自动退还。</p></section>`;
 }
 function briefPanel(b) {
+  if (["overseas","tiktok","instagram","youtube"].includes(b.platform))
+    return `<section class="panel brief-panel"><div class="brief-head"><div><p class="eyebrow">海外创作 · ${platformLabel(b.platform)}</p><h2>${esc(b.data.topic)}</h2><p class="muted">${esc(b.data.market)} · ${b.data.duration} 秒 · hiccai-pop v2.2 创意方法</p></div>${button("再来三个创意","overseas-again","primary small","spark",`data-id="${b.id}"`)}</div><p class="hint">沿用目标、参考与尚未过期的资料，追加新方案。预计 ${originalCost()} 积分。</p></section>`;
   const bm = b.data.benchmark || {};
   const examples = (bm.examples || [])
     .map((e) => `<li>${esc(e.title || "（无标题）")}<small>${fmt(e.likes)} 赞 · ${fmt(e.saves)} 收藏</small></li>`)
@@ -773,7 +799,7 @@ function tasks() {
       "TASK HISTORY",
     ) +
     (items.length
-      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 6 到 8 条稿件", original: "自主创作 · 6 到 8 条稿件", cover: "封面生成" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? "" : "pending"}" title="${esc(t.state === "PARTIAL" ? t.error || "" : "")}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error && t.state !== "PARTIAL" ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
+      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 6 到 8 条稿件", original: "内容创作", cover: "封面生成" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? "" : "pending"}" title="${esc(t.state === "PARTIAL" ? t.error || "" : "")}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error && t.state !== "PARTIAL" ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
       : empty("还没有任务", "从一条参考链接开始，任务进度会显示在这里。"))
   );
 }
@@ -837,7 +863,7 @@ function field(label, id, value = "", type = "text") {
 function skillModal(name = "xhs_analysis", prompt = "", title = "创建 Skill 草稿") {
   modal(
     title,
-    `<p class="subtext">保存会生成新的 Draft 版本，不会改动当前生效版本。结构测试通过后发布，发布即替换生效版本。</p><form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation", "xhs_original", "douyin_original"].map((n) => `<option ${n === name ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="12" required placeholder="输入平台拆解或创作规则…">${esc(prompt)}</textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
+    `<p class="subtext">保存会生成新的 Draft 版本，不会改动当前生效版本。结构测试通过后发布，发布即替换生效版本。</p><form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation", "xhs_original", "douyin_original", "tiktok_original", "instagram_original", "youtube_original", "overseas_original"].map((n) => `<option ${n === name ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="12" required placeholder="输入平台拆解或创作规则…">${esc(prompt)}</textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
     true,
   );
 }
@@ -1036,8 +1062,10 @@ async function navigate(page) {
   const key = workspaceKey();
   S.page = page;
   S.creationSource = null;
+  S.focusCreation = null;
   location.hash = page;
   render();
+  if (page === "overseas-ideas") await loadOverseasIdeas();
   if (page === "credits") {
     const ledger = await api("/api/credits");
     if (key !== workspaceKey() || S.page !== page) return;
@@ -1257,6 +1285,10 @@ const actions = {
     const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
     const brief = briefOf(c.source_id);
     if (brief) {
+      if (["overseas","tiktok","instagram","youtube"].includes(brief.platform)) {
+        S.overseasForm={...overseasDefaults(),...brief.data,topic:brief.data.topic,platform:brief.platform,assets:(brief.data.assets||[]).filter(id=>S.workspace.assets.some(a=>a.id===id)),temporary:"",reference_id:""};
+        await navigate("overseas");$("#overseas-temporary")?.focus();return;
+      }
       S.original = { goal: c.data.goal || "leads", platform: brief.platform,
         topic: brief.data.topic, keyword: brief.data.keyword || "",
         assets: (brief.data.assets || []).filter((id) => S.workspace.assets.some((a) => a.id === id)),
@@ -1679,6 +1711,16 @@ document.addEventListener("submit", async (e) => {
     if (e.target.id === "original-form") return await startOriginal();
     if (submit) submit.disabled = true;
     switch (e.target.id) {
+      case "overseas-filter-form":
+        readOverseasFilters();S.overseasMessage="";await loadOverseasIdeas();break;
+      case "overseas-form":
+        await startOverseas();break;
+      case "overseas-collect-form": {
+        const key=S.overseasCollectKey;
+        await post("/api/overseas/ideas",body({url:$("#collect-overseas-url").value,title:$("#collect-overseas-title").value,category:$("#collect-overseas-category").value,summary:$("#collect-overseas-summary").value,mechanism:$("#collect-overseas-mechanism").value}));
+        if(key!==workspaceKey())return;
+        close();S.overseasFilters={query:"",category:"",platform:"all",saved:true};await loadOverseasIdeas();toast("已收集到当前项目的海外收藏");break;
+      }
       case "results-form": {
         const results = { note: $("#result-note").value };
         for (const key of ["views", "leads", "orders", "spend"]) {
@@ -2123,7 +2165,7 @@ window.addEventListener("hashchange", () => {
       S.page = "detail";
     } else if (pageNames[hash]) S.page = hash;
     render();
-    if (S.page === "credits" || S.page === "admin") await navigate(S.page);
+    if (["credits","admin","overseas-ideas"].includes(S.page)) await navigate(S.page);
     const pending = S.tasks.filter(
       (t) => !["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(t.state),
     );

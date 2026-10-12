@@ -1,6 +1,6 @@
 import hashlib, json, queue, threading, traceback
 from .db import db, uid, now, dumps, setting, ledger
-from . import adapters, covers, discovery
+from . import adapters, covers, discovery, overseas
 
 MAX_USER_ACTIVE = 20
 MAX_GLOBAL_ACTIVE = 200
@@ -398,9 +398,8 @@ def _run(ident):
         brief = payload["brief"]
         if not state(ident, "FETCHING"):
             return
-        benchmark = adapters.fetch_benchmark(
-            brief.get("keyword") or brief["topic"], brief["platform"], demo
-        )
+        benchmark = (overseas.benchmark(t["project_id"], brief) if brief["platform"] in overseas.PLATFORMS
+                     else adapters.fetch_benchmark(brief.get("keyword") or brief["topic"], brief["platform"], demo))
         if not state(ident, "GENERATING"):
             return
         with db() as c:
@@ -424,7 +423,8 @@ def _run(ident):
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
         if not active(ident):
             return
-        outputs, model = adapters.create_original(
+        producer = overseas.create if brief["platform"] in overseas.PLATFORMS else adapters.create_original
+        outputs, model = producer(
             brief,
             benchmark,
             assets,

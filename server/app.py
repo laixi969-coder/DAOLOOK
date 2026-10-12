@@ -3,7 +3,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library
 from .ranking import score
 from .skills import SKILL_NAMES
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
@@ -502,6 +502,31 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(rows)
         project_id = data.get("project_id") or q.get("project_id", [""])[0]
         self.project(project_id, u)
+        if path == '/api/overseas/ideas' and method == 'GET':
+            query = q.get('query', [''])[0]
+            if len(query)>100: raise Error('搜索词最多100字')
+            return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], q.get('saved',['0'])[0]=='1', q.get('platform',['all'])[0]),
+                              'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
+                              'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
+                              'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60}})
+        if path == '/api/overseas/ideas' and method == 'POST':
+            return self.send(overseas_library.collect(project_id,data))
+        overseas_match=re.fullmatch(r'/api/overseas/ideas/([a-f0-9]+)',path)
+        if overseas_match and method == 'PATCH':
+            ident=overseas_match.group(1)
+            if type(data.get('saved')) is not bool: raise Error('收藏状态无效')
+            with db() as c:
+                if not c.execute('UPDATE overseas_ideas SET saved=?,updated_at=? WHERE id=? AND project_id=? AND deleted_at IS NULL',(int(data['saved']),now(),ident,project_id)).rowcount:
+                    raise Error('创意不存在',404)
+            return self.send({'ok':True})
+        if path == '/api/overseas/search' and method == 'POST':
+            RATE.check(('overseas-search',u['id']),20)
+            return self.send(overseas_library.search(project_id,data.get('platform'),data.get('query')))
+        requested_overseas = path == '/api/overseas/create'
+        if requested_overseas and method == 'POST':
+            if data.get('platform') not in overseas.PLATFORMS and not data.get('brief_id'):
+                raise Error('请选择TikTok、Instagram Reels或YouTube Shorts')
+            path='/api/original'
         if path == "/api/workspace":
             with db() as c:
                 sources = []
@@ -716,6 +741,8 @@ class Handler(BaseHTTPRequestHandler):
                     k: old_brief.get(k, "") for k in ("platform", "topic", "keyword")
                 }
                 brief["goal"] = data.get("goal", old_brief.get("goal", "leads"))
+                if brief['platform'] in overseas.PLATFORMS:
+                    brief.update({k:old_brief[k] for k in ('language','market','duration','reference_snapshot') if k in old_brief})
                 if not selected and "assets" not in data:
                     # 再来一批：沿用上次仍然存在的资料选择
                     selected = [a for a in old_brief.get("assets", []) if a in available]
@@ -736,16 +763,28 @@ class Handler(BaseHTTPRequestHandler):
                     "keyword": str(data.get("keyword", "")).strip()[:60],
                     "goal": data.get("goal", "leads"),
                 }
-                if brief["platform"] not in ("xhs", "douyin"):
-                    raise Error("请选择小红书或抖音")
+                if brief["platform"] not in ("xhs", "douyin", *overseas.PLATFORMS):
+                    raise Error("请选择支持的创作平台")
                 if not 2 <= len(brief["topic"]) <= 200:
                     raise Error("请填写 2 到 200 字的创作主题")
                 requirements = data.get("requirements", "")
+            if requested_overseas and brief['platform'] not in overseas.PLATFORMS:
+                raise Error('这个主题属于国内创作，请从对应入口继续')
+            if brief['platform'] in overseas.PLATFORMS:
+                brief['language']=data.get('language',brief.get('language','en-zh'))
+                brief['market']=overseas_library.text(data.get('market',brief.get('market','United States')),'目标市场',60,True)
+                brief['duration']=data.get('duration',brief.get('duration',24))
+                if brief['language'] not in overseas.LANGUAGES: raise Error('请选择支持的台词语言')
+                if type(brief['duration']) is not int or not 12<=brief['duration']<=60: raise Error('目标时长须为12–60秒的整数')
+                if data.get('reference_id') is not None:
+                    ident=overseas_library.text(data['reference_id'],'参考创意ID',80)
+                    brief['reference_snapshot']=overseas_library.reference(project_id,ident) if ident else None
+                    if ident and not brief['reference_snapshot']: raise Error('参考创意不存在或不属于当前项目',404)
             brief["goal"] = content_quality.goal(brief["goal"])
             if any(x not in available for x in selected):
                 raise Error("所选资料不存在或不属于当前项目")
             temporary = data.get("temporary", "")
-            if not selected and not temporary.strip():
+            if not selected and not temporary.strip() and brief['platform'] not in overseas.PLATFORMS:
                 raise Error("自主创作需要依据：请至少选择一份项目资料或填写临时资料")
             payload = {
                 "source_id": brief_id or uid(),
@@ -1040,6 +1079,8 @@ class Handler(BaseHTTPRequestHandler):
                 "推广花费",
                 "效果备注",
                 "效果记录时间",
+                "海外目标市场", "台词语言", "目标时长（秒）", "完整口播", "口播中文翻译", "创新算子", "原创变化", "Hook备选", "循环结尾", "平台适配", "讨论问题",
+                "第一秒画面", "观众误判", "公平伏笔", "结尾反转", "产品角色", "收尾方式", "出镜方式", "产品揭晓镜号", "产品揭晓", "制作路径", "成本依据",
             ]
         ]
         with db() as c:
@@ -1084,7 +1125,12 @@ class Handler(BaseHTTPRequestHandler):
                        {"checked": "基础检查通过，事实仍需核对", "needs_input": "发布前需补充", "review": "已编辑，事实仍需核对"}.get(d.get("quality", {}).get("status"), "历史稿件未检查"),
                        "\n".join(d.get("quality", {}).get("issues", [])),
                        *(effect.get(k, "") for k in ("views", "leads", "orders", "spend", "note")),
-                       r["result_time"] or ""]
+                        r["result_time"] or "",
+                        d.get('overseas',{}).get('market',''),d.get('overseas',{}).get('language',''),d.get('overseas',{}).get('duration',''),
+                        d.get('script',''),d.get('translation_zh',''),d.get('operator',''),d.get('innovation',''),
+                        '\n'.join(f"{h.get('visual','')} | {h.get('line','')} | {h.get('translation_zh','')} | {h.get('sfx','')}" for h in d.get('hooks',[])),
+                        d.get('loop',''),d.get('adaptation',''),'\n'.join(d.get('comments',[])),
+                        *(d.get(k,'') for k in ('first_second','misread','clue','reveal','product_role','ending_type','casting','reveal_shot','product_reveal','production_method','cost_basis'))]
                 )
         if fmt == "xlsx":
             out = io.BytesIO()
@@ -1531,8 +1577,10 @@ class Handler(BaseHTTPRequestHandler):
                     }
                 )
                 if skill["name"].endswith("original"):
-                    adapters.create_original(
-                        {"platform": skill["name"].split("_")[0], "topic": "验证结构"},
+                    skill_platform=skill['name'].split('_')[0]
+                    producer=overseas.create if skill_platform in overseas.PLATFORMS else adapters.create_original
+                    producer(
+                        {"platform": skill_platform, "topic": "验证结构", 'duration':24,'market':'United States','language':'en-zh','goal':'leads'},
                         {"examples": [], "note": "结构测试，无赛道参考"},
                         [{"name": "测试资料", "content": data.get("sample", "这是一份用于测试输出结构的资料样本。")}],
                         "验证结构",

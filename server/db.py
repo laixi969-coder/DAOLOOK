@@ -56,6 +56,8 @@ def init():
         CREATE TABLE IF NOT EXISTS creation_tracking(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,checklist TEXT,updated_at TEXT);
         CREATE TABLE IF NOT EXISTS creation_results(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),data TEXT NOT NULL,updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS creation_revisions(creation_id TEXT NOT NULL REFERENCES creation_outputs(id),revision INTEGER NOT NULL,data TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(creation_id,revision));
+        CREATE TABLE IF NOT EXISTS overseas_ideas(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),source_key TEXT NOT NULL,data TEXT NOT NULL,saved INTEGER NOT NULL DEFAULT 0,deleted_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(project_id,source_key));
+        CREATE TABLE IF NOT EXISTS overseas_searches(project_id TEXT NOT NULL REFERENCES projects(id),platform TEXT NOT NULL,query TEXT NOT NULL,ids TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,platform,query));
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
@@ -106,6 +108,13 @@ def init():
         }
         for k, v in defaults.items():
             c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, dumps(v)))
+        if not c.execute("SELECT 1 FROM settings WHERE key='overseas_endpoints_v1'").fetchone():
+            cfg = json.loads(c.execute("SELECT value FROM settings WHERE key='tikhub'").fetchone()[0])
+            for key, endpoint in ENDPOINTS.items():
+                if key.startswith(('tiktok_', 'instagram_', 'youtube_')):
+                    cfg.setdefault('endpoints', {}).setdefault(key, endpoint)
+            c.execute("UPDATE settings SET value=? WHERE key='tikhub'", (dumps(cfg),))
+            c.execute("INSERT INTO settings VALUES ('overseas_endpoints_v1','1')")
         # One-time configuration migration for early V1.1 local databases.
         if not c.execute(
             "SELECT 1 FROM settings WHERE key='schema_version'"

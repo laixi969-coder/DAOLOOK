@@ -5,9 +5,10 @@
     const prefix = 'daolook-draft:';
     const clean = value => {
       const result = {};
-      for (const key of ['goal','platform','topic','keyword','requirements','temporary'])
+      for (const key of ['goal','platform','topic','keyword','requirements','temporary','market','language','reference_id'])
         if (typeof value?.[key] === 'string') result[key] = value[key].slice(0,100000);
       if (Array.isArray(value?.assets)) result.assets = value.assets.filter(x=>typeof x==='string').slice(0,100);
+      if (Number.isInteger(value?.duration)) result.duration = value.duration;
       return result;
     };
     return {

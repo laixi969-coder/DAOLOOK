@@ -53,8 +53,9 @@ def normalized(text):
 def public_text(output):
     layout = output.get("comment_layout") or {}
     return "\n".join([
-        *(output.get(k, "") for k in ("title", "body", "hook", "cover_text", "cta")),
+        *(output.get(k, "") for k in ("title", "body", "hook", "cover_text", "cta", "script")),
         *output.get("titles", []), *output.get("tags", []),
+        *output.get("comments", []),
         *layout.get("atmosphere", []), *layout.get("knowledge", []),
         (layout.get("pinned") or {}).get("text", ""),
     ])
@@ -80,7 +81,7 @@ def assess(output, assets, p):
         issues.append("这是演示模板，请切换真实服务后生成正式内容")
     if re.search(r"(?<![A-Za-z])X{2,}(?![A-Za-z])|待补充|待填写|请补充|【[^】]*待填", public_text(output), re.I):
         issues.append("文案含未填写内容，请补齐后再发布")
-    if len(output.get("title", "")) > (20 if p == "xhs" else 25):
+    if len(output.get("title", "")) > (20 if p == "xhs" else 25 if p == "douyin" else 160):
         issues.append("标题偏长，请缩短后发布")
     if not all(isinstance(output.get(k), str) and output[k].strip() for k in ("audience", "value", "cta")):
         issues.append("请确认内容写给谁、具体价值及结尾行动")
