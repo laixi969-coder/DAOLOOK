@@ -435,18 +435,7 @@ function creations() {
   );
 }
 function creationSelection(items) {
-  const selection = CreationTools.shortlist(items, S.workspace);
-  const focused = items.find(c => c.id === S.focusCreation);
-  if (selection && focused) {
-    const others = [selection.main,...selection.alternatives,...selection.rest].filter(c=>c.id!==focused.id);
-    selection.main=focused;
-    selection.alternatives=others.filter(c=>c.task_id===focused.task_id).slice(0,2);
-    const shown=new Set([focused.id,...selection.alternatives.map(c=>c.id)]);
-    selection.rest=items.filter(c=>!shown.has(c.id));
-    selection.reasons=["当前展示你选择的创意，可展开Hook、口播与完整分镜"];
-  }
-  if (!selection) return `<div class="creation-grid">${items.map(c => draftCard(c)).join("")}</div>`;
-  return `<section class="creation-picks"><div class="pick-intro"><p class="eyebrow">先完成一篇</p><h2>建议从这篇开始</h2><p>${selection.reasons.map(esc).join("；")}。</p><small>按本批稿件的待补项与现有图片排序，不预测流量。全部稿件均保留。</small></div><div class="pick-layout">${draftCard(selection.main, true)}${selection.alternatives.length ? `<aside class="pick-alternatives"><h3>也可以试试这些方向</h3>${selection.alternatives.map(c => `<article><p class="muted">${c.data.overseas ? platformLabel(c.data.overseas.platform) + " · " : ""}${esc(c.data.angle || c.data.direction || "另一种表达")}</p><h4>${esc(c.data.title)}</h4><p>${esc((c.data.body || "").slice(0, 100))}${(c.data.body || "").length > 100 ? "…" : ""}</p>${button(c.data.overseas ? "查看完整创意" : "打开并编辑", c.data.overseas ? "focus-overseas-creation" : "edit-draft", "secondary small", "edit", `data-id="${c.id}"`)}</article>`).join("")}</aside>` : ""}</div></section>${selection.rest.length ? `<details class="other-creations"><summary>展开其他稿件与历史内容（${selection.rest.length} 条）</summary><div class="creation-grid">${selection.rest.map(c => draftCard(c)).join("")}</div></details>` : ""}`;
+  return `<div class="creation-grid">${items.map(c => draftCard(c)).join("")}</div>`;
 }
 function draftCard(c, featured = false) {
   const d = c.data;
@@ -454,7 +443,14 @@ function draftCard(c, featured = false) {
     S.workspace.sources.find((s) => s.id === c.source_id) ||
     briefOf(c.source_id);
   const images = S.workspace.images.filter((i) => i.creation_id === c.id);
-  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${platformLabel(d.overseas?.platform || source?.platform)}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal ? `<div class="draft-direction"><span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div><div class="tags">${(d.tags || []).map((t) => "#" + esc(t)).join(" ")}</div><details><summary>标题备选、配图与素材提示</summary><p>${(d.titles || []).map(esc).join("<br>")}</p><p style="margin-top:8px">封面：${esc(d.cover_text)}</p><p>${(d.image_suggestions || []).map(esc).join(" / ")}</p><p>${(d.storyboard || []).map(esc).join("<br>")}</p><p>${(d.shooting_list || []).map(esc).join(" / ")}</p><p class="inline-error">${(d.missing || []).map(esc).join("<br>")}</p></details>${overseasDetails(c)}${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
+  const lineList = (label, values) => Array.isArray(values) && values.length
+    ? `<section class="draft-output-section"><h4>${label}</h4><ul>${values.map(value => `<li>${esc(value)}</li>`).join("")}</ul></section>` : "";
+  const textBlock = (label, value) => typeof value === "string" && value.trim()
+    ? `<section class="draft-output-section"><h4>${label}</h4><p>${esc(value)}</p></section>` : "";
+  const evidence = Array.isArray(d.evidence) && d.evidence.length
+    ? `<section class="draft-output-section"><h4>资料依据</h4><ul>${d.evidence.map(e => { const asset=S.workspace.assets.find(a=>a.id===e.asset_id);return `<li>${esc(asset?.name||e.asset_id)}：${esc(e.quote)}</li>`; }).join("")}</ul></section>` : "";
+  const supplementary = `<div class="draft-output-grid">${lineList("标题备选", d.titles)}${textBlock("封面文案", d.cover_text)}${lineList("配图建议", d.image_suggestions)}${!d.overseas ? lineList("分镜", d.storyboard) : ""}${lineList("拍摄清单", d.shooting_list)}${lineList("素材缺口", d.missing)}${textBlock("岗位", d.role)}${textBlock("内容价值", d.value)}${textBlock("行动引导", d.cta)}${textBlock("口播脚本", d.script)}${textBlock("中文翻译", d.translation_zh)}${textBlock("创意算子", d.operator)}${textBlock("创意方法", d.innovation)}${evidence}</div>`;
+  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${source?.data?.kind === "brief" ? "自主创作 · " : ""}${platformLabel(d.overseas?.platform || source?.platform)}${d.angle ? " · " + esc(d.angle) : ""}</span><span>${date(c.created_at)}</span></div>${d.goal || d.direction || d.audience ? `<div class="draft-direction">${d.goal ? `<span class="direction-badge">${esc(GOAL_LABELS[d.goal] || "业务内容")}</span>` : ""}${d.direction ? `<span class="direction-badge">${esc(d.direction)}</span>` : ""}${d.audience ? `<span>${esc(d.audience)}</span>` : ""}</div>` : ""}<h3>${esc(d.title)}</h3><div class="draft-start">${button("编辑与发布准备", "edit-draft", "primary small", "edit", `data-id="${c.id}"`)}</div>${deliveryStatus(d)}${d.quality?.status === "needs_input" ? button("补充资料再写", "improve-draft", "secondary small", "edit", `data-id="${c.id}"`) : ""}${d.demo ? '<div class="notice">演示稿件 · 模板示例，未调用 AI 模型</div>' : ""}${d.hook ? `<div class="hint"><strong>开头怎么说</strong><br>${esc(d.hook)}</div>` : ""}<div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}${supplementary}${overseasDetails(c)}${commentLayout(d.comment_layout)}${images.map(coverCard).join("")}${pipeline(c, source)}${resultSummary(c)}<div class="actions"><button data-action="copy" data-id="${c.id}">${icon("copy")} ${d.quality?.status === "needs_input" || d.demo ? "复制待完善稿" : "复制正文"}</button><button data-action="save-creation" data-id="${c.id}" class="${c.saved ? "saved-icon" : ""}">${icon(c.saved ? "check" : "star")} ${c.saved ? "已收藏" : "收藏"}</button><button data-action="cover" data-id="${c.id}">${icon("image")} 封面</button><button data-action="delete-creation" data-id="${c.id}" style="margin-left:auto;color:#a3a892" aria-label="删除此稿件">${icon("trash")}</button></div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
@@ -476,7 +472,7 @@ function commentLayout(layout) {
     items && items.length
       ? `<div class="comment-row"><strong>${label}</strong><ul>${items.map((t) => `<li>${esc(t)}</li>`).join("")}</ul></div>`
       : "";
-  return `<details class="comment-layout"><summary>可用的评论回复</summary>${list("引导讨论", layout.atmosphere)}${list("补充说明", layout.knowledge)}${p.text ? `<div class="comment-row"><strong>置顶</strong><ul><li>${esc(p.text)}</li></ul><small>目标：${esc(p.goal || "")}<br>保持置顶：${esc(p.keep_on_top || "")}</small></div>` : ""}${layout.first_hour ? `<div class="comment-row"><strong>发布后一小时</strong><p>${esc(layout.first_hour)}</p></div>` : ""}</details>`;
+  return `<section class="comment-layout"><h4>可用的评论回复</h4>${list("引导讨论", layout.atmosphere)}${list("补充说明", layout.knowledge)}${p.text ? `<div class="comment-row"><strong>置顶</strong><ul><li>${esc(p.text)}</li></ul><small>目标：${esc(p.goal || "")}<br>保持置顶：${esc(p.keep_on_top || "")}</small></div>` : ""}${layout.first_hour ? `<div class="comment-row"><strong>发布后一小时</strong><p>${esc(layout.first_hour)}</p></div>` : ""}</section>`;
 }
 function originalCost() {
   return S.boot.rules.original ?? S.boot.rules.create;

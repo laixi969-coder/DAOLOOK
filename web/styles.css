@@ -988,7 +988,7 @@ svg.icon {
 }
 .creation-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 20px;
 }
 .creation-picks { margin: 20px 0 30px; }
@@ -1011,6 +1011,15 @@ svg.icon {
 .overseas-idea-card .source-evidence { margin-top: 12px; }
 .overseas-output { margin: 20px 0; border-top: 1px solid var(--line); padding-top: 14px; }
 .overseas-output p { white-space: pre-wrap; overflow-wrap: anywhere; }
+.overseas-output-section, .overseas-story { margin: 18px 0; padding: 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
+.overseas-output-section h4, .overseas-story h4 { margin: 0 0 12px; }
+.overseas-output-section p:last-child, .overseas-story p:last-child { margin-bottom: 0; }
+.draft-output-grid { display: grid; gap: 12px; margin-top: 18px; }
+.draft-output-section { padding: 14px 16px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); overflow-wrap: anywhere; }
+.draft-output-section h4 { margin: 0 0 8px; font-size: 14px; }
+.draft-output-section p { margin: 0; white-space: pre-wrap; line-height: 1.8; }
+.draft-output-section ul { margin: 0; padding-left: 20px; line-height: 1.8; }
+.draft-output-section li + li { margin-top: 5px; }
 .overseas-hook { border-top: 1px solid var(--line); padding: 14px 0; }
 .overseas-shots table { min-width: 660px; }
 .overseas-shots td { white-space: pre-wrap; min-width: 140px; vertical-align: top; }
