@@ -1004,6 +1004,9 @@ svg.icon {
 .overseas-idea-card { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); padding: 24px; min-width: 0; display: flex; flex-direction: column; }
 .overseas-idea-card h3 { margin: 0 0 12px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
 .idea-summary { white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
+.idea-original, .video-original { white-space: pre-wrap; line-height: 1.7; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
+.idea-original { margin: 8px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
+.idea-original > span { display: block; margin-bottom: 4px; }
 .overseas-idea-card .actions { margin-top: auto; padding-top: 20px; }
 .overseas-reference-video { display: grid; gap: 8px; padding: 12px; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); text-decoration: none; }
 .overseas-reference-video img { width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; }

@@ -13,6 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from .db import db, dumps, now, uid
 from .adapters import NoCredentialRedirect, read_bounded
+from . import overseas_translation
 
 RESOURCE = Path(__file__).parent / 'resources/hiccai-pop'
 YOUTUBE_SOURCES = json.loads((RESOURCE / 'daily-sources.json').read_text())
@@ -183,13 +184,14 @@ def sources_revision():
 
 def videos():
     with db() as c:
-        return [json.loads(row['data']) for row in c.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600')]
+        values=[json.loads(row['data']) for row in c.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600')]
+    return [overseas_translation.enrich(value) for value in values]
 
 
 def reference(ident):
     with db() as c:
         row=c.execute('SELECT data FROM overseas_feed_videos WHERE id=?',(ident,)).fetchone()
-    return json.loads(row['data']) if row else None
+    return overseas_translation.enrich(json.loads(row['data'])) if row else None
 
 
 def status():

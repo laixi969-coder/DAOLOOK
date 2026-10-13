@@ -81,6 +81,11 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    const tikVideo={...freshVideo,reference_video:{...freshVideo.reference_video,platform:'tiktok',url:'https://www.tiktok.com/@adrianbliss/video/7694716128580357398'}};
    assert.equal(overseasReferenceVideo(tikVideo).includes('来源视频 · TikTok'),true);
    assert.equal(overseasReferenceVideo(tikVideo).includes('YouTube'),false);
+   const translated={...tikVideo,title:'The World’s Worst Robbers',title_zh:'世界上最笨的劫匪',summary:'A full <original> caption',summary_zh:'完整的中文说明',reference_video:{...tikVideo.reference_video,title:'Robbers <video>',title_zh:'劫匪视频'}};
+   const translatedCard=overseasIdeaCard(translated);
+   assert.equal(translatedCard.includes('<h3 lang="zh-CN">世界上最笨的劫匪</h3>'),true);
+   for(const text of ['完整的中文说明','The World’s Worst Robbers','A full &lt;original&gt; caption','劫匪视频','Robbers &lt;video&gt;','原文']) assert.equal(translatedCard.includes(text),true);
+   assert.equal(translatedCard.includes('<details'),false);
    assert.equal(overseasFeedStatus({state:'succeeded',added_count:5,last_checked_at:'2026-10-12T15:00:00Z'}).includes('上次新增 5 条'),true);
    // Public daily recommendations are collected through the verified source ID.
    S.overseasLibrary={items:[freshVideo]};

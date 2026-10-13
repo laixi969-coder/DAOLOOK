@@ -510,6 +510,7 @@ class Handler(BaseHTTPRequestHandler):
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),
+                              'translation_pending':overseas_library.overseas_translation.pending(),
                               'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60,'reference_videos':len(overseas_library.REFERENCE_VIDEOS)}})
         if path == '/api/overseas/ideas' and method == 'POST':
             return self.send(overseas_library.collect(project_id,data))
@@ -1647,6 +1648,8 @@ def main():
                 )
     jobs.start()
     maintenance.start()
+    from . import overseas_translation
+    overseas_translation.start()
     overseas_feed.start()
     host = os.environ.get("HOST", "127.0.0.1")
     port = int(os.environ.get("PORT", "8000"))

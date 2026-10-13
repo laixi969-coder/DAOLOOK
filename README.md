@@ -14,7 +14,7 @@
 
 ## 启动
 
-需要 Python 3.9+。应用运行不依赖 pip 或 npm 第三方包。
+需要 Python 3.9+。基础应用运行不依赖 pip 或 npm 第三方包。海外新视频的自动中文翻译可安装本地翻译运行环境：`python3 scripts/setup_translation.py`，安装后重启应用。当前 TikTok 参考与 60 条旧视频标题已有内置中文译文；自动翻译使用本地模型，不需要 API Key。
 
 ```bash
 cd /Users/caiwenbin/Daolook

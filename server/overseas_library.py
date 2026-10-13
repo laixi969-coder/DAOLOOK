@@ -7,7 +7,7 @@ import urllib.parse
 from pathlib import Path
 from .db import db, dumps, uid, now, setting
 from .discovery import parse_count
-from . import overseas_feed
+from . import overseas_feed, overseas_translation
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
@@ -52,7 +52,8 @@ def with_reference_video(value):
     if not video and value.get('feed_id'):
         current=overseas_feed.reference(value['feed_id'])
         if current and current.get('url')==value.get('url'):video=current.get('reference_video')
-    return {**value,'reference_video':copy.deepcopy(video)} if video else value
+    value={**value,'reference_video':copy.deepcopy(video)} if video else value
+    return overseas_translation.enrich(value)
 
 
 def view(row):
@@ -132,7 +133,8 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         if category and item.get('category') not in (category,''): continue
         actual_platform=(item.get('reference_video') or {}).get('platform') or item.get('platform')
         if platform!='all' and actual_platform!=platform: continue
-        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','category_name','mechanism','reflex','technique')).lower()
+        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique')).lower()
+        corpus+=' '+str((item.get('reference_video') or {}).get('title_zh','')).lower()
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
         hits=[t for t in tokens if t in corpus or t in ALIASES.get(item.get('category'),'') or t in direct]
         if tokens and not hits: continue
