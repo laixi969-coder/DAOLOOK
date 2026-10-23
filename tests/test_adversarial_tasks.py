@@ -201,7 +201,7 @@ class AdversarialTransport(unittest.TestCase):
 
     def test_cancelled_task_never_retries_paid_request_and_scope_resets(self):
         active = True
-        def request(*args):
+        def request(*args, **kwargs):
             nonlocal active
             active = False
             raise TimeoutError('injected late upstream failure')

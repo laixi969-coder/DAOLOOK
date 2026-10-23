@@ -1,12 +1,15 @@
-import hashlib, json, queue, threading, traceback
+import hashlib, json, queue, threading
 from .db import db, uid, now, dumps, setting, ledger
-from . import adapters, covers, discovery, overseas
+from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access
 
 MAX_USER_ACTIVE = 20
 MAX_GLOBAL_ACTIVE = 200
 Q = queue.Queue(maxsize=MAX_GLOBAL_ACTIVE)
 TERMINAL = ("SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED")
 DISCOVERY = ("creator", "keyword")
+WORKERS = []
+WORKER_ERRORS = {}
+WORKER_LOCK = threading.Lock()
 
 
 class TaskAdmissionError(ValueError):
@@ -46,7 +49,7 @@ def task_cost(kind, payload, rules=None):
     """博主/关键词入口按精选条数逐条计费：先冻结上限，成功几条结算几条，其余退回。"""
     rules = rules or setting("rules")
     # 旧数据库没有「自主创作」规则时，沿用再创作的价格。
-    unit = rules.get(kind, rules.get("create")) if kind == "original" else rules.get(kind)
+    unit = rules.get("search", 1) if kind == "search" else rules.get(kind, rules.get("create")) if kind == "original" else rules.get(kind)
     if type(unit) is not int or unit < 0:
         raise ValueError("任务计费配置无效")
     if kind == "analyze" and payload.get("entry") in DISCOVERY:
@@ -54,8 +57,8 @@ def task_cost(kind, payload, rules=None):
     return unit, unit
 
 
-def submit(user, project, kind, payload):
-    return submit_many(user, project, kind, [payload])[0]
+def submit(user, project, kind, payload, actor=None, request_id=""):
+    return submit_many(user, project, kind, [payload], actor, request_id)[0]
 
 
 def submission_fingerprint(kind, payload):
@@ -67,7 +70,7 @@ def submission_fingerprint(kind, payload):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
-def submit_many(user, project, kind, payloads):
+def submit_many(user, project, kind, payloads, actor=None, request_id=""):
     if not payloads or len(payloads) > MAX_USER_ACTIVE:
         raise ValueError("一次提交的任务过多，请分批提交")
     rules = setting("rules")
@@ -80,6 +83,9 @@ def submit_many(user, project, kind, payloads):
             "SELECT 1 FROM projects WHERE id=? AND user_id=?", (project, user)
         ).fetchone():
             raise ValueError("项目不存在或无访问权限")
+        mode=setting("mode")
+        if mode == "live":access.require_live(c,user)
+        resource_limits.check_storage(c, user, sum(len(dumps(p).encode()) for p in payloads))
         active = c.execute(
             "SELECT project_id,kind,payload FROM tasks WHERE user_id=? AND state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')",
             (user,),
@@ -107,7 +113,7 @@ def submit_many(user, project, kind, payloads):
             raise ValueError("积分不足，请联系管理员补充积分")
         for ident, payload, (unit, cost) in zip(ids, payloads, costs):
             payload = dict(payload)
-            payload["execution_mode"] = setting("mode")
+            payload["execution_mode"] = mode
             payload["unit_cost"] = unit
             if kind == "analyze" and payload.get("entry") in DISCOVERY:
                 payload["pick"] = cost // unit if unit else discover_pick()
@@ -124,6 +130,8 @@ def submit_many(user, project, kind, payloads):
                 if set(wanted) != {r["id"] for r in rows}:
                     raise ValueError("所选资料已删除或不属于当前项目")
                 payload["asset_snapshot"] = rows
+                resource_limits.validate_inputs(payload)
+            resource_limits.check_storage(c, user, len(dumps(payload).encode()))
             c.execute(
                 "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
@@ -143,6 +151,8 @@ def submit_many(user, project, kind, payloads):
                 ),
             )
             ledger(c, user, ident, "FREEZE", -cost, "冻结：" + kind)
+        if actor:
+            audit.record(c, actor, "task.retry", project, {"task_ids": ids, "kind": kind}, request_id)
         # Nonblocking bounded handoff while holding the DB write transaction.
         # Workers can only claim after commit; a full queue rolls back all credits.
         try:
@@ -161,6 +171,8 @@ def cancel(ident, user):
         ).fetchone()
         if not task or task["state"] in TERMINAL:
             raise ValueError("任务已结束，无法取消")
+        if json.loads(task['payload']).get('execution_mode', setting('mode')) == 'live' and task['state'] != 'PENDING':
+            raise TaskAdmissionError('任务已开始，可能已产生外部服务费用，无法取消；失败仍自动退还积分', 409, None)
         c.execute(
             "UPDATE credit_accounts SET balance=balance+?,frozen=frozen-? WHERE user_id=?",
             (task["cost"], task["cost"], user),
@@ -203,7 +215,13 @@ def fail(ident, error):
 
 
 def run(ident):
-    with adapters.task_scope(lambda: active(ident)):
+    with db() as c:
+        # Queue publication occurs inside admission's write transaction. Wait for
+        # that commit before reading the execution identity, just like the claim.
+        c.execute('BEGIN IMMEDIATE')
+        row=c.execute('SELECT user_id,payload FROM tasks WHERE id=?',(ident,)).fetchone()
+    if not row:return
+    with spending.scope(row['user_id'], ident, paid=json.loads(row['payload']).get('execution_mode',setting('mode'))=='live'), adapters.task_scope(lambda: active(ident)):
         try:
             return _run(ident)
         except adapters.TaskCancelled:
@@ -221,6 +239,8 @@ def _run(ident):
         t = dict(c.execute("SELECT * FROM tasks WHERE id=?", (ident,)).fetchone())
     payload = json.loads(t["payload"])
     kind = t["kind"]
+    if kind == "search":
+        return run_search(t, payload)
     demo = payload.get("execution_mode", setting("mode")) == "demo"
     p = payload.get("platform", "xhs")
     version = None
@@ -453,7 +473,7 @@ def _run(ident):
         if payload.get("prepared"):
             image = covers.render(payload["prepared"], final=True)
         else:
-            image = adapters.cover(json.loads(output["data"]), payload["direction"])
+            image = adapters.cover(json.loads(output["data"]), payload["direction"], demo=demo)
         model = "demo-svg" if image["demo"] else image.get("model", "image")
     with db() as c:
         c.execute("BEGIN IMMEDIATE")
@@ -594,37 +614,77 @@ def _run(ident):
             ),
         )
 
+        resource_limits.check_storage(c,t["user_id"])
+
 
 def reason(e):
     return str(e)[:120] if isinstance(e, ValueError) else "外部服务或任务处理失败"
 
 
+def run_search(task, payload):
+    result = overseas_library.fetch_search(task['project_id'], payload['platform'], payload['query'])
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        row=c.execute('SELECT state FROM tasks WHERE id=?',(task['id'],)).fetchone()
+        if row['state'] in TERMINAL:return
+        result=overseas_library.persist_search(c,task['project_id'],payload['platform'],payload['query'],result)
+        refund=task['cost'] if result.get('cached') else 0
+        c.execute('UPDATE credit_accounts SET frozen=frozen-?,balance=balance+? WHERE user_id=?',
+                  (task['cost'],refund,task['user_id']))
+        if refund:ledger(c,task['user_id'],task['id'],'REFUND',refund,'搜索缓存命中，退回预留积分')
+        ledger(c,task['user_id'],task['id'],'SETTLE',0,'结算：海外搜索')
+        stored={'item_ids':[i['id'] for i in result['items']],'cached':result.get('cached',False),'charged':task['cost']-refund}
+        c.execute("UPDATE tasks SET state='SUCCEEDED',result=?,cost=?,updated_at=? WHERE id=?",
+                  (dumps(stored),task['cost']-refund,now(),task['id']))
+        resource_limits.check_storage(c,task['user_id'])
+
+
+def worker_health():
+    with WORKER_LOCK:
+        return {'workers':len(WORKERS),'alive':sum(t.is_alive() for t in WORKERS),
+                'settlement_errors':len(WORKER_ERRORS),'queue_depth':Q.qsize()}
+
+
+def settle_failure(ident, error):
+    delay=0.1
+    while True:
+        try:
+            fail(ident,error)
+            with WORKER_LOCK:WORKER_ERRORS.pop(threading.get_ident(),None)
+            return
+        except Exception as exc:
+            with WORKER_LOCK:WORKER_ERRORS[threading.get_ident()]=ident
+            audit.event('task.settlement_retry',task_id=ident,error_type=type(exc).__name__)
+            # Keep this worker alive and retry the idempotent refund; never reissue a paid call.
+            threading.Event().wait(delay)
+            delay=min(5,delay*2)
+
+
 def worker():
     while True:
-        ident = Q.get()
+        ident=Q.get()
         try:
-            run(ident)
-        except Exception as e:
-            traceback.print_exc()
-            fail(
-                ident,
-                str(e)
-                if isinstance(e, ValueError)
-                else "外部服务或任务处理失败，请重试",
-            )
+            try:
+                run(ident)
+            except Exception as exc:
+                audit.event('task.failed',task_id=ident,error_type=type(exc).__name__)
+                settle_failure(ident, str(exc)[:300] if isinstance(exc,ValueError) else '外部服务或任务处理失败，请重试')
         finally:
             Q.task_done()
 
 
 def start():
-    with db() as c:
-        stale = [
-            r["id"]
-            for r in c.execute(
-                "SELECT id FROM tasks WHERE state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')"
-            )
-        ]
-    for ident in stale:
-        fail(ident, "服务重启，未完成任务已退回积分，可重新提交")
-    for _ in range(2):
-        threading.Thread(target=worker, daemon=True).start()
+    # Check before restart recovery: a duplicate start must never refund live work.
+    with WORKER_LOCK:
+        if any(t.is_alive() for t in WORKERS):
+            raise RuntimeError('任务线程已经启动；不支持同进程重复启动')
+        with db() as c:
+            stale=[r['id'] for r in c.execute("SELECT id FROM tasks WHERE state NOT IN ('SUCCEEDED','PARTIAL','FAILED','CANCELLED')")]
+        for ident in stale:
+            fail(ident,'服务重启，未完成任务已退回积分，可重新提交')
+        WORKERS.clear()
+        WORKER_ERRORS.clear()
+        for index in range(2):
+            thread=threading.Thread(target=worker,daemon=True,name='daolook-worker-'+str(index))
+            WORKERS.append(thread)
+            thread.start()

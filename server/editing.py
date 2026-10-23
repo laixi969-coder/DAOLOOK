@@ -2,7 +2,7 @@
 import copy
 import json
 from .db import db, dumps, now
-from . import content_quality
+from . import content_quality, resource_limits
 
 FIELDS = {"title": 300, "body": 30000, "cover_text": 300, "hook": 2000, "cta": 2000}
 
@@ -102,8 +102,10 @@ def save(ident, project, expected, changes=None, restore=None):
             output = edited_data(original, changes, row["platform"])
         if output == original:
             return {"data": original, "revision": current}
+        user=c.execute("SELECT user_id FROM projects WHERE id=?",(project,)).fetchone()[0]
         c.execute("INSERT OR IGNORE INTO creation_revisions VALUES (?,?,?,?,?)", (ident, 0, row["data"], "初始稿", row["created_at"]))
         timestamp = now()
         c.execute("INSERT INTO creation_revisions VALUES (?,?,?,?,?)", (ident, current + 1, dumps(output), reason, timestamp))
         c.execute("UPDATE creation_outputs SET data=? WHERE id=?", (dumps(output), ident))
+        resource_limits.check_storage(c,user)
         return {"data": output, "revision": current + 1}

@@ -160,8 +160,25 @@ async function bootstrap() {
   localStorage.setItem("daolook-project", S.project);
   await refresh();
 }
+let workspaceRequestSequence = 0;
+const workspaceCollections = ['sources','briefs','creations','assets','images'];
+function mergeWorkspace(target, next) {
+  for (const name of workspaceCollections) {
+    const rows = new Map((target[name] || []).map(row => [row.id,row]));
+    for (const row of next[name] || []) rows.set(row.id,row);
+    target[name] = [...rows.values()];
+  }
+  target.pagination = next.pagination;
+  return target;
+}
+function selectedAssetIDs(name, previous = []) {
+  const visible = $$("input[name=" + name + "]");
+  const ids = new Set(visible.map(el => el.value));
+  return [...new Set([...previous.filter(id => !ids.has(id)), ...visible.filter(el => el.checked).map(el => el.value)])];
+}
 async function refresh() {
-  const key = workspaceKey();
+  const key = workspaceKey(), request = ++workspaceRequestSequence;
+  S.loadingWorkspace = false;
   if (S.workspaceKey !== key) {
     S.original = { goal: "leads", platform: "xhs", topic: "", keyword: "", assets: [], requirements: "", temporary: "", ...(drafts.read(key) || {}) };
     S.selectedAssets = [];
@@ -171,7 +188,10 @@ async function refresh() {
     S.goal = "leads";
     S.busy = false;
     S.watching = null;
+    S.backgroundWatching = new Set();
     S.workspace = { sources: [], creations: [], assets: [], images: [] };
+    S.workspacePages = 1;
+    S.tasksEnd = S.ledgerEnd = S.auditEnd = false;
     S.overseasForm = {...overseasDefaults(), ...(drafts.read(key+":overseas")||{})};
     S.overseasReferenceTitle = "";
     S.overseasLibrary = null;
@@ -179,13 +199,30 @@ async function refresh() {
     S.overseasMessage = ""; S.overseasSearching = false; S.overseasRefreshing = null; S.overseasLoadToken = 0;
   }
   S.workspaceKey = key;
+  const project = S.project, pages = S.workspacePages || 1;
   const [workspace, tasks, boot] = await Promise.all([
-    api("/api/workspace?project_id=" + S.project), api("/api/tasks"), api("/api/bootstrap"),
+    api("/api/workspace?project_id=" + project), api("/api/tasks"), api("/api/bootstrap"),
   ]);
-  if (workspaceKey() !== key) return;
-  S.workspace = workspace; S.tasks = tasks; S.boot = boot;
-  S.original.assets = S.original.assets.filter(id => workspace.assets.some(a => a.id === id));
-  S.overseasForm.assets = S.overseasForm.assets.filter(id => workspace.assets.some(a => a.id === id));
+  if (workspaceKey() !== key || request !== workspaceRequestSequence) return;
+  // Replay only the pages the user explicitly loaded. A fresh project still
+  // starts with one bounded page, while mutations keep the current coverage.
+  let loaded = 1;
+  while (loaded < pages && workspace.pagination?.cursor) {
+    const next = await api('/api/workspace?project_id='+project+'&cursor='+encodeURIComponent(workspace.pagination.cursor));
+    if (workspaceKey() !== key || request !== workspaceRequestSequence) return;
+    mergeWorkspace(workspace,next); loaded++;
+  }
+  S.workspace = workspace; S.workspacePages = loaded; S.tasks = tasks; S.tasksEnd = tasks.length < 100; S.boot = boot; S.mail = !!boot.mail;
+  if (!workspace.pagination?.more) {
+    const exists = id => workspace.assets.some(a => a.id === id);
+    S.original.assets = S.original.assets.filter(exists);
+    S.overseasForm.assets = S.overseasForm.assets.filter(exists);
+    S.selectedAssets = S.selectedAssets.filter(exists);
+  }
+  // A deep link or historical task can select an item outside the loaded pages.
+  if (S.page === 'detail' && S.detail) await ensureWorkspaceItem('sources',S.detail);
+  if (workspaceKey() !== key || request !== workspaceRequestSequence) return;
+  if (S.editSession?.key === key) await ensureWorkspaceItem('creations',S.editSession.id);
 }
 function shell() {
   const project = S.boot.projects.find((p) => p.id === S.project);
@@ -215,6 +252,59 @@ function heading(
   return `<div class="heading"><div><div class="eyebrow">${eyebrow}</div><h1>${title}</h1><p>${description}</p></div>${right}</div>`;
 }
 function pageContent() {
+  const user=S.boot.user;
+  const pending=S.boot.mode==='live' && (user.live_access===false || user.live_access===0);
+  const notice=pending?`<div class="notice">${user.demo_account?'演示账号不能使用真实服务，请登录或注册已验证的邮箱账号。':`当前账号需验证邮箱或由管理员开通后使用真实服务。${button('验证邮箱 / 查看开通方式','account','secondary small')}`}</div>`:'';
+  const content=notice+pageBody();
+  return content + (S.workspace.pagination?.more ? `<div class="actions" style="margin-top:24px"><button class="btn secondary" data-action="load-workspace" ${S.loadingWorkspace?"disabled":""}>${S.loadingWorkspace?"正在读取…":"加载更早的内容与更多资料"}</button><span class="hint">当前为已加载内容；筛选与统计基于已加载记录。</span></div>` : "");
+}
+async function loadMoreWorkspace() {
+  const key=workspaceKey(),cursor=S.workspace.pagination?.cursor,request=workspaceRequestSequence;
+  if(!cursor || S.loadingWorkspace)return;
+  const loading = {};
+  S.loadingWorkspace=loading;render();
+  try {
+    const next=await api('/api/workspace?project_id='+S.project+'&cursor='+encodeURIComponent(cursor));
+    if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
+    mergeWorkspace(S.workspace,next);
+    S.workspacePages=(S.workspacePages||1)+1;
+  } finally {
+    if(S.loadingWorkspace===loading) {
+      S.loadingWorkspace=false;
+      if(key===workspaceKey() && request===workspaceRequestSequence)render();
+    }
+  }
+}
+async function ensureWorkspaceItem(kind,id,force=false) {
+  const key=workspaceKey(),request=workspaceRequestSequence;
+  const find=()=>[...(S.workspace[kind]||[]),...(kind==='sources'?S.workspace.briefs||[]:[])].find(row=>row.id===id);
+  if(!force && find())return find();
+  const row=await api('/api/'+kind+'/'+id+'?project_id='+S.project);
+  if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
+  // A detail read may contain full image bytes. Keep workspace thumbnails lazy.
+  if(kind==='assets' && row.kind==='图片')row.content='/api/media/assets/'+row.id+'?project_id='+S.project;
+  const name=kind==='sources' && row.data.kind==='brief'?'briefs':kind;
+  S.workspace[name]||=[];
+  const old=S.workspace[name].findIndex(item=>item.id===id);
+  if(old<0)S.workspace[name].push(row);else S.workspace[name][old]=row;
+  return row;
+}
+async function ensureCreationContext(id,images=false) {
+  const key=workspaceKey(),request=workspaceRequestSequence;
+  const creation=await ensureWorkspaceItem('creations',id);
+  if(!creation || key!==workspaceKey() || request!==workspaceRequestSequence)return;
+  await ensureWorkspaceItem('sources',creation.source_id);
+  if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
+  if(images) {
+    const rows=await api('/api/creations/'+id+'/images?project_id='+S.project);
+    if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
+    const images=new Map(S.workspace.images.map(row=>[row.id,row]));
+    for(const row of rows)images.set(row.id,row);
+    S.workspace.images=[...images.values()];
+  }
+  return creation;
+}
+function pageBody() {
   switch (S.page) {
     case "discover":
       return discover();
@@ -231,9 +321,9 @@ function pageContent() {
     case "assets":
       return assets();
     case "tasks":
-      return tasks();
+      return tasks()+(S.tasks.length>=100&&!S.tasksEnd?button("加载更早的任务","older-tasks"):"");
     case "credits":
-      return credits();
+      return credits()+(S.ledger?.length>=200&&!S.ledgerEnd?button("加载更早的流水","older-ledger"):"");
     case "admin":
       return admin();
     default:
@@ -524,7 +614,9 @@ function updateEditorPreview() {
   $$("[data-action=restore-draft]").forEach(el => { el.disabled = session.readonly || session.dirty; });
 }
 async function openDraftEditor(id) {
-  const c = S.workspace.creations.find(x => x.id === id);
+  const contextKey=workspaceKey(),request=workspaceRequestSequence;
+  const c = await ensureCreationContext(id,true);
+  if(contextKey!==workspaceKey() || request!==workspaceRequestSequence)return;
   if (!c) throw new Error("稿件不存在，请刷新后再试");
   const key = workspaceKey();
   const storageKey = `${key}:${id}`;
@@ -676,7 +768,7 @@ async function startOriginal(briefId) {
       platform: $("#original-platform").value,
       topic: $("#original-topic").value.trim(),
       keyword: $("#original-keyword").value.trim(),
-      assets: $$("input[name=original-asset]:checked").map((x) => x.value),
+      assets: selectedAssetIDs("original-asset",S.original.assets),
       requirements: $("#original-requirements").value,
       temporary: $("#original-temporary").value,
     };
@@ -738,7 +830,7 @@ function analyzeEstimate() {
   return `预计 ${unit} 积分 · 失败自动退还`;
 }
 function safeImage(url) {
-  return /^(https:\/\/|data:image\/(png|jpeg|webp|svg\+xml);base64,)/.test(
+  return /^(https:\/\/|\/api\/media\/(assets|images)\/[a-f0-9]{32}\?project_id=[a-f0-9]+$|data:image\/(png|jpeg|webp|svg\+xml);base64,)/.test(
     url || "",
   )
     ? url
@@ -753,7 +845,7 @@ function assets() {
       "YOUR BRAND, IN CONTEXT",
     ) +
     (S.workspace.assets.length
-      ? `<div class="asset-grid">${S.workspace.assets.map((a) => `<article class="asset-card"><span class="status">${esc(a.kind)}</span><h3>${esc(a.name)}</h3>${a.kind === "图片" ? `<img src="${esc(safeImage(a.content))}" alt="${esc(a.name)}">` : `<p>${esc(a.content)}</p>`}<div class="actions">${button("编辑 / 替换", "edit-asset", "secondary small", "edit", `data-id="${a.id}"`)}${button("删除", "delete-asset", "small", "trash", `data-id="${a.id}"`)}</div></article>`).join("")}</div>`
+      ? `<div class="asset-grid">${S.workspace.assets.map((a) => `<article class="asset-card"><span class="status">${esc(a.kind)}</span><h3>${esc(a.name)}</h3>${a.kind === "图片" ? `<img src="${esc(safeImage(a.content))}" alt="${esc(a.name)}">` : `<p>${esc(a.content)}</p>${a.content_truncated?'<small class="hint">仅显示内容预览，打开编辑可查看完整资料。</small>':""}`}<div class="actions">${button("编辑 / 替换", "edit-asset", "secondary small", "edit", `data-id="${a.id}"`)}${button("删除", "delete-asset", "small", "trash", `data-id="${a.id}"`)}</div></article>`).join("")}</div>`
       : empty(
           "把品牌资料放进来",
           "添加品牌介绍、产品卖点、受众画像或禁用词，<br>创作时选择使用，资料不会自动全选。",
@@ -788,7 +880,7 @@ function tasks() {
       "TASK HISTORY",
     ) +
     (items.length
-      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 6 到 8 条稿件", original: "内容创作", cover: "封面生成" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? "" : "pending"}" title="${esc(t.state === "PARTIAL" ? t.error || "" : "")}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error && t.state !== "PARTIAL" ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
+      ? `<div class="table-wrap"><table><thead><tr><th>任务</th><th>状态</th><th>积分</th><th>时间</th><th>结果</th></tr></thead><tbody>${items.map((t) => `<tr><td>${{ analyze: "参考内容拆解", create: "再创作 · 6 到 8 条稿件", original: "内容创作", cover: "封面生成", search: "海外搜索" }[t.kind]}</td><td><span class="status ${t.state === "FAILED" ? "failed" : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? "" : "pending"}" title="${esc(t.state === "PARTIAL" ? t.error || "" : "")}">${states[t.state] || t.state}</span></td><td>${t.cost}</td><td>${date(t.created_at)}</td><td>${t.error && t.state !== "PARTIAL" ? `<span title="${esc(t.error)}">${esc(t.error.slice(0, 40))}</span>` : ["SUCCEEDED", "PARTIAL"].includes(t.state) ? `<button class="text-btn" data-action="task-result" data-id="${t.id}">查看结果 ${icon("arrow")}</button>` : t.state === "CANCELLED" ? "—" : (S.boot.mode==="live"&&t.state!=="PENDING") ? "执行中，无法取消" : button("取消任务", "cancel-task", "secondary small", "close", `data-id="${t.id}"`)}</td></tr>`).join("")}</tbody></table></div>`
       : empty("还没有任务", "从一条参考链接开始，任务进度会显示在这里。"))
   );
 }
@@ -824,6 +916,8 @@ function admin() {
       ["users", "用户与积分"],
       ["tasks", "任务管理"],
       ["skills", "Skill 版本"],
+      ["audit", "操作审计"],
+      ["usage", "费用预算"],
     ]
       .map(
         ([id, label]) =>
@@ -836,15 +930,17 @@ function admin() {
 function adminBody() {
   const a = S.admin,
     c = a.config;
+  if(S.adminTab==='audit')return `<p class="hint">仅记录操作者、目标和脱敏变更摘要，不保存密码或密钥。</p><div class="table-wrap"><table><thead><tr><th>时间</th><th>操作者</th><th>操作</th><th>目标与摘要</th><th>参考编号</th></tr></thead><tbody>${(a.audit||[]).map(r=>`<tr><td>${date(r.created_at)}</td><td>${esc(r.actor_id)}</td><td>${esc(r.action)}</td><td>${esc(r.target)} ${esc(r.details)}</td><td>${esc(r.request_id)}</td></tr>`).join('')}</tbody></table></div>${a.audit?.length>=100&&!S.auditEnd?button('加载更早审计','older-audit'):''}`;
+  if(S.adminTab==='usage')return `<p>费用按管理员配置的价格上界在每次外部请求开始前预留，失败不释放。下表是保守预算消耗，不是供应商实际账单；价格与每日预算通过服务环境配置。</p><div class="table-wrap"><table><thead><tr><th>UTC 日期</th><th>账号</th><th>请求数</th><th>预留美元</th></tr></thead><tbody>${(a.usage||[]).map(r=>`<tr><td>${esc(r.day)}</td><td>${esc(r.user_id)}</td><td>${r.calls}</td><td>${(r.reserved_microusd/1000000).toFixed(6)}</td></tr>`).join('')}</tbody></table></div>`;
   if (S.adminTab === "models")
     return `<div class="admin-grid"><section class="panel"><h2>模型供应商</h2><p class="muted">默认供应商在服务配置中维护；可添加其他供应商作为主模型或备用。</p><div class="actions" style="margin:20px 0">${button("添加供应商", "new-provider", "primary small", "plus")}</div>${a.providers.map((p) => `<div class="asset-card" style="margin-top:12px"><span class="status">${p.enabled ? "已启用" : "已停用"}</span><h3>${esc(p.name)}</h3><p>${esc(p.base_url)}</p><div class="actions">${button("编辑", "edit-provider", "secondary small", "edit", `data-id="${p.id}"`)}${button("测试 / 同步", "test-provider", "secondary small", "refresh", `data-id="${p.id}"`)}</div></div>`).join("")}</section><section class="panel"><h2>按任务配置主备模型</h2><form id="routes-form">${["analyze", "create", "cover"].map((kind) => `<h3 style="font-size:14px;margin:18px 0">${{ analyze: "内容拆解", create: "再创作", cover: "封面生成" }[kind]}</h3>${["primary", "backup"].map((pos) => `<label class="field"><span>${pos === "primary" ? "主" : "备用"}供应商</span><select id="route-${kind}-${pos}-provider">${[{ id: "default", name: "默认供应商" }, ...a.providers].map((p) => `<option value="${p.id}" ${a.routes[kind][pos].provider === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>${field("模型 ID（留空继承默认配置）", `route-${kind}-${pos}-model`, a.routes[kind][pos].model)}`).join("")}`).join("")}<button class="btn primary full" type="submit">保存路由</button></form></section></div>`;
   if (S.adminTab === "users")
-    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("调整积分", "grant", "secondary small", "coin", `data-id="${u.id}" data-balance="${u.balance}" data-email="${esc(u.email)}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)}</td></tr>`).join("")}</tbody></table></div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("调整积分", "grant", "secondary small", "coin", `data-id="${u.id}" data-balance="${u.balance}" data-email="${esc(u.email)}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)} ${u.demo_account?'<span class="hint">演示账号</span>':(u.live_access===false || u.live_access===0)?button("开通真实服务", "activate-access", "secondary small", "check", `data-id="${u.id}"`):'<span class="hint">已开通真实服务</span>'}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "tasks")
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
     return `<div class="actions" style="margin-bottom:20px">${button("创建 Skill 草稿", "new-skill", "primary", "plus")}</div><div class="notice">每类任务只有一条「生效中」的 Prompt，真实拆解与创作只读它。要改 Prompt 就点「编辑为新版本」：保存草稿 → 测试 → 发布，发布即替换生效版本（旧版转为已归档）。</div><div class="asset-grid">${a.skills.map((s) => `<article class="asset-card"><span class="status">${skillStates[s.status] || s.status}</span><h3>${esc(s.name)} · v${s.version}</h3><details class="skill-prompt"><summary>查看完整 Prompt</summary><pre>${esc(s.prompt)}</pre></details><div class="actions">${button("编辑为新版本", "edit-skill", "secondary small", "edit", `data-id="${s.id}"`)}${button("复制", "copy-skill", "secondary small", "copy", `data-id="${s.id}"`)}${s.status === "Draft" ? button("测试", "test-skill", "secondary small", "check", `data-id="${s.id}"`) : s.status === "Test" ? button("发布", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : s.status === "Archived" ? button("回滚至此版本", "publish-skill", "primary small", "check", `data-id="${s.id}"`) : ""}</div></article>`).join("")}</div>`;
-  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">未启用时，注册不校验邮箱，找回密码需由管理员在「用户」里重置。</div></section><section class="panel"><h2>注册与白名单</h2><label class="check-row"><input type="checkbox" id="signup-whitelist" ${c.signup?.whitelist ? "checked" : ""}>开启注册白名单：只有名单内邮箱可以注册</label><label class="field"><span>白名单邮箱 <small style="display:inline;font-weight:400">每行一个，也可用逗号分隔</small></span><textarea id="signup-emails" rows="8" placeholder="name@example.com">${esc((c.signup?.emails || []).join("\n"))}</textarea></label>${field("新用户赠送积分", "signup-welcome", c.signup?.welcome_credits ?? 100, "number")}<div class="hint">白名单只限制新注册，已注册的用户不受影响；.env 里的管理员邮箱始终可以注册。赠送积分只对之后注册的新用户生效，设为 0 则不赠送。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
+  return `<form id="config-form"><div class="admin-grid"><section class="panel"><h2>模型供应商</h2>${field("Base URL", "provider-base", c.provider.base_url)}${field("API Key", "provider-key", c.provider.api_key, "password")}${field("主文本模型", "provider-model", c.provider.model)}${field("备用文本模型", "provider-backup", c.provider.backup_model)}${field("封面模型", "provider-image", c.provider.image_model)}${field("口播转写模型（可选，兼容 /audio/transcriptions）", "provider-transcribe", c.provider.transcribe_model || "")}<label class="check-row"><input type="checkbox" id="provider-enabled" ${c.provider.enabled ? "checked" : ""}>启用模型服务</label><div class="actions" style="margin-top:15px">${button("连接测试 / 同步模型", "test-model", "secondary small", "refresh")}</div><div id="model-list" class="hint" hidden></div></section><section class="panel"><h2>TikHub 数据源</h2>${field("Base URL", "tikhub-base", c.tikhub.base_url)}${field("API Key", "tikhub-key", c.tikhub.api_key, "password")}<label class="field"><span>平台端点映射（JSON）</span><textarea id="endpoints" rows="12">${esc(JSON.stringify(c.tikhub.endpoints, null, 2))}</textarea></label><div class="hint">小红书使用 App V2 系列；请按账号实际可用接口配置抖音端点。服务保存后再测试。</div>${button("测试参考链接", "test-tikhub", "secondary small", "link")}</section><section class="panel"><h2>积分与系统</h2><label class="field"><span>运行模式</span><select id="run-mode"><option value="demo" ${c.mode === "demo" ? "selected" : ""}>演示模式</option><option value="live" ${c.mode === "live" ? "selected" : ""}>真实服务</option></select></label>${field("拆解积分", "cost-analyze", c.rules.analyze, "number")}${field("再创作积分", "cost-create", c.rules.create, "number")}${field("封面积分", "cost-cover", c.rules.cover, "number")}${field("自主创作积分", "cost-original", c.rules.original ?? c.rules.create, "number")}${field("海外搜索积分（缓存命中退回）", "cost-search", c.rules.search ?? 1, "number")}${field("批量上限", "batch-limit", c.limits.batch, "number")}${field("请求超时（秒）", "timeout", c.limits.timeout, "number")}${field("模型重试次数", "retries", c.limits.retries ?? 1, "number")}${field("临时资料保留时长（小时）", "temporary-ttl", c.limits.temporary_ttl_hours ?? 24, "number")}${field("博主/关键词精选条数", "discover-pick", c.limits.discover_pick ?? 3, "number")}</section><section class="panel"><h2>邮件服务（验证码）</h2><label class="check-row"><input type="checkbox" id="mail-enabled" ${c.mail?.enabled ? "checked" : ""}>启用：注册需验证邮箱，支持找回密码</label>${field("SMTP 地址", "mail-host", c.mail?.host || "")}${field("端口", "mail-port", c.mail?.port ?? 465, "number")}<label class="field"><span>加密方式</span><select id="mail-security"><option value="ssl" ${c.mail?.security !== "starttls" ? "selected" : ""}>SSL（通常 465）</option><option value="starttls" ${c.mail?.security === "starttls" ? "selected" : ""}>STARTTLS（通常 587）</option></select></label>${field("用户名", "mail-user", c.mail?.username || "")}${field("密码 / 授权码", "mail-password", c.mail?.password || "", "password")}${field("发件人", "mail-sender", c.mail?.sender || "")}<div class="actions" style="margin-top:15px">${button("发送测试邮件", "test-mail", "secondary small", "check")}</div><div class="hint">真实服务注册必须验证邮箱，需启用邮件；白名单只限制可注册邮箱。已有账号也可由管理员明确开通。</div></section><section class="panel"><h2>注册与白名单</h2><label class="check-row"><input type="checkbox" id="signup-whitelist" ${c.signup?.whitelist ? "checked" : ""}>开启注册白名单：只有名单内邮箱可以注册</label><label class="field"><span>白名单邮箱 <small style="display:inline;font-weight:400">每行一个，也可用逗号分隔</small></span><textarea id="signup-emails" rows="8" placeholder="name@example.com">${esc((c.signup?.emails || []).join("\n"))}</textarea></label>${field("新用户赠送积分", "signup-welcome", c.signup?.welcome_credits ?? 100, "number")}<div class="hint">白名单只限制新注册，已注册的用户不受影响；.env 管理员凭证仅用于首次引导，不会在重启时覆盖后台设置。赠送积分只对之后注册的新用户生效，设为 0 则不赠送。</div></section><section class="panel"><h2>内容排序权重</h2><label class="field"><span>评分权重（JSON）</span><textarea id="ranking" rows="10">${esc(JSON.stringify(c.ranking, null, 2))}</textarea></label><div class="hint">缺少真实账号近期样本和赛道中位数时，不展示未经验证的异常爆款结论。正式排序需用真实样本校准。</div></section></div><button class="btn primary" type="submit" style="margin-top:25px">${icon("check")}保存配置</button></form>`;
 }
 function field(label, id, value = "", type = "text") {
   return `<label class="field"><span>${label}</span><input id="${id}" type="${type}" value="${esc(value)}" ${type === "number" ? 'min="0" step="any"' : ""}></label>`;
@@ -857,7 +953,14 @@ function skillModal(name = "xhs_analysis", prompt = "", title = "创建 Skill �
   );
 }
 async function coverStudio(id, saved) {
+  const key=workspaceKey(),request=workspaceRequestSequence;
+  await ensureCreationContext(id,true);
+  if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
   const plan = await post("/api/cover/plan", body({ creation_id: id }));
+  if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
+  const selected=(saved || plan.brief).asset_id;
+  if(selected)await ensureWorkspaceItem('assets',selected);
+  if(key!==workspaceKey() || request!==workspaceRequestSequence)return;
   S.coverId = id;
   S.coverBrief = structuredClone(saved || plan.brief);
   const b = S.coverBrief;
@@ -951,7 +1054,12 @@ document.addEventListener("input", (e) => {
 async function exportCover(id, format) {
   const item = S.workspace.images.find((i) => i.id === id);
   if (!item) throw new Error("封面不存在");
-  const url = safeImage(item.data.url);
+  let url = safeImage(item.data.url);
+  if(url.startsWith("/api/media/")) {
+    const response=await fetch(url);if(!response.ok)throw new Error("封面读取失败，请重新登录或重试");
+    const blob=await response.blob();
+    url=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(blob);});
+  }
   if (!url) throw new Error("封面图片不存在或已失效");
   if (!url.startsWith("data:")) {
     window.open(url, "_blank", "noopener");
@@ -1027,8 +1135,8 @@ function login(register = false, reset = false) {
     ? "输入注册邮箱，用验证码设置新密码。"
     : register
       ? S.whitelist
-        ? "目前仅限受邀邮箱注册；未开通的邮箱请联系管理员。"
-        : "用邮箱创建账号，开启有依据的创作。"
+        ? "目前仅限受邀邮箱注册；真实服务仍需邮箱验证码。"
+        : S.publicMode==='live'?"验证邮箱后创建账号，开启有依据的创作。":"用邮箱创建账号，开启有依据的创作。"
       : "登录后，继续你的下一次好创作。";
   const fields =
     field("邮箱地址", "email", "", "email") +
@@ -1039,7 +1147,7 @@ function login(register = false, reset = false) {
     ? '<button class="text-btn" data-action="toggle-login">返回登录</button>'
     : `<button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : S.whitelist ? "受邀邮箱注册" : "还没有账号？免费注册"}</button>${register ? "" : '<button class="text-btn" data-action="forgot">忘记密码？</button>'}`;
   $("#app").innerHTML =
-    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>给业务资料 → 选目标 → 拿到文案</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full" ${reset && !S.mail ? "disabled" : ""}>${submit} ${icon("arrow")}</button></form>${reset && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员重置密码。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
+    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>给业务资料 → 选目标 → 拿到文案</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full" ${(reset || (register && S.publicMode==='live')) && !S.mail ? "disabled" : ""}>${submit} ${icon("arrow")}</button></form>${(reset || (register && S.publicMode==='live')) && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员开通邮件验证后继续。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
 }
 async function loadPublic() {
   const pub = await api("/api/public");
@@ -1058,18 +1166,21 @@ async function navigate(page) {
   if (page === "credits") {
     const ledger = await api("/api/credits");
     if (key !== workspaceKey() || S.page !== page) return;
-    S.ledger = ledger;
+    S.ledger = ledger; S.ledgerEnd = ledger.length < 200;
     render();
   }
   if (page === "admin") {
     const admin = await api("/api/admin");
     if (key !== workspaceKey() || S.page !== page) return;
-    S.admin = admin;
+    S.admin = admin; S.auditEnd = (admin.audit?.length||0) < 100;
     render();
   }
   window.scrollTo({ top: 0 });
 }
 async function openSource(id) {
+  const key=workspaceKey();
+  await ensureWorkspaceItem("sources",id);
+  if(key!==workspaceKey())return;
   S.detail = id;
   S.requirements = "";
   S.temporary = "";
@@ -1079,55 +1190,51 @@ async function openSource(id) {
   render();
   window.scrollTo({ top: 0 });
 }
-async function poll(ids, done) {
-  S.watching = ids;
+async function poll(ids, done, background=false) {
   const key = workspaceKey();
-  let attempts = 0;
-  const check = async () => {
-    try {
-      if (key !== workspaceKey() || S.watching !== ids) return;
-      const tasks = await api('/api/tasks');
-      if (key !== workspaceKey() || S.watching !== ids) return;
-      S.tasks = tasks;
-      const relevant = S.tasks.filter((t) => ids.includes(t.id));
-      if (
-        relevant.length === ids.length &&
-        relevant.every((t) =>
-          ["SUCCEEDED", "PARTIAL", "FAILED", "CANCELLED"].includes(t.state),
-        )
-      ) {
-        await refresh();
-        if (key !== workspaceKey() || S.watching !== ids) return;
-        S.watching = null;
-        S.busy = false;
-        render();
-        const success = relevant.filter((t) =>
-          ["SUCCEEDED", "PARTIAL"].includes(t.state),
-        );
-        if (success.length) await done(success);
-        const partial = relevant.filter((t) => t.state === "PARTIAL");
-        if (partial.length) toast(`部分完成：${partial[0].error}`);
-        const failed = relevant.filter((t) => t.state === "FAILED");
-        if (failed.length)
-          toast(`${failed.length} 个任务失败，积分已退回：${failed[0].error}`);
-        return;
-      }
-      if (S.page === "tasks") render();
-      if (++attempts > 180) {
-        S.busy = false;
-        toast("任务仍在后台处理中，可在任务记录查看");
-        render();
-        return;
-      }
-      setTimeout(check, 1500);
-    } catch (e) {
-      if (key !== workspaceKey() || S.watching !== ids) return;
-      S.busy = false;
-      toast("暂时无法查询进度；任务仍在后台，可到任务记录查看。");
-      render();
-    }
+  if(background) (S.backgroundWatching ||= new Set()).add(ids);
+  else S.watching = ids;
+  const active=()=>key===workspaceKey() && (background?S.backgroundWatching?.has(ids):S.watching===ids);
+  const release=()=>{
+    if(background)S.backgroundWatching?.delete(ids);
+    else if(S.watching===ids){S.watching=null;S.busy=false;}
   };
-  setTimeout(check, 500);
+  let attempts = 0;
+  return new Promise(resolve=>{
+    const check = async () => {
+      try {
+        if(!active())return resolve();
+        const tasks = await api('/api/tasks');
+        if(!active())return resolve();
+        S.tasks = tasks; S.tasksEnd = tasks.length < 100;
+        const relevant = tasks.filter(t=>ids.includes(t.id));
+        if(relevant.length===ids.length && relevant.every(t=>['SUCCEEDED','PARTIAL','FAILED','CANCELLED'].includes(t.state))) {
+          await refresh();
+          if(!active())return resolve();
+          release();render();
+          const success=relevant.filter(t=>['SUCCEEDED','PARTIAL'].includes(t.state));
+          if(success.length)await done(success);
+          if(key!==workspaceKey())return resolve();
+          const partial=relevant.filter(t=>t.state==='PARTIAL');
+          if(partial.length)toast(`部分完成：${partial[0].error}`);
+          const failed=relevant.filter(t=>t.state==='FAILED');
+          if(failed.length)toast(`${failed.length} 个任务失败，积分已退回：${failed[0].error}`);
+          return resolve();
+        }
+        if(S.page==='tasks')render();
+        if(++attempts>180) {
+          release();toast('任务仍在后台处理中，可在任务记录查看');render();return resolve();
+        }
+        setTimeout(check,1500);
+      } catch(error) {
+        if(active()) {
+          release();toast('暂时无法查询进度；任务仍在后台，可到任务记录查看。');render();
+        }
+        resolve();
+      }
+    };
+    setTimeout(check,500);
+  });
 }
 async function startAnalyze() {
   const operationKey = workspaceKey();
@@ -1180,7 +1287,7 @@ async function startCreate(againId) {
     if (S.imageUploading) throw new Error("图片正在上传，请完成后再生成");
     S.requirements = $("#requirements").value;
     S.temporary = $("#temporary").value;
-    S.selectedAssets = $$("input[name=asset]:checked").map((x) => x.value);
+    S.selectedAssets = selectedAssetIDs("asset",S.selectedAssets);
   }
   S.busy = true;
   render();
@@ -1271,16 +1378,18 @@ const actions = {
     await actions.cover({dataset:{id:session.id}});
   },
   "improve-draft": async (el) => {
-    const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
+    const key=workspaceKey();
+    const c = await ensureCreationContext(el.dataset.id);
+    if(!c || key!==workspaceKey())return;
     const brief = briefOf(c.source_id);
     if (brief) {
       if (["overseas","tiktok","instagram","youtube"].includes(brief.platform)) {
-        S.overseasForm={...overseasDefaults(),...brief.data,topic:brief.data.topic,platform:brief.platform,assets:(brief.data.assets||[]).filter(id=>S.workspace.assets.some(a=>a.id===id)),temporary:"",reference_id:""};
+        S.overseasForm={...overseasDefaults(),...brief.data,topic:brief.data.topic,platform:brief.platform,assets:[...(brief.data.assets||[])],temporary:"",reference_id:""};
         await navigate("overseas");$("#overseas-temporary")?.focus();return;
       }
       S.original = { goal: c.data.goal || "leads", platform: brief.platform,
         topic: brief.data.topic, keyword: brief.data.keyword || "",
-        assets: (brief.data.assets || []).filter((id) => S.workspace.assets.some((a) => a.id === id)),
+        assets: [...(brief.data.assets || [])],
         requirements: brief.data.requirements || "", temporary: "" };
       S.entry = "original";
       await navigate("discover");
@@ -1347,11 +1456,27 @@ const actions = {
       "从业务资料，到能用的文案",
       `<p class="subtext">1. 选这次想要的结果：更多人看到、咨询或下单。</p><p class="subtext">2. 粘贴或上传业务资料，点击「帮我写好」。</p><p class="subtext">3. 核对提示，复制正文发布；需要时打开配图建议和评论回复。</p><p class="subtext">4. 发布后记录浏览、有效咨询和订单，下次创作会参考你的真实结果。</p>`,
     ),
-  account: () =>
-    modal(
-      "账号与工作空间",
-      `<p class="subtext">${esc(S.boot.user.email.startsWith("demo-") ? "当前为本地演示空间，数据保存在这台设备的服务中。" : S.boot.user.email)}</p><div class="actions">${button("项目设置", "project-settings", "secondary", "settings")}${button(S.boot.user.email.startsWith("demo-") ? "登录 / 注册" : "退出账号", "logout", "secondary", "logout")}</div>`,
-    ),
+  account: () => {
+    const user=S.boot.user;
+    const pending=user.live_access===false || user.live_access===0;
+    const access=user.demo_account?'<p class="notice">演示身份不能开通真实服务。请退出后使用自己的邮箱登录或注册。</p>':pending?
+      `<p class="notice">开通真实服务时会清零此前未经验证的赠送积分，管理员可重新调整积分。</p>${S.mail?`<form id="verify-access-form"><label class="field"><span>邮箱验证码</span><div class="code-row"><input id="verify-access-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required><button class="btn secondary small" type="button" data-action="send-access-code">发送验证码</button></div></label><button class="btn primary" type="submit">验证邮箱并开通</button></form>`:'<p class="hint">邮件服务尚未启用，请联系管理员开通真实服务。</p>'}`:'<p class="hint">账号已开通真实服务。</p>';
+    modal("账号与工作空间",`<p class="subtext">${esc(user.email)}</p>${access}<div class="actions">${button("项目设置", "project-settings", "secondary", "settings")}${button(user.demo_account ? "登录 / 注册" : "退出账号", "logout", "secondary", "logout")}</div>`);
+  },
+  "send-access-code": async el => {
+    const key=workspaceKey(),email=S.boot.user.email;
+    el.disabled=true;
+    try {
+      await post('/api/auth/code',{email,purpose:'verify'});
+      if(key===workspaceKey())toast('验证码已发送，请查看账号邮箱');
+    } finally {if(key===workspaceKey())el.disabled=false;}
+  },
+  "activate-access": el => {
+    const user=S.admin.users.find(row=>row.id===el.dataset.id);
+    if(!user || user.demo_account)return;
+    S.accessUser=user.id;
+    modal('开通真实服务',`<form id="admin-access-form"><p class="subtext">为 ${esc(user.email)} 开通真实服务。默认清零未经验证的现有余额，之后可单独发放积分。</p><label class="check-row"><input id="preserve-live-balance" type="checkbox">确认保留现有余额 ${esc(user.balance)} 积分</label><button class="btn primary full" type="submit">确认开通</button></form>`);
+  },
   "project-settings": () => {
     const project=S.boot.projects.find(p=>p.id===S.project);
     modal("项目设置", `<form id="project-settings-form">${field("项目名称", "settings-project-name", project.name)}<label class="field"><span>项目介绍</span><textarea id="settings-project-description" maxlength="2000" rows="3">${esc(project.description || "")}</textarea></label><button class="btn primary full" type="submit">保存设置</button></form>`);
@@ -1538,7 +1663,30 @@ const actions = {
   "export-csv": () => download("csv"),
   "export-xlsx": () => download("xlsx"),
   "new-asset": () => assetModal(),
-  "edit-asset": (el) => assetModal(el.dataset.id),
+  "edit-asset": async (el) => {
+    const key=workspaceKey(),row=await api('/api/assets/'+el.dataset.id+'?project_id='+S.project);
+    if(key!==workspaceKey())return;
+    Object.assign(S.workspace.assets.find(a=>a.id===row.id),row);assetModal(row.id);
+  },
+  "load-workspace": loadMoreWorkspace,
+  "older-tasks": async () => {
+    const key=workspaceKey(),list=S.tasks,last=list[list.length-1];if(!last)return;
+    const rows=await api('/api/tasks?before='+encodeURIComponent(last.created_at)+'&before_id='+last.id);
+    if(key!==workspaceKey() || S.tasks!==list)return;
+    const ids=new Set(list.map(row=>row.id));list.push(...rows.filter(row=>!ids.has(row.id)));S.tasksEnd=rows.length<100;render();
+  },
+  "older-ledger": async () => {
+    const key=workspaceKey(),list=S.ledger,last=list[list.length-1];if(!last)return;
+    const rows=await api('/api/credits?before='+encodeURIComponent(last.created_at)+'&before_id='+last.id);
+    if(key!==workspaceKey() || S.ledger!==list)return;
+    const ids=new Set(list.map(row=>row.id));list.push(...rows.filter(row=>!ids.has(row.id)));S.ledgerEnd=rows.length<200;render();
+  },
+  "older-audit": async () => {
+    const key=workspaceKey(),list=S.admin.audit,last=list[list.length-1];if(!last)return;
+    const rows=await api('/api/admin/audit?before='+encodeURIComponent(last.created_at)+'&before_id='+last.id);
+    if(key!==workspaceKey() || S.admin?.audit!==list)return;
+    const ids=new Set(list.map(row=>row.id));list.push(...rows.filter(row=>!ids.has(row.id)));S.auditEnd=rows.length<100;render();
+  },
   "delete-asset": (el) => {
     S.deleteAsset = el.dataset.id;
     modal(
@@ -1571,9 +1719,24 @@ const actions = {
       r = JSON.parse(t.result);
     if (t.kind === "analyze" && r.source_ids?.length === 1)
       await openSource(r.source_ids[0]);
-    else if (t.kind === "original" && r.brief_id) {
-      S.creationSource = r.brief_id;
+    else if(t.kind==="search") {await navigate("overseas-ideas");}
+    else if (['original','create','cover'].includes(t.kind)) {
+      const key=workspaceKey();
+      let source=r.brief_id;
+      let ids=r.creation_ids || (r.creation_id?[r.creation_id]:[]);
+      if(t.kind==='cover' && r.image_id) {
+        const image=await ensureWorkspaceItem('images',r.image_id);
+        if(key!==workspaceKey())return;
+        if(image)ids=[image.creation_id];
+      }
+      for(const id of ids) {
+        const creation=await ensureCreationContext(id,true);
+        if(key!==workspaceKey())return;
+        source ||= creation?.source_id;
+      }
       await navigate("creations");
+      if(key!==workspaceKey())return;
+      S.creationSource=source || null;render();
     }
     else await navigate(t.kind === "analyze" ? "discover" : "creations");
   },
@@ -1700,6 +1863,20 @@ document.addEventListener("submit", async (e) => {
     if (e.target.id === "original-form") return await startOriginal();
     if (submit) submit.disabled = true;
     switch (e.target.id) {
+      case "verify-access-form": {
+        const key=workspaceKey();
+        await post('/api/auth/verify',{code:$('#verify-access-code').value.trim()});
+        if(key!==workspaceKey())return;
+        close();await refresh();render();toast('邮箱已验证，真实服务已开通');break;
+      }
+      case "admin-access-form": {
+        const key=workspaceKey();
+        await post('/api/admin/access',{user_id:S.accessUser,preserve_balance:$('#preserve-live-balance').checked});
+        if(key!==workspaceKey())return;
+        close();await refresh();S.admin=await api('/api/admin');
+        if(key!==workspaceKey())return;
+        render();toast('真实服务已开通');break;
+      }
       case "overseas-filter-form":
         readOverseasFilters();S.overseasMessage="";await loadOverseasIdeas();break;
       case "overseas-form":
@@ -1868,6 +2045,7 @@ document.addEventListener("submit", async (e) => {
             create: Number($("#cost-create").value),
             cover: Number($("#cost-cover").value),
             original: Number($("#cost-original").value),
+            search: Number($("#cost-search").value),
           },
           limits: {
             ...c.limits,
@@ -1939,7 +2117,7 @@ document.addEventListener("input", (e) => {
   }[e.target.id];
   if (originalField) S.original[originalField] = e.target.value;
   if (e.target.name === "original-asset")
-    S.original.assets = $$("input[name=original-asset]:checked").map((x) => x.value);
+    S.original.assets = selectedAssetIDs("original-asset",S.original.assets);
   if (originalField || e.target.name === "original-asset") {
     saveDraft();
     const summary=$('.original-assets')?.previousElementSibling;
@@ -1976,7 +2154,7 @@ async function uploadProjectPhotos(input) {
   if (!isCover && !isOriginal) {
     S.requirements = $("#requirements").value;
     S.temporary = $("#temporary").value;
-    S.selectedAssets = $$("input[name=asset]:checked").map((x) => x.value);
+    S.selectedAssets = selectedAssetIDs("asset",S.selectedAssets);
   }
   S.imageUploading = true;
   input.disabled = true;
@@ -2129,9 +2307,7 @@ window.addEventListener("hashchange", () => {
   if (!S.boot) return;
   const hash = location.hash.slice(1);
   if (hash.startsWith("detail/")) {
-    S.detail = hash.slice(7);
-    S.page = "detail";
-    render();
+    openSource(hash.slice(7)).catch(error=>toast(error.message));
   } else if (pageNames[hash] && S.page !== hash) navigate(hash);
 });
 (async () => {
@@ -2150,8 +2326,7 @@ window.addEventListener("hashchange", () => {
     }
     const hash = location.hash.slice(1);
     if (hash.startsWith("detail/")) {
-      S.detail = hash.slice(7);
-      S.page = "detail";
+      await openSource(hash.slice(7));
     } else if (pageNames[hash]) S.page = hash;
     render();
     if (["credits","admin","overseas-ideas"].includes(S.page)) await navigate(S.page);

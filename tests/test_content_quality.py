@@ -72,7 +72,7 @@ class DeliveryTests(unittest.TestCase):
 
     def test_retry_receives_actionable_feedback(self):
         calls = []
-        def request(*args):
+        def request(*args, **kwargs):
             calls.append(copy.deepcopy(args[2]))
             return {"choices": [{"message": {"content": "{}"}}]}
         count = 0

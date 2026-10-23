@@ -129,6 +129,8 @@ def prepare(output, requested, assets):
             raw = base64.b64decode(match[2], validate=True)
         except ValueError:
             raise ValueError("图片编码无效")
+        if len(raw)>2*1024*1024:
+            raise ValueError("图片最大支持 2 MB")
         valid = (
             (match[1] == "png" and raw.startswith(b"\x89PNG\r\n\x1a\n"))
             or (match[1] == "jpeg" and raw.startswith(b"\xff\xd8\xff"))

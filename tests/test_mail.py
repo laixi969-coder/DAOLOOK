@@ -52,12 +52,12 @@ class MailFlowTests(unittest.TestCase):
     def code(self):
         return self.sent[-1][1].split("验证码是 ")[1][:6]
 
-    def test_disabled_keeps_plain_register_and_blocks_reset(self):
+    def test_live_disabled_mail_requires_invitation_and_blocks_reset(self):
         self.assertFalse(self.c.req("/api/public")[1]["mail"])
         status, _ = self.c.req(
             "/api/auth/register", "POST", {"email": "a@x.com", "password": "12345678"}
         )
-        self.assertEqual(status, 200)
+        self.assertEqual(status, 403)
         status, body = self.c.req(
             "/api/auth/code", "POST", {"email": "a@x.com", "purpose": "reset"}
         )
@@ -90,7 +90,7 @@ class MailFlowTests(unittest.TestCase):
             self.assertIsNone(c.execute("SELECT 1 FROM email_codes").fetchone())
 
     def test_reset_password_flow(self):
-        self.c.req("/api/auth/register", "POST", {"email": "r@x.com", "password": "12345678"})
+        app.new_user("r@x.com", "12345678")
         self.enable()
         # 未注册邮箱：返回成功但不发信
         self.assertEqual(

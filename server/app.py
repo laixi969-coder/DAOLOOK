@@ -1,3 +1,4 @@
+import base64
 import os, json, re, time, secrets, hashlib, hmac, csv, io, zipfile, html, urllib.parse, socket, threading, http.client
 from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
@@ -6,6 +7,8 @@ from .db import db, init, uid, now, dumps, setting, ledger
 from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed
 from .ranking import score
 from .skills import SKILL_NAMES
+from . import audit, secret_store, spending, resource_limits, workspace, access
+from .config import load_env, database_path
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -58,16 +61,26 @@ def signup_allowed(email):
     return not rule.get("whitelist") or email in rule.get("emails", []) or email == admin
 
 
-def new_user(email, password=None, role="user", demo=False):
+def new_user(email, password=None, role="user", demo=False, verified=False, bootstrap=False):
     ident = uid()
     project = uid()
     welcome = 300 if demo else setting("signup").get("welcome_credits", 100)
     with db() as c:
+        c.execute("BEGIN IMMEDIATE")
         c.execute(
             "INSERT INTO users VALUES (?,?,?,?,?)",
             (ident, email, password_hash(password) if password else None, role, now()),
         )
+        if welcome and not demo and role != 'admin' and setting('mode') == 'live':
+            day=now()[:10]
+            daily=c.execute('SELECT COALESCE(SUM(amount),0) FROM signup_grants WHERE created_at>=?',(day,)).fetchone()[0]
+            lifetime=c.execute('SELECT COALESCE(SUM(amount),0) FROM signup_grants').fetchone()[0]
+            if daily+welcome>int(os.environ.get('DAOLOOK_SIGNUP_DAILY_CREDITS','1000')) or lifetime+welcome>int(os.environ.get('DAOLOOK_SIGNUP_TOTAL_CREDITS','10000')):
+                welcome=0
+            else:
+                c.execute('INSERT INTO signup_grants VALUES (?,?,?)',(ident,welcome,now()))
         c.execute("INSERT INTO credit_accounts VALUES (?,?,0)", (ident, welcome))
+        access.create(c, ident, demo=demo, verified=verified and setting("mode")=="live", role=role)
         if welcome:
             ledger(c, ident, None, "GRANT", welcome, "欢迎积分")
         c.execute(
@@ -88,6 +101,8 @@ def new_user(email, password=None, role="user", demo=False):
                     "INSERT INTO analysis_outputs VALUES (?,?,?,?,?,?)",
                     (uid(), sid, dumps(analysis), "demo-v1", None, now()),
                 )
+        resource_limits.check_storage(c,ident)
+        if bootstrap:audit.record(c,ident,'admin.bootstrap',ident)
     return ident
 
 
@@ -143,7 +158,11 @@ class Handler(BaseHTTPRequestHandler):
         self.send({"error": messages.get(code, "请求格式不正确")}, code)
 
     def log_message(self, fmt, *args):
-        pass
+        # BaseHTTPRequestHandler passes raw paths; never log them or query/body data.
+        return
+
+    def audit(self, c, actor, action, target='', details=None):
+        return audit.record(c, actor, action, target, details, getattr(self,'request_id',''))
 
     def send(
         self,
@@ -167,6 +186,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Referrer-Policy", "same-origin")
         self.send_header("Cache-Control", (headers or {}).get("Cache-Control", "private, no-store"))
         self.send_header("X-Frame-Options", "DENY")
+        self.send_header("X-Request-ID", getattr(self,"request_id",""))
+        self.response_status = status
         for k, v in (headers or {}).items():
             if k.lower() != "cache-control":
                 self.send_header(k, v)
@@ -230,6 +251,9 @@ class Handler(BaseHTTPRequestHandler):
         self.handle_request("DELETE")
 
     def handle_request(self, method):
+        self.request_id=uid()
+        self.response_status=500
+        started=time.monotonic()
         try:
             if len(self.path) > 8192:
                 raise Error("请求地址过长", 414)
@@ -257,7 +281,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("请求内容必须是 JSON 对象")
             self.read_deadline.cancel()
             if path.startswith("/api/"):
-                return self.api(method, path, query, data)
+                with spending.scope():
+                    return self.api(method, path, query, data)
             if method not in ("GET", "HEAD"):
                 raise Error("不支持的操作", 405)
             target = (
@@ -297,14 +322,22 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError, KeyError, TypeError, RecursionError) as e:
             self.send({"error": str(e)}, 400)
         except Exception:
-            import traceback
-
-            traceback.print_exc()
-            self.send({"error": "服务处理失败，请稍后重试"}, 500)
+            audit.event('request.error',request_id=self.request_id,error_type=__import__('sys').exc_info()[0].__name__)
+            self.send({"error": "服务处理失败，请稍后重试，参考编号："+self.request_id}, 500)
+        finally:
+            audit.event('request.completed',request_id=self.request_id,method=method,status=self.response_status,
+                        elapsed_ms=round((time.monotonic()-started)*1000),user_id=getattr(self,'actor_id',None))
 
     def api(self, method, path, q, data):
         if path == "/api/health":
-            return self.send({"ok": True, "name": "DAOLOOK", "version": "1.1"})
+            health=jobs.worker_health()
+            healthy=not health['settlement_errors'] and health['alive']==health['workers']
+            try:
+                with db() as c:c.execute('SELECT 1 FROM settings LIMIT 1').fetchone()
+            except Exception as exc:
+                healthy=False
+                audit.event("health.database_unavailable",error_type=type(exc).__name__)
+            return self.send({"ok":healthy,"name":"DAOLOOK","version":"1.1"},200 if healthy else 503)
         if path == "/api/auth/demo" and method == "POST":
             if setting("mode") != "demo":
                 raise Error("演示入口已关闭", 403)
@@ -325,6 +358,13 @@ class Handler(BaseHTTPRequestHandler):
                 if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
                     raise Error("请输入有效邮箱")
                 purpose = data.get("purpose")
+                if purpose == "verify":
+                    account = self.user()
+                    if account["email"] != email:
+                        raise Error("只能验证当前账号的邮箱",403)
+                    with db() as c:
+                        if c.execute("SELECT 1 FROM demo_accounts WHERE user_id=?",(account["id"],)).fetchone():
+                            raise Error("演示账号请注册正式邮箱",403)
                 with db() as c:
                     exists = c.execute(
                         "SELECT 1 FROM users WHERE email=?", (email,)
@@ -370,9 +410,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("该邮箱已注册，请直接登录")
                 if not signup_allowed(email):
                     raise Error("该邮箱不在注册白名单内，请联系管理员开通", 403)
+                if setting('mode') == 'live' and not mailer.enabled():
+                    raise Error('真实服务注册需验证邮箱，请联系管理员配置邮件服务',403)
+                verified=False
                 if mailer.enabled():
                     mailer.verify(email, "register", data.get("code"))
-                ident = new_user(email, password)
+                    verified=True
+                ident = new_user(email, password, verified=verified)
             else:
                 if (
                     not u
@@ -408,12 +452,20 @@ class Handler(BaseHTTPRequestHandler):
                 }
             )
         u = self.user()
+        self.actor_id=u["id"]
+        spending.identify(u["id"])
         RATE.check(("account", u["id"]), 600)
         if method not in ("GET", "HEAD"):
             RATE.check(("write", u["id"]), 120)
-        if path in ("/api/analyze", "/api/create", "/api/original", "/api/cover", "/api/cover/preview", "/api/extract", "/api/export", "/api/admin/test", "/api/admin/tikhub-test", "/api/admin/skills/state", "/api/admin/mail-test", "/api/admin/retry"):
+        if path in ("/api/analyze", "/api/create", "/api/original", "/api/cover", "/api/cover/preview", "/api/extract", "/api/export", "/api/admin/test", "/api/admin/tikhub-test", "/api/admin/skills/state", "/api/admin/mail-test", "/api/admin/retry", "/api/overseas/search"):
             RATE.check(("expensive-account", u["id"]), 30)
             RATE.check(("expensive-ip", self.remote_ip), 120)
+        if path == "/api/auth/verify" and method == "POST":
+            mailer.verify(u['email'], 'verify', data.get('code'))
+            with db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                access.approve(c,u['id'],u['id'],'mailbox_verified',request_id=self.request_id)
+            return self.send({'ok':True})
         if path == "/api/bootstrap":
             with db() as c:
                 projects = [
@@ -428,6 +480,8 @@ class Handler(BaseHTTPRequestHandler):
                         "SELECT * FROM credit_accounts WHERE user_id=?", (u["id"],)
                     ).fetchone()
                 )
+                u['live_access']=u['role']=='admin' or bool(c.execute('SELECT 1 FROM live_accounts WHERE user_id=?',(u['id'],)).fetchone())
+                u['demo_account']=bool(c.execute('SELECT 1 FROM demo_accounts WHERE user_id=?',(u['id'],)).fetchone())
             return self.send(
                 {
                     "user": u,
@@ -436,6 +490,7 @@ class Handler(BaseHTTPRequestHandler):
                     "mode": setting("mode"),
                     "rules": setting("rules"),
                     "discover_pick": jobs.discover_pick(),
+                    "mail": mailer.enabled(),
                 }
             )
         if path.startswith("/api/admin"):
@@ -453,6 +508,8 @@ class Handler(BaseHTTPRequestHandler):
             name = name.strip()
             ident = uid()
             with db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                if c.execute('SELECT COUNT(*) FROM projects WHERE user_id=?',(u['id'],)).fetchone()[0]>=50:raise Error('最多创建 50 个项目')
                 c.execute(
                     "INSERT INTO projects VALUES (?,?,?,?,?)",
                     (
@@ -482,8 +539,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows = [
                     dict(r)
                     for r in c.execute(
-                        "SELECT * FROM credit_ledger WHERE user_id=? ORDER BY created_at DESC LIMIT 200",
-                        (u["id"],),
+                        "SELECT * FROM credit_ledger WHERE user_id=? AND (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT 200",
+                        (u["id"],q.get("before",["9999"])[0],q.get("before_id",["~"])[0]),
                     )
                 ]
             return self.send(rows)
@@ -495,8 +552,8 @@ class Handler(BaseHTTPRequestHandler):
                 rows = [
                     dict(r)
                     for r in c.execute(
-                        "SELECT * FROM tasks WHERE user_id=? ORDER BY created_at DESC LIMIT 100",
-                        (u["id"],),
+                        "SELECT id,user_id,project_id,kind,state,result,error,cost,model,skill_version,created_at,updated_at FROM tasks WHERE user_id=? AND (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT 100",
+                        (u["id"],q.get("before",["9999"])[0],q.get("before_id",["~"])[0]),
                     )
                 ]
             return self.send(rows)
@@ -527,76 +584,61 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'ok':True})
         if path == '/api/overseas/search' and method == 'POST':
             RATE.check(('overseas-search',u['id']),20)
-            return self.send(overseas_library.search(project_id,data.get('platform'),data.get('query')))
+            platform=data.get('platform')
+            query=overseas_library.text(data.get('query'),'搜索词',100,True)
+            if platform not in overseas_library.PLATFORMS:raise Error('请选择海外平台')
+            if setting('mode')=='demo' or not setting('tikhub').get('api_key'):raise Error('未启用海外搜索，请管理员配置 TikHub 并启用真实服务')
+            return self.send({'task_ids':[jobs.submit(u['id'],project_id,'search',{'platform':platform,'query':query})]},202)
         requested_overseas = path == '/api/overseas/create'
         if requested_overseas and method == 'POST':
             if data.get('platform') not in overseas.PLATFORMS and not data.get('brief_id'):
                 raise Error('请选择TikTok、Instagram Reels或YouTube Shorts')
             path='/api/original'
-        if path == "/api/workspace":
+        if path == '/api/workspace':
+            return self.send(workspace.page(project_id,q.get('cursor',[''])[0],int(q.get('limit',['25'])[0])))
+        media=re.fullmatch(r'/api/media/(assets|images)/([a-f0-9]{32})',path)
+        if media and method in ('GET','HEAD'):
+            kind,ident=media.groups()
             with db() as c:
-                sources = []
-                briefs = []
-                for r in c.execute(
-                    "SELECT * FROM source_contents WHERE project_id=? ORDER BY created_at DESC",
-                    (project_id,),
-                ):
-                    s = dict(r)
-                    s["data"] = json.loads(s["data"])
-                    if s["data"].get("kind") == "brief":
-                        briefs.append(s)
-                        continue
-                    s["ranking"] = score(s["data"])
-                    s["classification"] = catalog.classify(s["data"])
-                    s["selection_reasons"] = catalog.evidence(s["data"], s["ranking"])
-                    a = c.execute(
-                        "SELECT data FROM analysis_outputs WHERE source_id=?",
-                        (s["id"],),
-                    ).fetchone()
-                    s["analysis"] = json.loads(a[0]) if a else {}
-                    sources.append(s)
-                creations = []
-                results = {r["creation_id"]: {**json.loads(r["data"]), "recorded_at": r["updated_at"]}
-                           for r in c.execute("SELECT * FROM creation_results WHERE project_id=?", (project_id,))}
-                tracking = {
-                    r["creation_id"]: r
-                    for r in c.execute(
-                        "SELECT * FROM creation_tracking WHERE project_id=?",
-                        (project_id,),
-                    )
-                }
-                for r in c.execute(
-                    "SELECT o.*,(SELECT COALESCE(MAX(revision),0) FROM creation_revisions r WHERE r.creation_id=o.id) AS revision FROM creation_outputs o WHERE project_id=? AND deleted_at IS NULL ORDER BY created_at DESC",
-                    (project_id,),
-                ):
-                    d = dict(r)
-                    d["data"] = json.loads(d["data"])
-                    d["tracking"] = production.row_view(tracking.get(d["id"]))
-                    d["results"] = results.get(d["id"], {})
-                    creations.append(d)
-                assets = [
-                    dict(r)
-                    for r in c.execute(
-                        "SELECT * FROM assets WHERE project_id=? ORDER BY created_at DESC",
-                        (project_id,),
-                    )
-                ]
-                images = [
-                    {**dict(r), "data": json.loads(r["data"])}
-                    for r in c.execute(
-                        "SELECT * FROM generated_images WHERE project_id=?",
-                        (project_id,),
-                    )
-                ]
-            return self.send(
-                {
-                    "sources": sources,
-                    "briefs": briefs,
-                    "creations": creations,
-                    "assets": assets,
-                    "images": images,
-                }
-            )
+                if kind=='assets':
+                    row=c.execute("SELECT content FROM assets WHERE id=? AND project_id=? AND kind='图片'",(ident,project_id)).fetchone()
+                    url=row[0] if row else ''
+                else:
+                    row=c.execute('SELECT data FROM generated_images WHERE id=? AND project_id=?',(ident,project_id)).fetchone()
+                    url=json.loads(row[0]).get('url','') if row else ''
+            if not row:raise Error('图片不存在',404)
+            match=re.fullmatch(r'data:image/(png|jpeg|webp|svg\+xml);base64,([A-Za-z0-9+/=]+)',url)
+            if match:
+                return self.send(base64.b64decode(match[2],validate=True),content_type='image/'+match[1],
+                                 headers={'Content-Security-Policy':"default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"})
+            if kind=='images' and url.startswith('https://') and not any(ord(ch)<=32 or ord(ch)==127 for ch in url):
+                return self.send(b'',302,headers={'Location':url})
+            raise Error('图片格式无效')
+        creation_images=re.fullmatch(r'/api/creations/([a-f0-9]{32})/images',path)
+        single_image=re.fullmatch(r'/api/images/([a-f0-9]{32})',path)
+        if method=='GET' and (creation_images or single_image):
+            projection="id,project_id,creation_id,json_set(data,'$.url',CASE WHEN substr(json_extract(data,'$.url'),1,8)='https://' THEN json_extract(data,'$.url') ELSE '' END) AS data,task_id,created_at"
+            with db() as c:
+                if creation_images:
+                    ident=creation_images[1]
+                    if not c.execute('SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL',(ident,project_id)).fetchone():
+                        raise Error('稿件不存在',404)
+                    rows=c.execute('SELECT '+projection+' FROM generated_images WHERE creation_id=? AND project_id=? ORDER BY created_at DESC,id DESC LIMIT 50',(ident,project_id)).fetchall()
+                    result=[workspace.image_view(r,project_id) for r in rows]
+                else:
+                    row=c.execute('SELECT '+projection+' FROM generated_images WHERE id=? AND project_id=?',(single_image[1],project_id)).fetchone()
+                    if not row:raise Error('图片不存在',404)
+                    result=workspace.image_view(row,project_id)
+            return self.send(result)
+        detail_match=re.fullmatch(r'/api/(sources|creations|assets)/([a-f0-9]{32})',path)
+        if detail_match and method=='GET':
+            kind,ident=detail_match.groups()
+            table={'sources':'source_contents','creations':'creation_outputs','assets':'assets'}[kind]
+            with db() as c:
+                row=c.execute(f'SELECT * FROM {table} WHERE id=? AND project_id=?'+(' AND deleted_at IS NULL' if kind=='creations' else ''),(ident,project_id)).fetchone()
+                if not row:raise Error('内容不存在',404)
+                result=workspace.source_view(c,row) if kind=='sources' else workspace.creation_view(c,row) if kind=='creations' else dict(row)
+            return self.send(result)
         if path == "/api/analyze" and method == "POST":
             entry = data.get("entry", "single")
             text = str(data.get("text", "")).strip()
@@ -871,10 +913,16 @@ class Handler(BaseHTTPRequestHandler):
                 202,
             )
         if path == "/api/assets" and method == "POST":
-            name = str(data.get("name", "")).strip()
-            content = str(data.get("content", ""))
+            if not isinstance(data.get('name'),str) or not isinstance(data.get('content'),str):
+                raise Error('资料名称和内容必须为文字')
+            if data.get('kind','品牌资料') not in ('品牌资料','产品信息','受众画像','禁用词','账号','图片','其他'):
+                raise Error('资料类型无效')
+            name = data['name'].strip()
+            content = data['content']
             if not name or not content:
                 raise Error("请填写资料名称与内容")
+            if data.get('kind')!='图片' and len(content)>resource_limits.MAX_TEXT_CHARS:
+                raise Error('文本资料最多 100000 字')
             if data.get("kind") == "图片":
                 covers.prepare(
                     {"title": "图片校验"},
@@ -890,6 +938,10 @@ class Handler(BaseHTTPRequestHandler):
                 )
             ident = uid()
             with db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                resource_limits.check_storage(c,u['id'],len(content.encode()))
+                if c.execute('SELECT COUNT(*) FROM assets a JOIN projects p ON p.id=a.project_id WHERE p.user_id=?',(u['id'],)).fetchone()[0]>=500:
+                    raise Error('账号最多保存 500 份资料，请先清理')
                 c.execute(
                     "INSERT INTO assets VALUES (?,?,?,?,?,?)",
                     (
@@ -923,6 +975,7 @@ class Handler(BaseHTTPRequestHandler):
                 "assets": "assets",
             }[kind]
             with db() as c:
+                c.execute("BEGIN IMMEDIATE")
                 if not c.execute(
                     f"SELECT 1 FROM {table} WHERE id=? AND project_id=?",
                     (ident, project_id),
@@ -941,6 +994,8 @@ class Handler(BaseHTTPRequestHandler):
                             "UPDATE source_contents SET saved=0 WHERE id=?", (ident,)
                         )
                 elif kind == "assets":
+                    if not isinstance(data.get('name'),str) or not isinstance(data.get('content'),str) or data.get('kind','品牌资料') not in ('品牌资料','产品信息','受众画像','禁用词','账号','图片','其他'):
+                        raise Error('资料名称、类型或内容格式无效')
                     if not data.get("name") or not data.get("content"):
                         raise Error("资料名称和内容不能为空")
                     if data.get("kind") == "图片":
@@ -956,6 +1011,12 @@ class Handler(BaseHTTPRequestHandler):
                                 }
                             ],
                         )
+                    if not isinstance(data['content'],str) or not isinstance(data['name'],str) or len(data['name'])>120:
+                        raise Error('资料名称或内容格式无效')
+                    if data.get('kind')!='图片' and len(data['content'])>resource_limits.MAX_TEXT_CHARS:
+                        raise Error('文本资料最多 100000 字')
+                    old=c.execute('SELECT length(CAST(content AS BLOB)) FROM assets WHERE id=?',(ident,)).fetchone()[0]
+                    resource_limits.check_storage(c,u['id'],len(data['content'].encode())-old)
                     c.execute(
                         "UPDATE assets SET name=?,kind=?,content=? WHERE id=?",
                         (
@@ -980,6 +1041,7 @@ class Handler(BaseHTTPRequestHandler):
                 if not c.execute("SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL", (ident, project_id)).fetchone():
                     raise Error("稿件不存在", 404)
                 c.execute("INSERT OR REPLACE INTO creation_results VALUES (?,?,?,?)", (ident, project_id, dumps(results), now()))
+                resource_limits.check_storage(c,u["id"])
             return self.send({"ok": True})
         match = re.fullmatch(r"/api/tracking/([a-f0-9]+)", path)
         if match and method == "POST":
@@ -1043,7 +1105,8 @@ class Handler(BaseHTTPRequestHandler):
                 row = c.execute(
                     "SELECT * FROM creation_tracking WHERE creation_id=?", (ident,)
                 ).fetchone()
-                return self.send(production.row_view(row))
+                resource_limits.check_storage(c,u["id"])
+            return self.send(production.row_view(row))
         if path == "/api/export":
             return self.export(project_id, q.get("format", ["csv"])[0])
         raise Error("接口不存在", 404)
@@ -1204,6 +1267,23 @@ class Handler(BaseHTTPRequestHandler):
     def admin(self, method, path, data, u, q):
         if u["role"] != "admin":
             raise Error("需要超级管理员权限", 403)
+        if path == '/api/admin/access' and method == 'POST':
+            preserve=data.get('preserve_balance',False)
+            if type(preserve) is not bool:raise Error('保留积分选项无效')
+            with db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                access.approve(c,data.get('user_id'),u['id'],'admin_approval',preserve_balance=preserve,request_id=self.request_id)
+            return self.send({'ok':True})
+        if path == '/api/admin/audit'  and method == 'GET':
+            before=q.get('before',['9999'])[0]
+            before_id=q.get('before_id',['~'])[0]
+            with db() as c:
+                rows=[dict(r) for r in c.execute('SELECT * FROM audit_events WHERE (created_at,id)<(?,?) ORDER BY created_at DESC,id DESC LIMIT 100',(before,before_id))]
+            return self.send(rows)
+        if path == '/api/admin/usage' and method == 'GET':
+            with db() as c:
+                rows=[dict(r) for r in c.execute('SELECT day,user_id,COUNT(*) AS calls,SUM(reserved) AS reserved_microusd FROM external_calls GROUP BY day,user_id ORDER BY day DESC LIMIT 100')]
+            return self.send({'reservations':rows,'basis':'按配置的价格上界预留；不是供应商实际账单'})
         if path == "/api/admin" and method == "GET":
             cfg = {
                 k: setting(k)
@@ -1225,13 +1305,13 @@ class Handler(BaseHTTPRequestHandler):
                 users = [
                     dict(r)
                     for r in c.execute(
-                        "SELECT u.id,u.email,u.role,a.balance,a.frozen FROM users u JOIN credit_accounts a ON a.user_id=u.id"
+                        "SELECT u.id,u.email,u.role,a.balance,a.frozen,(u.role='admin' OR u.id IN (SELECT user_id FROM live_accounts)) AS live_access,u.id IN (SELECT user_id FROM demo_accounts) AS demo_account FROM users u JOIN credit_accounts a ON a.user_id=u.id"
                     )
                 ]
                 tasks = [
                     dict(r)
                     for r in c.execute(
-                        "SELECT * FROM tasks ORDER BY created_at DESC LIMIT 100"
+                        "SELECT id,user_id,project_id,kind,state,result,error,cost,model,skill_version,created_at,updated_at FROM tasks ORDER BY created_at DESC,id DESC LIMIT 100"
                     )
                 ]
                 skills = [
@@ -1244,6 +1324,8 @@ class Handler(BaseHTTPRequestHandler):
                     {**dict(r), "api_key": "••••••••" if r["api_key"] else ""}
                     for r in c.execute("SELECT * FROM model_providers")
                 ]
+                audit_rows=[dict(r) for r in c.execute("SELECT * FROM audit_events ORDER BY created_at DESC,id DESC LIMIT 100")]
+                usage_rows=[dict(r) for r in c.execute("SELECT day,user_id,COUNT(*) AS calls,SUM(reserved) AS reserved_microusd FROM external_calls GROUP BY day,user_id ORDER BY day DESC LIMIT 100")]
                 routes = {
                     r["kind"]: json.loads(r["config"])
                     for r in c.execute("SELECT * FROM model_routes")
@@ -1256,6 +1338,8 @@ class Handler(BaseHTTPRequestHandler):
                     "skills": skills,
                     "providers": providers,
                     "routes": routes,
+                    "audit": audit_rows,
+                    "usage": usage_rows,
                 }
             )
         if path == "/api/admin/provider" and method == "POST":
@@ -1281,10 +1365,11 @@ class Handler(BaseHTTPRequestHandler):
                         ident,
                         data["name"],
                         data["base_url"],
-                        key,
+                        secret_store.write(secret_store.read(key)),
                         int(bool(data.get("enabled", True))),
                     ),
                 )
+                self.audit(c,u["id"],"provider.save",ident,{"enabled":bool(data.get("enabled",True))})
             return self.send({"id": ident})
         if path == "/api/admin/routes" and method == "POST":
             if set(data) != {"analyze", "create", "cover"}:
@@ -1310,6 +1395,7 @@ class Handler(BaseHTTPRequestHandler):
                         "UPDATE model_routes SET config=? WHERE kind=?",
                         (dumps(route), kind),
                     )
+                self.audit(c,u["id"],"routes.update",details={"kinds":list(data)})
             return self.send({"ok": True})
         if path == "/api/admin/ledger":
             with db() as c:
@@ -1385,7 +1471,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("模式无效")
                 if key == "rules" and (
                     not {"analyze", "create", "cover"} <= set(value)
-                    or not set(value) <= {"analyze", "create", "cover", "original"}
+                    or not set(value) <= {"analyze", "create", "cover", "original", "search"}
                     or any(
                         type(v) is not int or v < 0 or v > 10000 for v in value.values()
                     )
@@ -1436,12 +1522,13 @@ class Handler(BaseHTTPRequestHandler):
                             or not isinstance(endpoint.get("params", {}), dict)
                         ):
                             raise Error("端点需要有效的 path、method 与 params")
-                changes[key] = value
+                changes[key] = secret_store.pack(key,value) if key in ("provider","tikhub","mail") else value
             with db() as c:
                 for key, value in changes.items():
                     c.execute(
                         "UPDATE settings SET value=? WHERE key=?", (dumps(value), key)
                     )
+                self.audit(c,u["id"],"config.update",details={"keys":list(changes)})
             return self.send({"ok": True})
         if path == "/api/admin/mail-test" and method == "POST":
             if not mailer.enabled():
@@ -1464,6 +1551,7 @@ class Handler(BaseHTTPRequestHandler):
                 ).rowcount:
                     raise Error("用户不存在")
                 c.execute("DELETE FROM sessions WHERE user_id=?", (data.get("user_id"),))
+                self.audit(c,u["id"],"user.password_reset",data.get("user_id"))
             return self.send({"ok": True})
         if path == "/api/admin/grant" and method == "POST":
             amount = data.get("amount")
@@ -1493,6 +1581,7 @@ class Handler(BaseHTTPRequestHandler):
                     amount,
                     ("管理员发放" if amount > 0 else "管理员扣减") + ("：" + note if note else ""),
                 )
+                self.audit(c,u["id"],"credits.adjust",data["user_id"],{"amount":amount})
             return self.send({"ok": True})
         if path == "/api/admin/test" and method == "POST":
             cfg = setting("provider")
@@ -1504,7 +1593,7 @@ class Handler(BaseHTTPRequestHandler):
                     ).fetchone()
                 if not provider:
                     raise Error("供应商不存在")
-                cfg = dict(provider)
+                cfg = secret_store.unpack("provider",dict(provider))
             result = adapters.request_json(
                 cfg["base_url"].rstrip("/") + "/models", cfg["api_key"], timeout=20
             )
@@ -1535,7 +1624,7 @@ class Handler(BaseHTTPRequestHandler):
                             t["user_id"],
                             t["project_id"],
                             t["kind"],
-                            json.loads(t["payload"]),
+                            json.loads(t["payload"]), actor=u["id"], request_id=self.request_id,
                         )
                     ]
                 }
@@ -1557,6 +1646,7 @@ class Handler(BaseHTTPRequestHandler):
                     "INSERT INTO skill_versions VALUES (?,?,?,?,?,?)",
                     (uid(), name, n, prompt, "Draft", now()),
                 )
+                self.audit(c,u["id"],"skill.draft",name,{"version":n})
             return self.send({"ok": True})
         if path == "/api/admin/skills/state" and method == "POST":
             target = data.get("status")
@@ -1611,41 +1701,32 @@ class Handler(BaseHTTPRequestHandler):
                     "UPDATE skill_versions SET status=? WHERE id=?",
                     (target, data["id"]),
                 )
+                self.audit(c,u["id"],"skill.state",data["id"],{"status":target})
             return self.send({"ok": True})
         raise Error("管理接口不存在", 404)
 
 
-def main():
-    env_file = ROOT / ".env"
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if "=" in line and not line.lstrip().startswith("#"):
-                key, value = line.split("=", 1)
-                os.environ.setdefault(
-                    key.strip(), value.strip().strip(chr(34)).strip(chr(39))
-                )
-    # DB path is imported before .env is parsed; apply the configured override here.
-    from . import db as database
+def bootstrap_admin():
+    email=os.environ.get('DAOLOOK_ADMIN_EMAIL','').strip().lower()
+    password=os.environ.get('DAOLOOK_ADMIN_PASSWORD','')
+    if not email or not password:return
+    with db() as c:
+        existing=c.execute('SELECT id,role FROM users WHERE email=?',(email,)).fetchone()
+    if existing:
+        if existing['role']!='admin':
+            raise RuntimeError('引导邮箱已有普通账号，请使用现有管理员明确授权；启动不会提升权限')
+        return
+    if len(password)<12:raise RuntimeError('管理员初始密码至少 12 位')
+    new_user(email,password,'admin',bootstrap=True)
 
-    database.DB_PATH = os.environ.get("DAOLOOK_DB", str(ROOT / "data/daolook.db"))
+
+def main():
+    os.umask(0o077)
+    load_env()
+    from . import db as database
+    database.DB_PATH = str(database_path())
     init()
-    email = os.environ.get("DAOLOOK_ADMIN_EMAIL")
-    password = os.environ.get("DAOLOOK_ADMIN_PASSWORD")
-    if email and password:
-        if len(password) < 12:
-            raise RuntimeError("管理员密码至少 12 位")
-        with db() as c:
-            existing = c.execute(
-                "SELECT id FROM users WHERE email=?", (email.lower(),)
-            ).fetchone()
-        if not existing:
-            new_user(email.lower(), password, "admin")
-        else:
-            with db() as c:
-                c.execute(
-                    "UPDATE users SET role='admin',password=? WHERE id=?",
-                    (password_hash(password), existing["id"]),
-                )
+    bootstrap_admin()
     jobs.start()
     maintenance.start()
     from . import overseas_translation

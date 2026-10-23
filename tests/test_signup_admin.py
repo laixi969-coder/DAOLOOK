@@ -95,6 +95,9 @@ class SignupAdminTests(unittest.TestCase):
             c.execute("DELETE FROM credit_ledger")
             c.execute("DELETE FROM projects")
             c.execute("DELETE FROM credit_accounts")
+            c.execute("DELETE FROM live_accounts")
+            c.execute("DELETE FROM demo_accounts")
+            c.execute("DELETE FROM signup_grants")
             c.execute("DELETE FROM users")
         self.assertEqual(self.register("boss@test.local")[0], 200)
 

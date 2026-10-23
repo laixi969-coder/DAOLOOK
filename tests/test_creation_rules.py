@@ -137,7 +137,8 @@ class SkillSeedTests(unittest.TestCase):
     def test_release_publishes_once_and_archives_previous(self):
         from server import db, skills
 
-        path = tempfile.mktemp(suffix=".db")
+        temporary = tempfile.TemporaryDirectory()
+        path = temporary.name + "/test.db"
         old = db.DB_PATH
         db.DB_PATH = path
         try:
@@ -169,6 +170,7 @@ class SkillSeedTests(unittest.TestCase):
                 )
         finally:
             db.DB_PATH = old
+            temporary.cleanup()
             if os.path.exists(path):
                 os.remove(path)
 

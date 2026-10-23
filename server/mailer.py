@@ -11,7 +11,7 @@ from .db import db, setting
 CODE_TTL = 600
 RESEND_SECONDS = 60
 MAX_ATTEMPTS = 5
-PURPOSES = {"register": "注册 DAOLOOK", "reset": "重置 DAOLOOK 密码"}
+PURPOSES = {"register": "注册 DAOLOOK", "reset": "重置 DAOLOOK 密码", "verify": "验证 DAOLOOK 账号邮箱"}
 
 
 def enabled():

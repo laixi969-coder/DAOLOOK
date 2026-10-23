@@ -104,7 +104,7 @@ class DiscoveryJobTests(unittest.TestCase):
         D.init()
         with D.db() as c:
             c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
-        self.user = new_user("d@local.test", demo=True)
+        self.user = new_user("d@local.test", verified=True)
         with D.db() as c:
             self.project = c.execute(
                 "SELECT id FROM projects WHERE user_id=?", (self.user,)

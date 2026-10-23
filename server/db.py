@@ -2,6 +2,8 @@ import os, sqlite3, json, uuid, datetime
 from contextlib import contextmanager
 from .defaults import ENDPOINTS
 from .skills import RELEASES
+from .config import protect_database
+from . import secret_store
 
 DB_PATH = os.environ.get("DAOLOOK_DB", "data/daolook.db")
 
@@ -20,9 +22,11 @@ def dumps(value):
 
 @contextmanager
 def db():
+    protect_database(DB_PATH)
     conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys=ON")
+    conn.execute("PRAGMA secure_delete=ON")
     try:
         yield conn
         conn.commit()
@@ -31,10 +35,10 @@ def db():
         raise
     finally:
         conn.close()
+        protect_database(DB_PATH)
 
 
 def init():
-    os.makedirs(os.path.dirname(DB_PATH) or ".", exist_ok=True)
     with db() as c:
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript("""
@@ -62,6 +66,18 @@ def init():
         CREATE TABLE IF NOT EXISTS overseas_translations(key TEXT PRIMARY KEY,translated TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS overseas_feed_state(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
+        CREATE TABLE IF NOT EXISTS audit_events(id TEXT PRIMARY KEY,actor_id TEXT,action TEXT NOT NULL,target TEXT,details TEXT NOT NULL,request_id TEXT,created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_events(created_at,id);
+        CREATE TABLE IF NOT EXISTS external_calls(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,task_id TEXT,operation TEXT NOT NULL,day TEXT NOT NULL,reserved INTEGER NOT NULL CHECK(reserved>0),state TEXT NOT NULL,input_tokens INTEGER,output_tokens INTEGER,created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_external_day_user ON external_calls(day,user_id);
+        CREATE TABLE IF NOT EXISTS signup_grants(user_id TEXT PRIMARY KEY,amount INTEGER NOT NULL,created_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_sources_project ON source_contents(project_id,created_at,id);
+        CREATE INDEX IF NOT EXISTS idx_analysis_source ON analysis_outputs(source_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_assets_project ON assets(project_id,created_at,id);
+        CREATE INDEX IF NOT EXISTS idx_images_project ON generated_images(project_id,created_at,id);
+        CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
+        CREATE INDEX IF NOT EXISTS idx_creation_source ON creation_outputs(source_id,project_id);
+        CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(state,user_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
         """)
@@ -110,8 +126,18 @@ def init():
                 "reusability": 0.05,
             },
         }
+        from . import access
+        access.initialize(c)
         for k, v in defaults.items():
             c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, dumps(v)))
+        for key in ('provider','tikhub','mail'):
+            value=json.loads(c.execute('SELECT value FROM settings WHERE key=?',(key,)).fetchone()[0])
+            packed=secret_store.pack(key,value)
+            if packed != value:
+                c.execute('UPDATE settings SET value=? WHERE key=?',(dumps(packed),key))
+        for provider in c.execute('SELECT id,api_key FROM model_providers').fetchall():
+            if provider['api_key'] and not provider['api_key'].startswith(secret_store.PREFIX):
+                c.execute('UPDATE model_providers SET api_key=? WHERE id=?',(secret_store.write(provider['api_key']),provider['id']))
         if not c.execute("SELECT 1 FROM settings WHERE key='overseas_endpoints_v1'").fetchone():
             cfg = json.loads(c.execute("SELECT value FROM settings WHERE key='tikhub'").fetchone()[0])
             for key, endpoint in ENDPOINTS.items():
@@ -203,9 +229,9 @@ def init():
 
 def setting(key):
     with db() as c:
-        return json.loads(
+        return secret_store.unpack(key, json.loads(
             c.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()[0]
-        )
+        ))
 
 
 def ledger(c, user, task, kind, amount, description):

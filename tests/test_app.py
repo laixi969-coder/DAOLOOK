@@ -290,7 +290,7 @@ class AppTests(unittest.TestCase):
         images = self.workspace()["images"]
         self.assertEqual(len(images), 1)
         self.assertTrue(
-            images[0]["data"]["url"].startswith("data:image/svg+xml;base64,")
+            images[0]["data"]["url"].startswith("/api/media/images/")
         )
         self.assertEqual(self.c.req("/api/bootstrap")[1]["credits"]["balance"], 277)
 
@@ -389,11 +389,17 @@ class AppTests(unittest.TestCase):
         self.assertEqual(self.wait(task["task_ids"])[0]["state"], "SUCCEEDED")
         self.c.req("/api/assets/" + asset["id"], "DELETE", {"project_id": self.p})
         saved = self.workspace()["images"][0]["data"]
-        self.assertIn(photo, base64.b64decode(saved["url"].split(",")[1]).decode())
+        self.assertIn(photo, self.c.req(saved["url"], raw=True)[1].decode())
         plan = self.post("/api/cover/plan", {"creation_id": ids[0]})[1]
         self.assertEqual(plan["brief"]["asset_id"], "")
 
     def test_failure_refunds_once(self):
+        # Use an explicitly approved real account; generated demo identities cannot
+        # spend provider funds after a mode switch.
+        self.c.req('/api/auth/register','POST',{'email':'refund@test.local','password':'refund-test-password'})
+        self.boot=self.c.req('/api/bootstrap')[1]
+        self.p=self.boot['projects'][0]['id']
+        self.assertEqual(self.admin.req('/api/admin/access','POST',{'user_id':self.boot['user']['id'],'preserve_balance':True})[0],200)
         self.admin.req("/api/admin/config", "POST", {"mode": "live"})
         try:
             status, r = self.post(
@@ -404,7 +410,7 @@ class AppTests(unittest.TestCase):
             t = self.wait(r["task_ids"])[0]
             self.assertEqual(t["state"], "FAILED")
             credits = self.c.req("/api/bootstrap")[1]["credits"]
-            self.assertEqual(credits["balance"], 300)
+            self.assertEqual(credits["balance"], 100)
             self.assertEqual(credits["frozen"], 0)
             logs = self.c.req("/api/credits")[1]
             self.assertEqual(len([l for l in logs if l["kind"] == "REFUND"]), 1)

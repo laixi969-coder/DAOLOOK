@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 from tests import test_original as fixture
 from tests.test_app import Client
-from server import overseas, overseas_library, adapters
+from server import overseas, overseas_library, adapters, app, access
 
 
 class OverseasApiTests(unittest.TestCase):
@@ -14,6 +14,15 @@ class OverseasApiTests(unittest.TestCase):
     post=fixture.OriginalTests.post
     run_task=fixture.OriginalTests.run_task
     ws=fixture.OriginalTests.ws
+
+    def formal_account(self):
+        user=app.new_user('formal@overseas.test','test-password-123')
+        self.c.req('/api/auth/login','POST',{'email':'formal@overseas.test','password':'test-password-123'})
+        self.p=self.c.req('/api/bootstrap')[1]['projects'][0]['id']
+        admin=app.new_user('admin@overseas.test','test-admin-password','admin')
+        with fixture.D.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            access.approve(c,user,admin,'test_admin',preserve_balance=True)
 
     def create(self,**kwargs):
         status,result=self.post('/api/overseas/create',{'platform':'overseas','topic':'Foldable charger',**kwargs})
@@ -146,6 +155,7 @@ class OverseasApiTests(unittest.TestCase):
         self.assertEqual(self.c.req('/api/bootstrap')[1]['credits'],before)
 
     def test_real_model_receives_skill_reference_context_and_source_checks(self):
+        self.formal_account()
         captured=[]
         asset=self.post('/api/assets',{'name':'charger','kind':'产品信息','content':'产品支持三种设备，采用折叠结构。'})[1]['id']
         with fixture.D.db() as c:c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
@@ -169,23 +179,32 @@ class OverseasApiTests(unittest.TestCase):
         self.assertTrue(all(not o['data'].get('demo') for o in self.ws()['creations']))
 
     def test_search_real_response_dedup_cache_and_unknown_metrics(self):
+        self.formal_account()
         raw={'data':{'item_list':[{'id':'12345','desc':'foldable charging station','author':{'uniqueId':'brand'},'stats':{'playCount':1000,'diggCount':0}}]}}
         with fixture.D.db() as c:
             c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
             cfg=json.loads(c.execute("SELECT value FROM settings WHERE key='tikhub'").fetchone()[0]);cfg['api_key']='test-only-key'
             c.execute("UPDATE settings SET value=? WHERE key='tikhub'",(json.dumps(cfg),))
         with patch.object(adapters.TikHubAdapter,'call',return_value=raw) as call:
-            status,result=self.post('/api/overseas/search',{'platform':'tiktok','query':'charger'})
-            self.assertEqual(status,200,result)
-            self.assertEqual(result['items'][0]['metrics'],{'views':1000,'likes':0})
-            self.assertFalse(result['items'][0]['saved'])
-            self.assertTrue(self.post('/api/overseas/search',{'platform':'tiktok','query':'charger'})[1]['cached'])
+            status,queued=self.post('/api/overseas/search',{'platform':'tiktok','query':'charger'})
+            self.assertEqual(status,202,queued)
+            task=self.run_task(queued)[0]
+            self.assertEqual(task['state'],'SUCCEEDED')
+            items=overseas_library.list_ideas(self.p)
+            result={'items':items}
+            self.assertEqual(items[0]['metrics'],{'views':1000,'likes':0})
+            self.assertFalse(items[0]['saved'])
+            _,queued=self.post('/api/overseas/search',{'platform':'tiktok','query':'charger'})
+            cached=self.run_task(queued)[0]
+            self.assertTrue(json.loads(cached['result'])['cached'])
+            self.assertEqual(json.loads(cached['result'])['charged'],0)
             self.assertEqual(call.call_count,1)
         item=result['items'][0]
         self.assertEqual(self.c.req('/api/overseas/ideas/'+item['id'],'PATCH',{'project_id':self.p,'saved':True})[0],200)
         self.assertEqual(len(self.ideas('&saved=1')[1]['items']),1)
 
     def test_uploaded_document_and_poster_reach_overseas_model(self):
+        self.formal_account()
         from tests.test_documents import docx, data_url
         status,extracted=self.c.req('/api/extract','POST',{'name':'品牌资料.docx','data':data_url(docx())})
         self.assertEqual(status,200,extracted)

@@ -121,6 +121,15 @@ class HTTPBoundaryTests(unittest.TestCase):
 
 
 class SecurityPrimitiveTests(unittest.TestCase):
+    def setUp(self):
+        self.database=importlib.import_module('server.db')
+        self.temp=tempfile.TemporaryDirectory()
+        self.path_patch=patch.object(self.database,'DB_PATH',str(Path(self.temp.name)/'primitives.db'))
+        self.path_patch.start();self.database.init()
+
+    def tearDown(self):
+        self.path_patch.stop();self.temp.cleanup()
+
     def test_rate_limiter_is_atomic_recovers_and_bounds_identity_memory(self):
         from concurrent.futures import ThreadPoolExecutor
         from server.http_security import RateLimiter, Rejected

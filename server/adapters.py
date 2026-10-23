@@ -3,7 +3,7 @@ import http.client, ipaddress, socket, time
 import contextvars
 from contextlib import contextmanager
 from .db import setting, db
-from . import discovery
+from . import discovery, spending, secret_store, resource_limits
 
 # 单次创作的批量是 6 到 8 篇，不是每日上限。
 CREATION_MIN = 6
@@ -128,8 +128,9 @@ class PublicHTTPSConnection(http.client.HTTPSConnection):
 class PublicHTTPSHandler(urllib.request.HTTPSHandler):
     def https_open(self, req):
         public_https_url(req.full_url)
-        return self.do_open(PublicHTTPSConnection, req, context=self._context,
-                            check_hostname=self._check_hostname)
+        options={'context':self._context}
+        if hasattr(self,'_check_hostname'):options['check_hostname']=self._check_hostname
+        return self.do_open(PublicHTTPSConnection, req, **options)
 
 
 def public_opener(redirect):
@@ -152,7 +153,7 @@ def read_bounded(response, limit, timeout):
     raise ValueError("外部服务响应超过大小上限")
 
 
-def request_json(url, key="", payload=None, timeout=60):
+def request_json(url, key="", payload=None, timeout=60, billing=None):
     ensure_task_active()
     public_https_url(url)
     headers = {"Content-Type": "application/json", "User-Agent": "DAOLOOK/1.1"}
@@ -163,10 +164,15 @@ def request_json(url, key="", payload=None, timeout=60):
         data=json.dumps(payload).encode() if payload is not None else None,
         headers=headers,
     )
-    with public_opener(NoCredentialRedirect()).open(
-        req, timeout=timeout
-    ) as res:
-        return json.loads(read_bounded(res, 8 * 1024 * 1024, timeout))
+    reservation = spending.reserve(billing, payload)
+    try:
+        with public_opener(NoCredentialRedirect()).open(req, timeout=timeout) as res:
+            result = json.loads(read_bounded(res, 8 * 1024 * 1024, timeout))
+        spending.finish(reservation, result)
+        return result
+    except Exception:
+        spending.finish(reservation, failed=True)
+        raise
 
 
 MEDIA_MAX_BYTES = 25 * 1024 * 1024
@@ -248,10 +254,15 @@ def transcribe_media(url):
             "User-Agent": "DAOLOOK/1.1",
         },
     )
-    with public_opener(NoCredentialRedirect()).open(
-        req, timeout=max(timeout, 120)
-    ) as res:
-        text = json.loads(read_bounded(res, 1024 * 1024, max(timeout, 120))).get("text", "")
+    reservation = spending.reserve('transcribe:'+model, None)
+    try:
+        with public_opener(NoCredentialRedirect()).open(req, timeout=max(timeout, 120)) as res:
+            response = json.loads(read_bounded(res, 1024 * 1024, max(timeout, 120)))
+        spending.finish(reservation, response)
+        text = response.get('text', '')
+    except Exception:
+        spending.finish(reservation, failed=True)
+        raise
     return text.strip() or None
 
 
@@ -536,13 +547,13 @@ class TikHubAdapter:
         url = cfg["base_url"].rstrip("/") + endpoint["path"]
         if endpoint.get("method", "GET") == "POST":
             result = request_json(
-                url, cfg["api_key"], params, setting("limits")["timeout"]
+                url, cfg["api_key"], params, setting("limits")["timeout"], billing="tikhub"
             )
         else:
             result = request_json(
                 url + "?" + urllib.parse.urlencode(params),
                 cfg["api_key"],
-                timeout=setting("limits")["timeout"],
+                timeout=setting("limits")["timeout"], billing="tikhub",
             )
         if isinstance(result, dict) and result.get("code") not in (
             None,
@@ -608,7 +619,7 @@ def candidates(kind):
                 if pid != "default"
                 else None
             )
-            cfg = dict(provider) if provider else default if pid == "default" else {}
+            cfg = secret_store.unpack("provider", dict(provider)) if provider else default if pid == "default" else {}
             model = route.get("model") or (
                 default.get("image_model")
                 if kind == "cover"
@@ -666,8 +677,9 @@ def model_json(prompt, schema, version, kind="analyze", validator=None):
                         "model": model,
                         "messages": messages,
                         "response_format": {"type": "json_object"},
+                        "max_tokens": resource_limits.MAX_OUTPUT_TOKENS,
                     },
-                    setting("limits")["timeout"],
+                    setting("limits")["timeout"], billing="model:"+pid+"/"+model,
                 )
                 parsed = json.loads(result["choices"][0]["message"]["content"])
                 if validator:
@@ -678,6 +690,8 @@ def model_json(prompt, schema, version, kind="analyze", validator=None):
                         messages.append({"role": "user", "content": "上一份结果未通过交付检查：" + str(error)[:300] + "。请修正并重新返回完整 JSON。"})
                         raise
                 return parsed, pid + "/" + model
+            except spending.BudgetExceeded:
+                raise
             except Exception as e:
                 errors.append(type(e).__name__)
     raise ValueError("模型请求或结构校验失败，已尝试主备模型：" + ", ".join(errors))
@@ -1123,8 +1137,8 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
     return annotate(demo_outputs(p, brief["topic"][:60], batch), assets, p, goal), "demo"
 
 
-def cover(output, direction):
-    if setting("mode") != "demo":
+def cover(output, direction, demo=None):
+    if not (setting("mode") == "demo" if demo is None else demo):
         options = candidates("cover")
         if not options:
             raise ValueError("尚未配置封面图像模型")
@@ -1139,7 +1153,7 @@ def cover(output, direction):
                         "n": 1,
                         "size": "1024x1536",
                     },
-                    setting("limits")["timeout"],
+                    setting("limits")["timeout"], billing="image:"+pid+"/"+model,
                 )
                 img = raw["data"][0]
                 url = (

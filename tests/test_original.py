@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 D = importlib.import_module("server.db")
-from server import app, jobs, adapters
+from server import app, jobs, adapters, access
 from tests.test_app import Client
 
 
@@ -46,6 +46,15 @@ class OriginalTests(unittest.TestCase):
 
     def ws(self):
         return self.c.req(f"/api/workspace?project_id={self.p}")[1]
+
+    def formal_account(self):
+        user=app.new_user('formal@original.test','test-password-123')
+        self.c.req('/api/auth/login','POST',{'email':'formal@original.test','password':'test-password-123'})
+        self.p=self.c.req('/api/bootstrap')[1]['projects'][0]['id']
+        admin=app.new_user('admin@original.test','test-admin-password','admin')
+        with D.db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            access.approve(c,user,admin,'test_admin',preserve_balance=True)
 
     def asset(self):
         status, r = self.post(
@@ -102,6 +111,7 @@ class OriginalTests(unittest.TestCase):
         self.assertEqual(status, 200, plan)
 
     def test_live_passes_benchmark_note_previous_and_assets(self):
+        self.formal_account()
         aid = self.asset()
         with D.db() as c:
             c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
@@ -153,6 +163,7 @@ class OriginalTests(unittest.TestCase):
         self.assertEqual(bench["note"], "")
 
     def test_failure_refunds_and_leaves_no_brief(self):
+        self.formal_account()
         aid = self.asset()
         with D.db() as c:
             c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")

@@ -9,7 +9,7 @@ function overseasFormValues() {
   for (const name of ["platform","goal","topic","market","language","temporary","requirements"])
     value[name]=$(`#overseas-${name}`).value;
   value.duration=Number($("#overseas-duration").value);
-  value.assets=$$("input[name=overseas-asset]:checked").map(el=>el.value);
+  value.assets=selectedAssetIDs("overseas-asset",S.overseasForm?.assets||[]);
   value.reference_id=S.overseasForm?.reference_id || "";
   return value;
 }
@@ -83,7 +83,7 @@ function overseasIdeasPage() {
   const filters=S.overseasFilters || {query:"",category:"",platform:"tiktok",saved:false};
   const updating=S.overseasRefreshing===workspaceKey() || lib?.refresh?.state==="running";
   return heading("把值得借鉴的海外创意，收进来。", "每天更新 TikTok 剧情与品牌短片，收藏后可直接带入创作。",`<div class="actions"><button class="btn secondary" data-action="refresh-overseas-ideas" ${updating?"disabled":""}>${icon("refresh")}${updating?"正在更新…":"更新推荐"}</button>${button("收集链接","collect-overseas","secondary","plus")}${button("开始海外创作","overseas","primary","spark")}</div>`,"海外灵感")+
-    `<section class="panel overseas-library-controls"><div class="overseas-library-tabs"><button class="chip ${!filters.saved?"active":""}" data-action="overseas-tab" data-saved="0">创意推荐</button><button class="chip ${filters.saved?"active":""}" data-action="overseas-tab" data-saved="1">我的收藏</button></div><form id="overseas-filter-form"><label class="field"><span>关键词 / 产品</span><input id="overseas-query" maxlength="100" value="${esc(filters.query)}" placeholder="充电器 / 收纳 / 清洁"></label><label class="field"><span>品类</span><select id="overseas-category"><option value="">全部品类</option>${Object.entries(lib?.categories||{}).map(([id,label])=>`<option value="${id}" ${filters.category===id?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label class="field"><span>平台</span><select id="overseas-filter-platform"><option value="all">全部平台</option>${Object.entries({tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube"}).map(([id,label])=>`<option value="${id}" ${filters.platform===id?"selected":""}>${label}</option>`).join("")}</select></label><button class="btn secondary" type="submit">筛选推荐</button>${lib?.search_available?`<button class="btn primary" type="button" data-action="search-overseas" ${S.overseasSearching?"disabled":""}>${S.overseasSearching?"正在搜索…":"搜索平台内容"}</button>`:""}</form><p class="hint">用关键词筛选创意，或收藏你发现的视频链接。${lib?.search_available?"平台搜索需选择一个平台，可能产生数据源费用。":""}</p>${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`+
+    `<section class="panel overseas-library-controls"><div class="overseas-library-tabs"><button class="chip ${!filters.saved?"active":""}" data-action="overseas-tab" data-saved="0">创意推荐</button><button class="chip ${filters.saved?"active":""}" data-action="overseas-tab" data-saved="1">我的收藏</button></div><form id="overseas-filter-form"><label class="field"><span>关键词 / 产品</span><input id="overseas-query" maxlength="100" value="${esc(filters.query)}" placeholder="充电器 / 收纳 / 清洁"></label><label class="field"><span>品类</span><select id="overseas-category"><option value="">全部品类</option>${Object.entries(lib?.categories||{}).map(([id,label])=>`<option value="${id}" ${filters.category===id?"selected":""}>${esc(label)}</option>`).join("")}</select></label><label class="field"><span>平台</span><select id="overseas-filter-platform"><option value="all">全部平台</option>${Object.entries({tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube"}).map(([id,label])=>`<option value="${id}" ${filters.platform===id?"selected":""}>${label}</option>`).join("")}</select></label><button class="btn secondary" type="submit">筛选推荐</button>${lib?.search_available?`<button class="btn primary" type="button" data-action="search-overseas" ${S.overseasSearching?"disabled":""}>${S.overseasSearching?"正在搜索…":"搜索平台内容"}</button>`:""}</form><p class="hint">用关键词筛选创意，或收藏你发现的视频链接。${lib?.search_available?"平台搜索需选择一个平台，每次 1 积分（以后台设置为准），缓存命中退回。":""}</p>${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`+
     (lib?`${overseasFeedStatus(lib.refresh)}<div class="section-head"><h2>${filters.saved?"收藏的创意":"推荐创意"} <span>${lib.items.length} 条</span></h2><span class="muted">已附视频 ${lib.items.filter(i=>i.reference_video?.url||i.url).length} / ${lib.items.length} 条</span></div>${lib.items.length?`<div class="overseas-idea-grid">${lib.items.map(overseasIdeaCard).join("")}</div>`:empty("暂时没有匹配的创意","试试其他关键词、取消筛选，或收集一条你发现的链接。",button("收集链接","collect-overseas","primary","plus"))}`:'<div class="loading-line">正在读取海外创意库…</div>');
 }
 function overseasFeedStatus(sync) {
@@ -147,8 +147,13 @@ async function searchOverseas() {
     const result=await post("/api/overseas/search",body({query:f.query,platform:f.platform}));
     if(key!==workspaceKey() || request!==S.overseasLoadToken) return;
     S.overseasFilters={...f,saved:false};
-    S.overseasLibrary={...S.overseasLibrary,items:result.items};
-    S.overseasMessage=`已取得 ${result.items.length} 条平台候选${result.cached?"，使用15分钟内的缓存":""}，可收藏后用于创作。`;
+    S.overseasMessage='搜索已排队；成功后扣除 '+(S.boot.rules.search??1)+' 积分，缓存命中退回，可在任务记录查看。';
+    await poll(result.task_ids,async()=>{
+      if(key!==workspaceKey())return;
+      await loadOverseasIdeas();
+      if(key!==workspaceKey())return;
+      S.overseasMessage='平台搜索已完成，候选已加入灵感库，可收藏后用于创作。';render();
+    },true);
   } catch(error) {if(key===workspaceKey() && request===S.overseasLoadToken) S.overseasMessage=error.message;}
   finally {if(key===workspaceKey()) {S.overseasSearching=false;if(S.page==="overseas-ideas") render();}}
 }

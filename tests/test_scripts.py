@@ -57,6 +57,10 @@ class BackupTests(unittest.TestCase):
     def test_online_backup_and_rotation(self):
         with tempfile.TemporaryDirectory() as d:
             db = Path(d) / "live.db"
+            import importlib
+            from unittest.mock import patch
+            database=importlib.import_module('server.db')
+            with patch.object(database,'DB_PATH',str(db)):database.init()
             with sqlite3.connect(db) as c:
                 c.execute("CREATE TABLE t(x)")
                 c.execute("INSERT INTO t VALUES (1)")

@@ -7,7 +7,7 @@ import urllib.parse
 from pathlib import Path
 from .db import db, dumps, uid, now, setting
 from .discovery import parse_count
-from . import overseas_feed, overseas_translation
+from . import overseas_feed, overseas_translation, resource_limits
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
@@ -76,20 +76,26 @@ def reference(project, ident):
         return view(row) if row else None
 
 
-def store(project, value, saved=False):
+def store_in(c, project, value, saved=False):
     key = value.get('archetype_id') or value['url']
+    row=c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND source_key=?',(project,key)).fetchone()
+    if row:
+        merged = {**json.loads(row['data']), **value}
+        c.execute('UPDATE overseas_ideas SET data=?,saved=?,deleted_at=NULL,updated_at=? WHERE id=?',(dumps(merged),int(saved or row['saved']),now(),row['id']))
+        ident=row['id']
+    else:
+        ident=uid(); timestamp=now()
+        c.execute('INSERT INTO overseas_ideas VALUES (?,?,?,?,?,NULL,?,?)',(ident,project,key,dumps(value),int(saved),timestamp,timestamp))
+    return view(c.execute('SELECT * FROM overseas_ideas WHERE id=?',(ident,)).fetchone())
+
+
+def store(project, value, saved=False):
     with db() as c:
         c.execute('BEGIN IMMEDIATE')
-        row=c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND source_key=?',(project,key)).fetchone()
-        if row:
-            # Search refresh does not erase the user's collection status.
-            merged = {**json.loads(row['data']), **value}
-            c.execute('UPDATE overseas_ideas SET data=?,saved=?,deleted_at=NULL,updated_at=? WHERE id=?',(dumps(merged),int(saved or row['saved']),now(),row['id']))
-            ident=row['id']
-        else:
-            ident=uid(); timestamp=now()
-            c.execute('INSERT INTO overseas_ideas VALUES (?,?,?,?,?,NULL,?,?)',(ident,project,key,dumps(value),int(saved),timestamp,timestamp))
-        return view(c.execute('SELECT * FROM overseas_ideas WHERE id=?',(ident,)).fetchone())
+        user=c.execute('SELECT user_id FROM projects WHERE id=?',(project,)).fetchone()[0]
+        result=store_in(c,project,value,saved)
+        resource_limits.check_storage(c,user)
+        return result
 
 
 def collect(project, data):
@@ -182,7 +188,7 @@ def normalize(raw,p):
     return results
 
 
-def search(project,p,query):
+def fetch_search(project,p,query):
     from .adapters import TikHubAdapter
     if p not in PLATFORMS: raise ValueError('请选择海外平台')
     query=text(query,'搜索词',100,True)
@@ -195,7 +201,21 @@ def search(project,p,query):
         return {'items':[v for v in values if v], 'cached':True,'fetched_at':cached['updated_at']}
     values=normalize(TikHubAdapter().call(p,'search',query+' #shorts' if p=='youtube' else query),p)
     if not values: raise ValueError('数据源未返回可识别的视频候选，请检查接口响应；可继续手动收集链接。')
-    items=[store(project,{**v,'query':query}) for v in values]
+    return {'items':[{**v,'query':query} for v in values],'cached':False,'fetched_at':values[0]['fetched_at']}
+
+
+def persist_search(c,project,p,query,result):
+    if result.get('cached'):return result
+    items=[store_in(c,project,v) for v in result['items']]
+    c.execute('INSERT OR REPLACE INTO overseas_searches VALUES (?,?,?,?,?)',(project,p,query,dumps([v['id'] for v in items]),now()))
+    return {**result,'items':items}
+
+
+def search(project,p,query):
+    result=fetch_search(project,p,query)
     with db() as c:
-        c.execute('INSERT OR REPLACE INTO overseas_searches VALUES (?,?,?,?,?)',(project,p,query,dumps([v['id'] for v in items]),now()))
-    return {'items':items,'cached':False,'fetched_at':items[0]['fetched_at']}
+        c.execute('BEGIN IMMEDIATE')
+        result=persist_search(c,project,p,query,result)
+        user=c.execute('SELECT user_id FROM projects WHERE id=?',(project,)).fetchone()[0]
+        resource_limits.check_storage(c,user)
+        return result
