@@ -75,6 +75,7 @@ const S = {
     temporary: "",
   },
   selectedAssets: [],
+  intakeSkipped: {},
 };
 const drafts = createDraftStore({
   getItem: key => sessionStorage.getItem(key), setItem: (key,value) => sessionStorage.setItem(key,value),
@@ -791,6 +792,37 @@ function briefPanel(b) {
     .join("");
   return `<section class="panel brief-panel"><div class="brief-head"><div><p class="eyebrow">自主创作 · ${b.platform === "douyin" ? "抖音" : "小红书"}</p><h2>${esc(b.data.topic)}</h2></div>${button("再来一批", "original-again", "primary small", "spark", `data-id="${b.id}"`)}</div><p class="muted">使用了本次提供的业务资料（其中 ${(b.data.assets || []).length} 份来自已保存资料）${b.data.requirements ? " · 有本次要求" : ""}。再来一批沿用目标、资料及尚未过期的临时资料。资料已过期时，请重新补充。</p>${bm.note ? `<div class="notice">${esc(bm.note)}</div>` : ""}${examples ? `<details class="brief-bench"><summary>赛道参考：「${esc(bm.keyword || "")}」候选 ${bm.pool} 条，互动中位数 ${bm.baseline != null ? fmt(Math.round(bm.baseline)) : "—"}；只用来看写法</summary><ul>${examples}</ul></details>` : ""}</section>`;
 }
+function intakeKey(id) {
+  return `${workspaceKey()}:${id}`;
+}
+function finishIntake(decision) {
+  const resolve = S.intakeResolve;
+  S.intakeResolve = null;
+  S.intakeAsk = null;
+  close();
+  resolve?.(decision);
+}
+function intakeDecision(ask) {
+  // 单问题追问：一次只问一个；同账号+项目跳过过的问题不再重复打断。
+  if (S.intakeSkipped[intakeKey(ask.id)]) return Promise.resolve({ skip: true });
+  return new Promise((resolve) => {
+    S.intakeResolve = resolve;
+    S.intakeAsk = ask;
+    modal(
+      "补一个关键信息",
+      `<p class="subtext">只确认一个影响成稿的信息，回答后继续生成：</p><div class="notice">${esc(ask.question)}</div><label class="field"><span>你的回答</span><textarea id="intake-answer" rows="3" maxlength="500" placeholder="直接写答案，例如：128 元，抖音小店下单"></textarea></label><div class="actions">${button("回答并继续", "intake-answer", "primary", "check")}${button("跳过，直接生成", "intake-skip", "secondary")}</div><p class="hint">回答会并入本次创作的临时资料；跳过则按现有资料生成，缺失信息会在稿件里标注待补充。</p>`,
+    );
+  });
+}
+async function submitWithIntake(bodyData, submit) {
+  // 服务端命中追问时先问一次；回答后仍命中（如价格冲突未消除）则直接生成，不循环追问。
+  let r = await submit(bodyData);
+  if (!r?.ask) return r;
+  const decision = await intakeDecision(r.ask);
+  const resubmit = (d) => submit({ ...bodyData, ...(d.skip ? { skip_question: true } : { answer: d.answer }) });
+  r = await resubmit(decision);
+  return r?.ask ? resubmit({ skip: true }) : r;
+}
 async function startOriginal(briefId) {
   const operationKey = workspaceKey();
   if (S.busy) return;
@@ -814,21 +846,19 @@ async function startOriginal(briefId) {
   S.busy = true;
   render();
   try {
-    const r = await post(
-      "/api/original",
-      body(
-        again
-          ? { brief_id: briefId }
-          : {
-              goal: S.original.goal,
-              platform: S.original.platform,
-              topic: S.original.topic,
-              keyword: S.original.keyword,
-              assets: S.original.assets,
-              requirements: S.original.requirements,
-              temporary: S.original.temporary,
-            },
-      ),
+    const r = await submitWithIntake(
+      again
+        ? { brief_id: briefId }
+        : {
+            goal: S.original.goal,
+            platform: S.original.platform,
+            topic: S.original.topic,
+            keyword: S.original.keyword,
+            assets: S.original.assets,
+            requirements: S.original.requirements,
+            temporary: S.original.temporary,
+          },
+      (d) => post("/api/original", body(d)),
     );
     toast("正在根据你的资料写内容，可在任务记录查看进度…");
     if (operationKey !== workspaceKey()) return;
@@ -1326,19 +1356,17 @@ async function startCreate(againId) {
   S.busy = true;
   render();
   try {
-    const r = await post(
-      "/api/create",
-      body(
-        againId
-          ? { source_id: againId, again: true }
-          : {
-              goal: S.goal,
-              source_id: sourceId,
-              requirements: S.requirements,
-              temporary: S.temporary,
-              assets: S.selectedAssets,
-            },
-      ),
+    const r = await submitWithIntake(
+      againId
+        ? { source_id: againId, again: true }
+        : {
+            goal: S.goal,
+            source_id: sourceId,
+            requirements: S.requirements,
+            temporary: S.temporary,
+            assets: S.selectedAssets,
+          },
+      (d) => post("/api/create", body(d)),
     );
     toast("正在创作 6 到 8 条独立稿件…");
     if (operationKey !== workspaceKey()) return;
@@ -1474,7 +1502,27 @@ const actions = {
     render();
     toast("任务已取消，冻结积分已退回");
   },
-  close,
+  "intake-answer": () => {
+    const value = ($("#intake-answer")?.value || "").trim();
+    if (!value) {
+      toast("请填写回答，或选择跳过");
+      return;
+    }
+    finishIntake({ answer: value });
+  },
+  "intake-skip": () => {
+    if (S.intakeAsk) S.intakeSkipped[intakeKey(S.intakeAsk.id)] = true;
+    finishIntake({ skip: true });
+  },
+  close: () => {
+    if (S.intakeResolve) {
+      // 直接关闭追问弹窗视为跳过，同一问题不再重复打断
+      if (S.intakeAsk) S.intakeSkipped[intakeKey(S.intakeAsk.id)] = true;
+      finishIntake({ skip: true });
+      return;
+    }
+    close();
+  },
   menu: () => $(".sidebar").classList.toggle("open"),
   projects: projectsModal,
   discover: () => navigate("discover"),

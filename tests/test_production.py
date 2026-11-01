@@ -24,7 +24,7 @@ class TrackingApiTests(unittest.TestCase):
         self.c = Client(f"http://127.0.0.1:{self.server.server_address[1]}")
         self.c.req("/api/auth/demo", "POST", {})
         self.p = self.c.req("/api/bootstrap")[1]["projects"][0]["id"]
-        r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "temporary": "12 克一包"})[1]
+        r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "temporary": "12 克一包", "skip_question": True})[1]
         jobs.run(r["task_ids"][0])
         self.ids = [c["id"] for c in self.ws()["creations"]]
 

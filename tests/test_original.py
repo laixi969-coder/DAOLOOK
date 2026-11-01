@@ -78,7 +78,7 @@ class OriginalTests(unittest.TestCase):
         aid = self.asset()
         before = self.c.req("/api/bootstrap")[1]["credits"]["balance"]
         status, r = self.post(
-            "/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "assets": [aid]}
+            "/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "assets": [aid], "skip_question": True}
         )
         self.assertEqual(status, 202)
         task = self.run_task(r)[0]
@@ -97,7 +97,7 @@ class OriginalTests(unittest.TestCase):
         self.assertTrue(all(o["data"]["origin"] == "original" for o in outs))
         adapters.validate_creation({"outputs": [o["data"] for o in outs]}, "xhs")
         # 再来一批：沿用资料，追加，不覆盖
-        status, r2 = self.post("/api/original", {"brief_id": brief["id"]})
+        status, r2 = self.post("/api/original", {"brief_id": brief["id"], "skip_question": True})
         self.assertEqual(status, 202)
         self.assertEqual(r2["brief_id"], brief["id"])
         self.assertEqual(self.run_task(r2)[0]["state"], "SUCCEEDED")
@@ -126,10 +126,10 @@ class OriginalTests(unittest.TestCase):
         with patch.object(adapters, "model_json", side_effect=fake):
             r = self.post(
                 "/api/original",
-                {"platform": "douyin", "topic": "冷萃挂耳", "keyword": "挂耳咖啡", "assets": [aid]},
+                {"platform": "douyin", "topic": "冷萃挂耳", "keyword": "挂耳咖啡", "assets": [aid], "skip_question": True},
             )[1]
             self.assertEqual(self.run_task(r)[0]["state"], "SUCCEEDED")
-            r2 = self.post("/api/original", {"brief_id": r["brief_id"]})[1]
+            r2 = self.post("/api/original", {"brief_id": r["brief_id"], "skip_question": True})[1]
             self.assertEqual(self.run_task(r2)[0]["state"], "SUCCEEDED")
         first, second = seen
         self.assertEqual(first["brief"], {"platform": "douyin", "topic": "冷萃挂耳"})
@@ -168,7 +168,7 @@ class OriginalTests(unittest.TestCase):
         with D.db() as c:
             c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
         before = self.c.req("/api/bootstrap")[1]["credits"]["balance"]
-        r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "assets": [aid]})[1]
+        r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃挂耳", "assets": [aid], "skip_question": True})[1]
         with patch.object(adapters, "model_json", side_effect=ValueError("模型失败")):
             try:
                 jobs.run(r["task_ids"][0])

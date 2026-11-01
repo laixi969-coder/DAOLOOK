@@ -15,7 +15,7 @@ class EditingTests(unittest.TestCase):
 
     def setUp(self):
         fixture.OriginalTests.setUp(self)
-        status, task = self.post('/api/original', {'platform':'xhs', 'topic':'办公室咖啡', 'temporary':'挂耳咖啡每包12克，每盒10包，45元。'})
+        status, task = self.post('/api/original', {'platform':'xhs', 'topic':'办公室咖啡', 'temporary':'挂耳咖啡每包12克，每盒10包，45元。', 'skip_question': True})
         self.assertEqual(status, 202)
         self.run_task(task)
         self.original = self.ws()['creations'][0]

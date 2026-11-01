@@ -200,5 +200,50 @@ async function test(name,code) {
     assert.ok(fallback.includes('今日产出'));
     assert.ok(fallback.includes('<strong>1'));
   `);
-  console.log('Frontend review regressions passed (15 cases).');
+  await test('submitWithIntake asks once, merges answer and never loops',`
+    S.intakeSkipped={};let calls=[];
+    const submit=async d=>{calls.push(d);
+      if(!d.answer&&!d.skip_question)return {ask:{id:'leads_missing',question:'q'}};
+      if(d.answer)return {ask:{id:'price_conflict',question:'q2'}};  // 回答后仍命中，应自动跳过而不是再问
+      return {task_ids:['t']};};
+    modal=(t,h)=>{};close=()=>{};
+    const pending=submitWithIntake({temporary:'x'},submit);
+    await Promise.resolve();await Promise.resolve();await Promise.resolve();
+    assert.ok(S.intakeResolve);
+    document.querySelector=()=>({value:'私信我'});
+    await actions['intake-answer']();
+    const r=await pending;
+    assert.equal(r.task_ids[0],'t');
+    assert.equal(calls.length,3);
+    assert.equal(calls[1].answer,'私信我');
+    assert.equal(calls[2].skip_question,true);
+  `);
+  await test('skipping the question remembers dismissal per workspace',`
+    S.intakeSkipped={};
+    const submit=async d=>d.skip_question?{task_ids:['t2']}:{ask:{id:'sales_missing',question:'q'}};
+    modal=()=>{};close=()=>{};
+    const pending=submitWithIntake({},submit);
+    await Promise.resolve();await Promise.resolve();await Promise.resolve();
+    await actions['intake-skip']();
+    const r=await pending;
+    assert.equal(r.task_ids[0],'t2');
+    assert.equal(S.intakeSkipped['user:project:sales_missing'],true);
+    // 已跳过的问题不再弹窗
+    let asked=0;modal=()=>{asked++;};
+    const r2=await submitWithIntake({},async d=>d.skip_question?{task_ids:['t3']}:{ask:{id:'sales_missing',question:'q'}});
+    assert.equal(r2.task_ids[0],'t3');
+    assert.equal(asked,0);
+  `);
+  await test('closing the question dialog settles as skip',`
+    S.intakeSkipped={};
+    const submit=async d=>d.skip_question?{task_ids:['t']}:{ask:{id:'leads_missing',question:'q'}};
+    modal=()=>{};close=()=>{};
+    const pending=submitWithIntake({},submit);
+    await Promise.resolve();await Promise.resolve();await Promise.resolve();
+    actions.close();
+    const r=await pending;
+    assert.equal(r.task_ids[0],'t');
+    assert.equal(S.intakeSkipped['user:project:leads_missing'],true);
+  `);
+  console.log('Frontend review regressions passed (18 cases).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

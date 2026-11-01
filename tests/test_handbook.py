@@ -79,10 +79,10 @@ class HandbookFlowTests(base.OriginalTests):
         aid = self.asset()
         sid = self.analyze()
         status, r = self.post(
-            "/api/create", {"source_id": sid, "assets": [aid], "requirements": "面向上班族"}
+            "/api/create", {"source_id": sid, "assets": [aid], "requirements": "面向上班族", "skip_question": True}
         )
         self.assertEqual(self.run_task(r)[0]["state"], "SUCCEEDED")
-        status, r2 = self.post("/api/create", {"source_id": sid, "again": True})
+        status, r2 = self.post("/api/create", {"source_id": sid, "again": True, "skip_question": True})
         self.assertEqual(status, 202, r2)
         with D.db() as c:
             payload = json.loads(

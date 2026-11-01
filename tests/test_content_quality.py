@@ -111,14 +111,14 @@ class OutcomeApiTests(unittest.TestCase):
     run_task = fixture.OriginalTests.run_task
 
     def generate(self, goal="sales"):
-        status, r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃咖啡", "temporary": "冷萃挂耳每包12克", "goal": goal})
+        status, r = self.post("/api/original", {"platform": "xhs", "topic": "冷萃咖啡", "temporary": "冷萃挂耳每包12克", "goal": goal, "skip_question": True})
         self.assertEqual(status, 202, r)
         self.run_task(r)
         return r
 
     def test_goal_and_temporary_survive_repeat(self):
         r = self.generate()
-        status, repeat = self.post("/api/original", {"brief_id": r["brief_id"]})
+        status, repeat = self.post("/api/original", {"brief_id": r["brief_id"], "skip_question": True})
         self.assertEqual(status, 202, repeat)
         self.run_task(repeat)
         self.assertEqual(len(self.ws()["creations"]), 16)

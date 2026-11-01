@@ -7,7 +7,7 @@ from .db import db, init, uid, now, dumps, setting, ledger
 from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed
 from .ranking import score
 from .skills import SKILL_NAMES
-from . import audit, secret_store, spending, resource_limits, workspace, access
+from . import audit, secret_store, spending, resource_limits, workspace, access, intake
 from .config import load_env, database_path
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
 
@@ -715,6 +715,7 @@ class Handler(BaseHTTPRequestHandler):
                 }
             if data.get("again") and "assets" not in data:
                 # 只继承成功任务，临时资料仅在尚未过期时复用。
+                given = data
                 with db() as c:
                     last = next(
                         (
@@ -735,6 +736,10 @@ class Handler(BaseHTTPRequestHandler):
                     "temporary": data.get("temporary", last.get("temporary", "")),
                     "goal": data.get("goal", last.get("goal", "leads")),
                 }
+                # 追加生成时沿用客户端对追问的显式选择
+                for flag in ("skip_question", "answer"):
+                    if flag in given:
+                        data[flag] = given[flag]
             if any(x not in available for x in selected):
                 raise Error("所选资料不存在或不属于当前项目")
             payload = {
@@ -750,6 +755,19 @@ class Handler(BaseHTTPRequestHandler):
             payload["goal"] = content_quality.goal(payload["goal"])
             if setting("mode") != "demo" and not selected and not payload["temporary"].strip():
                 raise Error("请提供自己的产品或服务资料，参考内容不能代替你的业务事实")
+            question = None
+            if not data.get("skip_question"):
+                with db() as c:
+                    rows = [
+                        dict(r)
+                        for r in c.execute("SELECT id,content FROM assets WHERE project_id=? AND kind!='图片'", (project_id,))
+                        if r["id"] in selected
+                    ]
+                question = intake.blocking_question(payload["goal"], rows, payload["temporary"])
+            if question:
+                if data.get("answer") is None:
+                    return self.send({"ask": question})
+                intake.apply_answer(payload, question["id"], data["answer"])
             return self.send(
                 {"task_ids": [jobs.submit(u["id"], project_id, "create", payload)]}, 202
             )
@@ -841,6 +859,19 @@ class Handler(BaseHTTPRequestHandler):
                 "requirements": requirements,
                 "temporary": temporary,
             }
+            question = None
+            if brief["platform"] in ("xhs", "douyin") and not data.get("skip_question"):
+                with db() as c:
+                    rows = [
+                        dict(r)
+                        for r in c.execute("SELECT id,content FROM assets WHERE project_id=? AND kind!='图片'", (project_id,))
+                        if r["id"] in selected
+                    ]
+                question = intake.blocking_question(brief["goal"], rows, temporary)
+            if question:
+                if data.get("answer") is None:
+                    return self.send({"ask": question})
+                intake.apply_answer(payload, question["id"], data["answer"])
             return self.send(
                 {
                     "task_ids": [jobs.submit(u["id"], project_id, "original", payload)],
