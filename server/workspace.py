@@ -135,6 +135,17 @@ def page(project,raw='',limit=25):
                 if name=='images':
                     value=image_view(row,project)
                 result[name].append(value)
+        if result['assets']:
+            placeholders=','.join('?'*len(result['assets']))
+            by_asset={}
+            for row in c.execute(
+                f"SELECT asset_id,category,fact,quote,demo,updated_at FROM asset_facts WHERE project_id=? AND asset_id IN ({placeholders})",
+                [project,*[a['id'] for a in result['assets']]],
+            ):
+                by_asset.setdefault(row['asset_id'],[]).append(
+                    {'category':row['category'],'fact':row['fact'],'quote':row['quote'],'demo':bool(row['demo']),'updated_at':row['updated_at']})
+            for value in result['assets']:
+                value['facts']=by_asset.get(value['id'],[])
     result['pagination']={'more':more,'cursor':base64.urlsafe_b64encode(json.dumps(next_cursors).encode()).decode().rstrip('=') if more else None,'limit':limit}
     result['stats']=stats(project)
     return result

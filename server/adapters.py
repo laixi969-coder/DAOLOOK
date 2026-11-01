@@ -1018,7 +1018,7 @@ def validate_grounded_creation(result, p, previous, assets):
             raise ValueError("事实引用必须来自本次所选文字资料的原文，不得引用参考或杜撰资料 ID")
 
 
-def create(content, assets, requirements, version, batch, analysis=None, previous=None, demo=False, goal="leads", history_results=None):
+def create(content, assets, requirements, version, batch, analysis=None, previous=None, demo=False, goal="leads", history_results=None, facts=None):
     """demo 为运行模式；演示模式或演示参考都只用模板，不调用模型。"""
     p = content["platform"]
     from .content_quality import objective, annotate
@@ -1035,6 +1035,7 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
                 "analysis": analysis or [],
                 "previous_outputs": previous or [],
                 "assets": assets,
+                "structured_facts": facts or [],
                 "objective": objective(goal),
                 "history_results": history_results or [],
                 "requirements": requirements,
@@ -1109,7 +1110,7 @@ def fetch_benchmark(keyword, p, demo=False):
         }
 
 
-def create_original(brief, benchmark, assets, requirements, version, batch, previous=None, demo=False, history_results=None):
+def create_original(brief, benchmark, assets, requirements, version, batch, previous=None, demo=False, history_results=None, facts=None):
     p = brief["platform"]
     from .content_quality import objective, annotate
     goal = brief.get("goal", "leads")
@@ -1119,6 +1120,7 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
                 "brief": {"platform": p, "topic": brief["topic"]},
                 "benchmark": benchmark,
                 "assets": assets,
+                "structured_facts": facts or [],
                 "objective": objective(goal),
                 "history_results": history_results or [],
                 "requirements": requirements,
@@ -1135,6 +1137,61 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
             output.pop("demo", None)
         return annotate(result["outputs"], assets, p, goal), model
     return annotate(demo_outputs(p, brief["topic"][:60], batch), assets, p, goal), "demo"
+
+
+FACT_CATEGORIES = ("卖给谁", "卖什么", "可信证据", "常见顾虑", "购买路径")
+
+
+def validate_facts(result, content):
+    """结构化要点校验：quote 必须逐字来自资料原文，分类固定，条数与长度有上限。"""
+    facts = result.get("facts") if isinstance(result, dict) else None
+    if not isinstance(facts, list) or not facts or len(facts) > 20:
+        raise ValueError("要点需为 1 到 20 条的数组")
+    seen = set()
+    for item in facts:
+        if not isinstance(item, dict):
+            raise ValueError("每条要点必须是对象")
+        category = item.get("category")
+        fact = item.get("fact")
+        quote = item.get("quote")
+        if category not in FACT_CATEGORIES:
+            raise ValueError("分类只能是：" + "、".join(FACT_CATEGORIES))
+        if not isinstance(fact, str) or not 2 <= len(fact.strip()) <= 120:
+            raise ValueError("要点需为 2 到 120 字的短句")
+        if not isinstance(quote, str) or not 1 <= len(quote) <= 80 or quote not in content:
+            raise ValueError("quote 必须是资料原文里连续出现的短句")
+        key = (category, fact.strip())
+        if key in seen:
+            raise ValueError("要点重复")
+        seen.add(key)
+    return facts
+
+
+def demo_facts(content):
+    """演示模式的整理模板：只取原文首句做一条真实引用，不虚构分类信息。"""
+    sentences = [s.strip() for s in re.split(r"[。！？!?\n]", content) if len(s.strip()) >= 6]
+    if not sentences:
+        return []
+    first = sentences[0]
+    return [{"category": "卖什么", "fact": first[:120], "quote": first[:80]}]
+
+
+def extract_facts(asset, version, demo=False):
+    """资料结构化入库（内容效果升级·第一优先）：每条事实保留原文出处。"""
+    content = asset["content"] or ""
+    if not demo:
+        result, model = model_json(
+            {
+                "asset": {"name": asset["name"], "kind": asset["kind"]},
+                "content": content[:20000],
+            },
+            {"facts": [{"category": "卖什么", "fact": "一句话要点", "quote": "资料原文短句"}]},
+            version,
+            "analyze",
+            lambda r: validate_facts(r, content[:20000]),
+        )
+        return result["facts"], model
+    return demo_facts(content), "demo"
 
 
 def cover(output, direction, demo=None):

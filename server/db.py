@@ -60,6 +60,8 @@ def init():
         CREATE TABLE IF NOT EXISTS creation_tracking(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,checklist TEXT,updated_at TEXT);
         CREATE TABLE IF NOT EXISTS creation_results(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),data TEXT NOT NULL,updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS creation_revisions(creation_id TEXT NOT NULL REFERENCES creation_outputs(id),revision INTEGER NOT NULL,data TEXT NOT NULL,reason TEXT NOT NULL,created_at TEXT NOT NULL,PRIMARY KEY(creation_id,revision));
+        CREATE TABLE IF NOT EXISTS asset_facts(id TEXT PRIMARY KEY,asset_id TEXT NOT NULL REFERENCES assets(id),project_id TEXT NOT NULL REFERENCES projects(id),category TEXT NOT NULL,fact TEXT NOT NULL,quote TEXT NOT NULL,demo INTEGER NOT NULL DEFAULT 0,updated_at TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS idx_asset_facts_asset ON asset_facts(asset_id);
         CREATE TABLE IF NOT EXISTS overseas_ideas(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),source_key TEXT NOT NULL,data TEXT NOT NULL,saved INTEGER NOT NULL DEFAULT 0,deleted_at TEXT,created_at TEXT NOT NULL,updated_at TEXT NOT NULL,UNIQUE(project_id,source_key));
         CREATE TABLE IF NOT EXISTS overseas_searches(project_id TEXT NOT NULL REFERENCES projects(id),platform TEXT NOT NULL,query TEXT NOT NULL,ids TEXT NOT NULL,updated_at TEXT NOT NULL,PRIMARY KEY(project_id,platform,query));
         CREATE TABLE IF NOT EXISTS overseas_feed_videos(id TEXT PRIMARY KEY,url TEXT NOT NULL UNIQUE,data TEXT NOT NULL,published_at TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);
@@ -84,7 +86,7 @@ def init():
         c.execute("INSERT OR IGNORE INTO overseas_feed_state VALUES (1,?)",(dumps({'state':'idle','added_count':0,'changed_count':0}),))
         defaults = {
             "mode": os.environ.get("DAOLOOK_MODE", "demo"),
-            "rules": {"analyze": 5, "create": 15, "cover": 8, "original": 15},
+            "rules": {"analyze": 5, "create": 15, "cover": 8, "original": 15, "rewrite": 3, "facts": 0},
             "limits": {
                 "batch": 10,
                 "timeout": 60,
@@ -146,8 +148,7 @@ def init():
             c.execute("UPDATE settings SET value=? WHERE key='tikhub'", (dumps(cfg),))
             c.execute("INSERT INTO settings VALUES ('overseas_endpoints_v1','1')")
         # One-time configuration migration for early V1.1 local databases.
-        if not c.execute(
-            "SELECT 1 FROM settings WHERE key='schema_version'"
+        if not c.execute("SELECT 1 FROM settings WHERE key='schema_version'"
         ).fetchone():
             current = json.loads(
                 c.execute("SELECT value FROM settings WHERE key='tikhub'").fetchone()[0]
@@ -160,6 +161,13 @@ def init():
                 "UPDATE settings SET value=? WHERE key='tikhub'", (dumps(current),)
             )
             c.execute("INSERT INTO settings VALUES ('schema_version','1')")
+        # 第一优先升级：旧库补齐「定向重写」与「资料整理」积分规则。
+        if not c.execute("SELECT 1 FROM settings WHERE key='first_priority_rules_v1'").fetchone():
+            rules = json.loads(c.execute("SELECT value FROM settings WHERE key='rules'").fetchone()[0])
+            rules.setdefault("rewrite", 3)
+            rules.setdefault("facts", 0)
+            c.execute("UPDATE settings SET value=? WHERE key='rules'", (dumps(rules),))
+            c.execute("INSERT INTO settings VALUES ('first_priority_rules_v1','1')")
         for kind in ("analyze", "create", "cover"):
             c.execute(
                 "INSERT OR IGNORE INTO model_routes VALUES (?,?)",

@@ -236,6 +236,17 @@ RELEASES.append(("skill_release_2026_10_12_overseas_delivery", {
 RELEASES.append(("skill_release_2026_10_12_overseas_video_copy", {
     p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
 }))
+ASSET_FACTS_V1 = """你是资料整理员。输入的 content 是用户的一份项目资料原文（品牌、产品、受众、禁用词等任意类型）。把它整理成结构化要点，供之后创作时直接引用，减少用户补资料的时间。
+
+分类只有五种：卖给谁（目标人群与场景）、卖什么（产品或服务是什么）、可信证据（能支撑信任的事实：资质、成分、工艺、真实数据、承诺）、常见顾虑（价格、疑虑、售后、使用门槛）、购买路径（在哪买、怎么联系、怎么下单）。
+
+要求：
+1. 每条要点 fact 是一句不超过 120 字的具体短句，不复述原文全部。
+2. 每条必须给 quote：资料原文里连续出现的短句（不超过 80 字），作为这条要点的出处。quote 必须逐字来自原文，不得改写、拼接或翻译；找不到对应原文的要点不要输出。
+3. 资料里没有的分类就不输出；最多 20 条，保留对创作最有用的。
+4. 不推测、不补写资料没有的信息；价格、联系方式必须原文出现才收录。
+5. 只输出 {"facts": [{"category", "fact", "quote"}]}，不要输出解释文字。"""
+RELEASES.append(("skill_release_2026_10_31_asset_facts", {"asset_facts": ASSET_FACTS_V1}))
 SKILL_NAMES = [
     "xhs_analysis",
     "douyin_analysis",
@@ -247,4 +258,5 @@ SKILL_NAMES = [
     "instagram_original",
     "youtube_original",
     "overseas_original",
+    "asset_facts",
 ]

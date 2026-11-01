@@ -15,6 +15,20 @@ ROOT = Path(__file__).resolve().parent.parent
 RATE = RateLimiter()
 STATIC_CACHE = StaticCache()
 
+# 参与结构化整理的资料类型（图片没有文字，禁用词不是业务事实）
+FACT_KINDS = ("品牌资料", "产品信息", "受众画像", "账号", "其他")
+
+
+def queue_facts(user, project, asset_id):
+    """保存文本资料后自动整理结构化要点；排队失败不影响资料保存。"""
+    try:
+        # 真实模式未配置可用模型时必然失败，直接不排队
+        if setting("mode") == "live" and not adapters.candidates("analyze"):
+            return None
+        return jobs.submit(user, project, "facts", {"asset_id": asset_id})[0]
+    except (jobs.TaskAdmissionError, ValueError):
+        return None
+
 
 def comment_layout_text(layout):
     if not isinstance(layout, dict):
@@ -984,7 +998,25 @@ class Handler(BaseHTTPRequestHandler):
                         now(),
                     ),
                 )
+            if data.get("kind", "品牌资料") in FACT_KINDS and content.strip():
+                queue_facts(u["id"], project_id, ident)
             return self.send({"id": ident})
+        match = re.fullmatch(r"/api/assets/([a-f0-9]+)/facts", path)
+        if match and method == "POST":
+            ident = match.group(1)
+            with db() as c:
+                asset = c.execute(
+                    "SELECT kind, length(content) AS chars FROM assets WHERE id=? AND project_id=?",
+                    (ident, project_id),
+                ).fetchone()
+            if not asset:
+                raise Error("资料不存在", 404)
+            if asset["kind"] not in FACT_KINDS or not asset["chars"]:
+                raise Error("这份资料没有可整理的文字内容")
+            return self.send(
+                {"task_ids": [jobs.submit(u["id"], project_id, "facts", {"asset_id": ident})]},
+                202,
+            )
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/(revisions|edit|restore)", path)
         if match:
             ident, operation = match.groups()
@@ -1005,6 +1037,7 @@ class Handler(BaseHTTPRequestHandler):
                 "creations": "creation_outputs",
                 "assets": "assets",
             }[kind]
+            refine_asset = False
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
                 if not c.execute(
@@ -1019,6 +1052,7 @@ class Handler(BaseHTTPRequestHandler):
                             (now(), ident),
                         )
                     elif kind == "assets":
+                        c.execute("DELETE FROM asset_facts WHERE asset_id=?", (ident,))
                         c.execute("DELETE FROM assets WHERE id=?", (ident,))
                     else:
                         c.execute(
@@ -1057,11 +1091,16 @@ class Handler(BaseHTTPRequestHandler):
                             ident,
                         ),
                     )
+                    if data.get("kind", "品牌资料") in FACT_KINDS and data["content"].strip():
+                        refine_asset = True
                 else:
                     c.execute(
                         f"UPDATE {table} SET saved=? WHERE id=?",
                         (int(bool(data.get("saved"))), ident),
                     )
+            # 事务外排队，避免嵌套写锁
+            if refine_asset:
+                queue_facts(u["id"], project_id, ident)
             return self.send({"ok": True})
         match = re.fullmatch(r"/api/results/([a-f0-9]+)", path)
         if match and method == "POST":
@@ -1502,7 +1541,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("模式无效")
                 if key == "rules" and (
                     not {"analyze", "create", "cover"} <= set(value)
-                    or not set(value) <= {"analyze", "create", "cover", "original", "search"}
+                    or not set(value) <= {"analyze", "create", "cover", "original", "search", "rewrite", "facts"}
                     or any(
                         type(v) is not int or v < 0 or v > 10000 for v in value.values()
                     )

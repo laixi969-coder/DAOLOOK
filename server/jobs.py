@@ -45,11 +45,31 @@ def discover_pick():
     return value if type(value) is int and 1 <= value <= 10 else 3
 
 
+def selected_facts(c, asset_ids):
+    """所选资料的结构化要点（含原文出处），随创作输入一起交给模型。"""
+    ids = [i for i in asset_ids if i and i != "temporary"]
+    if not ids:
+        return []
+    rows = c.execute(
+        f"SELECT asset_id,category,fact,quote FROM asset_facts WHERE asset_id IN ({','.join('?' * len(ids))})",
+        ids,
+    ).fetchall()
+    return [dict(r) for r in rows]
+
+
 def task_cost(kind, payload, rules=None):
     """博主/关键词入口按精选条数逐条计费：先冻结上限，成功几条结算几条，其余退回。"""
     rules = rules or setting("rules")
-    # 旧数据库没有「自主创作」规则时，沿用再创作的价格。
-    unit = rules.get("search", 1) if kind == "search" else rules.get(kind, rules.get("create")) if kind == "original" else rules.get(kind)
+    if kind == "search":
+        unit = rules.get("search", 1)
+    elif kind == "original":
+        # 旧数据库没有「自主创作」规则时，沿用再创作的价格。
+        unit = rules.get(kind, rules.get("create"))
+    elif kind == "facts":
+        # 资料结构化整理不向用户收费；真实调用的费用由供应商预算保护。
+        unit = rules.get("facts", 0)
+    else:
+        unit = rules.get(kind)
     if type(unit) is not int or unit < 0:
         raise ValueError("任务计费配置无效")
     if kind == "analyze" and payload.get("entry") in DISCOVERY:
@@ -150,7 +170,8 @@ def submit_many(user, project, kind, payloads, actor=None, request_id=""):
                     now(),
                 ),
             )
-            ledger(c, user, ident, "FREEZE", -cost, "冻结：" + kind)
+            if cost:
+                ledger(c, user, ident, "FREEZE", -cost, "冻结：" + kind)
         if actor:
             audit.record(c, actor, "task.retry", project, {"task_ids": ids, "kind": kind}, request_id)
         # Nonblocking bounded handoff while holding the DB write transaction.
@@ -262,7 +283,11 @@ def _run(ident):
     if kind != "cover":
         if kind == "original":
             p = payload["brief"]["platform"]
-        name = p + "_" + {"analyze": "analysis", "create": "creation", "original": "original"}[kind]
+        name = (
+            "asset_facts"
+            if kind == "facts"
+            else p + "_" + {"analyze": "analysis", "create": "creation", "original": "original"}[kind]
+        )
         with db() as c:
             version = c.execute(
                 "SELECT * FROM skill_versions WHERE name=? AND status='Published' ORDER BY version DESC LIMIT 1",
@@ -394,6 +419,7 @@ def _run(ident):
                     )
                 )
             ]
+            facts = selected_facts(c, [a["id"] for a in assets])
         assets = list(payload.get("asset_snapshot", assets))
         if payload.get("temporary"):
             assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
@@ -411,6 +437,7 @@ def _run(ident):
             demo=demo,
             goal=payload.get("goal", "leads"),
             history_results=history_results(t["project_id"], content["platform"], payload.get("goal", "leads")),
+            facts=facts,
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -437,29 +464,56 @@ def _run(ident):
                     )
                 )
             ]
+            facts = selected_facts(c, payload.get("assets", []))
         assets = list(payload.get("asset_snapshot", []))
         if payload.get("temporary"):
             assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
         if not active(ident):
             return
-        producer = overseas.create if brief["platform"] in overseas.PLATFORMS else adapters.create_original
-        outputs, model = producer(
-            brief,
-            benchmark,
-            assets,
-            payload.get("requirements", ""),
-            prompt,
-            batch,
-            previous=previous,
-            demo=demo,
-            history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
-        )
+        if brief["platform"] in overseas.PLATFORMS:
+            outputs, model = overseas.create(
+                brief,
+                benchmark,
+                assets,
+                payload.get("requirements", ""),
+                prompt,
+                batch,
+                previous=previous,
+                demo=demo,
+                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
+            )
+        else:
+            outputs, model = adapters.create_original(
+                brief,
+                benchmark,
+                assets,
+                payload.get("requirements", ""),
+                prompt,
+                batch,
+                previous=previous,
+                demo=demo,
+                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
+                facts=facts,
+            )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
             output["origin"] = "original"
             if demo:
                 output["demo"] = True
+    elif kind == "facts":
+        if not state(ident, "GENERATING"):
+            return
+        with db() as c:
+            asset = c.execute(
+                "SELECT id,name,kind,content FROM assets WHERE id=? AND project_id=?",
+                (payload["asset_id"], t["project_id"]),
+            ).fetchone()
+        if not asset:
+            raise ValueError("资料已删除，整理任务已终止")
+        facts, model = adapters.extract_facts(asset, prompt, demo)
+        if not facts:
+            raise ValueError("这份资料没有整理出可用要点")
     else:
         if not state(ident, "GENERATING"):
             return
@@ -544,6 +598,24 @@ def _run(ident):
                     ),
                 )
             result["brief_id"] = payload["source_id"]
+        if kind == "facts":
+            # 重新整理整组替换该资料的旧要点
+            c.execute("DELETE FROM asset_facts WHERE asset_id=?", (payload["asset_id"],))
+            for fact in facts:
+                c.execute(
+                    "INSERT INTO asset_facts VALUES (?,?,?,?,?,?,?,?)",
+                    (
+                        uid(),
+                        payload["asset_id"],
+                        t["project_id"],
+                        fact["category"],
+                        fact["fact"].strip(),
+                        fact["quote"],
+                        1 if demo else 0,
+                        now(),
+                    ),
+                )
+            result["facts"] = len(facts)
         if outputs:
             ids = []
             for output in outputs:
