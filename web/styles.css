@@ -2226,6 +2226,19 @@ tr:last-child td {
   margin-left: 6px;
   color: var(--ink-3);
 }
+.board-stats .mix span {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 3px 10px;
+  font-size: 12px;
+  color: var(--ink-2);
+  margin-top: 4px;
+}
+.board-stats .mix span.hint {
+  border: none;
+  padding: 0;
+  color: var(--ink-3);
+}
 .board-hint {
   margin-top: 14px;
   font-size: 12px;

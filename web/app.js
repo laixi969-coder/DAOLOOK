@@ -698,16 +698,50 @@ function stageOf(c) {
     return "firsthour";
   return "published";
 }
+function sameDay(value) {
+  const d = new Date(value);
+  const now = new Date();
+  return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+}
+function directionMix(items) {
+  // PRD 9.5 方向配比：优先用服务端全项目统计；旧响应回退到已加载稿件。
+  const stats = S.workspace?.stats;
+  const sourcePlatform = new Map([...(S.workspace?.sources || []), ...(S.workspace?.briefs || [])].map((s) => [s.id, s.platform]));
+  const dirs = stats?.directions && Object.keys(stats.directions).length
+    ? stats.directions
+    : items.reduce((acc, c) => {
+        const platform = sourcePlatform.get(c.source_id);
+        const direction = String(c.data.direction || "").trim();
+        if (platform && direction) {
+          acc[platform] = acc[platform] || {};
+          acc[platform][direction] = (acc[platform][direction] || 0) + 1;
+        }
+        return acc;
+      }, {});
+  const lines = Object.entries(dirs).map(([platform, mix]) =>
+    `<span>${esc(platformLabel(platform) + " " + Object.entries(mix).map(([d, n]) => `${d} ${n}`).join(" · "))}</span>`);
+  if (!lines.length) return { html: '<span class="hint">生成稿件后，这里按平台显示内容方向配比。</span>', warn: false };
+  const warn = Object.values(dirs).some((mix) => {
+    const counts = Object.values(mix);
+    return counts.reduce((a, b) => a + b, 0) >= 6 && counts.length === 1;
+  });
+  return { html: lines.join(""), warn };
+}
 function productionBoard(items) {
   if (!items.length) return "";
+  const stats = S.workspace?.stats || {};
   const count = (st) => items.filter((c) => stageOf(c) === st).length;
-  const published = items.length - count("draft");
+  const published = stats.published != null ? stats.published : items.length - count("draft");
   const real = items.filter((c) => !c.data.demo);
-  const recorded = real.filter((c) => ["views", "leads", "orders"].some((key) => c.results?.[key] != null));
+  const loadedRecorded = real.filter((c) => ["views", "leads", "orders"].some((key) => c.results?.[key] != null));
+  const recorded = stats.results ? stats.results.recorded : loadedRecorded.length;
   const total = (key) => {
-    const known = recorded.filter((c) => c.results?.[key] != null);
+    if (stats.results) return stats.results.recorded ? stats.results[key] : "—";
+    const known = loadedRecorded.filter((c) => c.results?.[key] != null);
     return known.length ? known.reduce((n, c) => n + c.results[key], 0) : "—";
   };
+  const today = stats.today != null ? stats.today : items.filter((c) => sameDay(c.created_at)).length;
+  const mix = directionMix(items);
   const accs = accounts();
   const chips = [
     ["all", "全部", items.length],
@@ -716,7 +750,7 @@ function productionBoard(items) {
     ["firsthour", "第一小时进行中", count("firsthour")],
   ];
   const stage = S.stage || "all";
-  return `<section class="panel board"><details class="board-overview"><summary>发布与效果 · 已发布 ${published} 条 · ${recorded.length} 条已记录效果</summary><div class="board-stats"><div><p>已发布内容</p><strong>${published}<small> / ${items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div></div><p class="board-hint">${recorded.length} 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。</p>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。</p>`}</details><div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
+  return `<section class="panel board"><details class="board-overview"><summary>发布与效果 · 已发布 ${published} 条 · ${recorded} 条已记录效果</summary><div class="board-stats"><div><p>今日产出</p><strong>${today}<small> 篇 · 节奏参考 6–8 篇/天</small></strong></div><div><p>已发布内容</p><strong>${published}<small> / ${stats.total != null ? stats.total : items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div><div><p>方向配比${mix.warn ? " · 提醒：不要整批只做一种岗位" : ""}</p><div class="mix">${mix.html}</div></div></div><p class="board-hint">今日产出与方向配比为全项目统计，不受列表分页影响；${recorded} 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。</p>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。</p>`}</details><div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
 }
 function pipeline(c, source) {
   const t = c.tracking || { status: "draft" };

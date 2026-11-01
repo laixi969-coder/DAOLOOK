@@ -180,5 +180,25 @@ async function test(name,code) {
     await document.handlers.submit[0]({preventDefault(){},target:{id:'verify-access-form',querySelector:()=>({disabled:false})}});
     assert.equal(calls[1].path,'/api/auth/verify');assert.equal(calls[1].body.code,'123456');
   `);
-  console.log('Frontend review regressions passed (14 cases).');
+  await test('production board renders full-project stats with today output and direction mix',`
+    S.workspace={stats:{today:7,total:9,published:2,directions:{xhs:{'测评':4,'钓鱼帖':2},douyin:{'建立信任':6}},results:{recorded:2,views:300,leads:5,orders:1}},sources:[],briefs:[],assets:[],creations:[],images:[]};
+    const card=productionBoard([
+      {id:'1',created_at:new Date().toISOString(),data:{demo:true,direction:'测评'},tracking:{status:'draft'},results:{}},
+      {id:'2',created_at:'2026-01-01T00:00:00+00:00',data:{},tracking:{status:'published',published_at:new Date().toISOString()},results:{}}
+    ]);
+    assert.ok(card.includes('今日产出'));
+    assert.ok(card.includes('<strong>7'));
+    assert.ok(card.includes('小红书图文 测评 4 · 钓鱼帖 2'));
+    assert.ok(card.includes('抖音脚本 建立信任 6'));
+    assert.ok(card.includes('提醒：不要整批只做一种岗位'));
+    assert.ok(card.includes('<strong>2<small> / 9'));
+    assert.ok(card.includes('<strong>300</strong>'));
+    assert.ok(card.includes('不受列表分页影响'));
+    // 旧响应没有 stats 时回退到已加载稿件口径，不抛错
+    S.workspace={sources:[],briefs:[],assets:[],creations:[],images:[]};
+    const fallback=productionBoard([{id:'3',created_at:new Date().toISOString(),data:{demo:false,direction:'测评'},tracking:{status:'draft'},results:{}}]);
+    assert.ok(fallback.includes('今日产出'));
+    assert.ok(fallback.includes('<strong>1'));
+  `);
+  console.log('Frontend review regressions passed (15 cases).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

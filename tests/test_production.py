@@ -83,6 +83,24 @@ class TrackingApiTests(unittest.TestCase):
         self.c.req(f"/api/creations/{cid}", "DELETE", {"project_id": self.p})
         self.assertEqual(self.post(f"/api/tracking/{cid}", {"status": "published"})[0], 404)
 
+    def test_board_stats_full_project_scope(self):
+        creations = self.ws()["creations"]
+        stats = self.ws()["stats"]
+        self.assertEqual(stats["total"], len(creations))
+        self.assertEqual(stats["today"], len(creations))  # 均为刚刚生成
+        self.assertEqual(stats["published"], 0)
+        self.assertEqual(stats["results"], {"recorded": 0, "views": 0, "leads": 0, "orders": 0})
+        # 演示批量同时包含两种内容方向
+        self.assertEqual(sum(stats["directions"]["xhs"].values()), len(creations))
+        self.assertGreaterEqual(len(stats["directions"]["xhs"]), 2)
+        cid = self.ids[0]
+        self.post(f"/api/tracking/{cid}", {"status": "published"})
+        self.post(f"/api/results/{cid}", {"results": {"views": 120, "leads": 3}})
+        stats = self.ws()["stats"]
+        self.assertEqual(stats["published"], 1)
+        # 演示稿不计入效果合计，与看板既有口径一致
+        self.assertEqual(stats["results"], {"recorded": 0, "views": 0, "leads": 0, "orders": 0})
+
     def test_old_table_with_metrics_column_still_works(self):
         with D.db() as c:
             c.execute("DROP TABLE creation_tracking")

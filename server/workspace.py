@@ -1,5 +1,6 @@
 """Bounded project reads with stable keyset cursors and lazy private media."""
 import base64
+import datetime
 import json
 from .db import db
 from .ranking import score
@@ -39,6 +40,55 @@ def image_view(row, project):
     if not isinstance(url, str) or not url.startswith('https://') or any(ord(c) <= 32 or ord(c) == 127 for c in url):
         url = f"/api/media/images/{value['id']}?project_id={project}"
     value['data']['url'] = url
+    return value
+
+
+def stats(project):
+    """生产看板统计（PRD 9.5）：全项目口径，不受工作区分页影响。
+
+    方向配比按稿件 data.direction 原值统计；效果合计只统计正式稿件
+    （演示稿不进入效果数字，与看板原口径一致）。
+    """
+    with db() as c:
+        rows = c.execute(
+            "SELECT s.platform AS platform,o.data AS data,o.created_at AS created_at,"
+            "k.status AS status,f.data AS result FROM creation_outputs o "
+            "JOIN source_contents s ON s.id=o.source_id "
+            "LEFT JOIN creation_tracking k ON k.creation_id=o.id "
+            "LEFT JOIN creation_results f ON f.creation_id=o.id "
+            "WHERE o.project_id=? AND o.deleted_at IS NULL",
+            (project,),
+        ).fetchall()
+    today = datetime.date.today()
+    value = {
+        "today": 0,
+        "directions": {},
+        "published": 0,
+        "total": len(rows),
+        "results": {"recorded": 0, "views": 0, "leads": 0, "orders": 0},
+    }
+    for row in rows:
+        data = json.loads(row["data"])
+        try:
+            created = datetime.datetime.fromisoformat(row["created_at"])
+        except (TypeError, ValueError):
+            created = None
+        if created is not None and created.astimezone().date() == today:
+            value["today"] += 1
+        direction = data.get("direction")
+        if isinstance(direction, str) and direction.strip() and row["platform"] in ("xhs", "douyin"):
+            platform = value["directions"].setdefault(row["platform"], {})
+            key = direction.strip()
+            platform[key] = platform.get(key, 0) + 1
+        if row["status"] == "published":
+            value["published"] += 1
+        if not data.get("demo") and row["result"]:
+            result = json.loads(row["result"])
+            known = [k for k in ("views", "leads", "orders") if type(result.get(k)) is int]
+            if known:
+                value["results"]["recorded"] += 1
+                for key in known:
+                    value["results"][key] += result[key]
     return value
 
 
@@ -86,4 +136,5 @@ def page(project,raw='',limit=25):
                     value=image_view(row,project)
                 result[name].append(value)
     result['pagination']={'more':more,'cursor':base64.urlsafe_b64encode(json.dumps(next_cursors).encode()).decode().rstrip('=') if more else None,'limit':limit}
+    result['stats']=stats(project)
     return result
