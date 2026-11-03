@@ -294,6 +294,7 @@ class RemediationTests(unittest.TestCase):
         demo=app.new_user('demo-review@daolook.local',demo=True)
         with D.db() as c:
             project=c.execute('SELECT id FROM projects WHERE user_id=?',(demo,)).fetchone()[0]
+        self.assertEqual(self.admin.req('/api/admin/access','POST',{'user_id':demo,'preserve_balance':True})[0],400)
         self.setting('mode','live')
         for user,project_id in ((demo,project),(self.user,self.project)):
             with self.assertRaisesRegex(ValueError,'演示|验证'):
@@ -301,7 +302,6 @@ class RemediationTests(unittest.TestCase):
         with D.db() as c:
             self.assertEqual(c.execute('SELECT count(*) FROM tasks').fetchone()[0],0)
             self.assertEqual(tuple(c.execute('SELECT balance,frozen FROM credit_accounts WHERE user_id=?',(demo,)).fetchone()),(300,0))
-        self.assertEqual(self.admin.req('/api/admin/access','POST',{'user_id':demo,'preserve_balance':True})[0],400)
 
     def test_mailbox_activation_requires_own_code_and_clears_legacy_promotion(self):
         from tests.test_mail import MAIL

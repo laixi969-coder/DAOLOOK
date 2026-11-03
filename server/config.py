@@ -2,6 +2,8 @@
 import os
 import stat
 import tempfile
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -74,3 +76,23 @@ def protect_database(path):
             file.chmod(0o600)
         except FileNotFoundError:
             pass
+
+
+@contextmanager
+def instance_lock(path):
+    """Hold an exclusive lock for the lifetime of the server using this database."""
+    path = Path(path).expanduser().absolute()
+    private_directory(path.parent)
+    lock_path = path.parent / (path.name + '.instance.lock')
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    try:
+        if os.fstat(fd).st_nlink != 1:
+            raise ValueError('实例锁文件无效')
+        os.fchmod(fd, 0o600)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError as exc:
+            raise RuntimeError('该数据库已有运行中的 DAOLOOK 服务，拒绝重复启动') from exc
+        yield
+    finally:
+        os.close(fd)

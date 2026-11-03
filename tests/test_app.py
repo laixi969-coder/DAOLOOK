@@ -400,7 +400,10 @@ class AppTests(unittest.TestCase):
         self.boot=self.c.req('/api/bootstrap')[1]
         self.p=self.boot['projects'][0]['id']
         self.assertEqual(self.admin.req('/api/admin/access','POST',{'user_id':self.boot['user']['id'],'preserve_balance':True})[0],200)
-        self.admin.req("/api/admin/config", "POST", {"mode": "live"})
+        # This test isolates refund behavior; public live-mode activation requires
+        # HTTPS and an MFA-authenticated administrator and is tested separately.
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE settings SET value=? WHERE key='mode'", (json.dumps('live'),))
         try:
             status, r = self.post(
                 "/api/analyze",
@@ -415,7 +418,22 @@ class AppTests(unittest.TestCase):
             logs = self.c.req("/api/credits")[1]
             self.assertEqual(len([l for l in logs if l["kind"] == "REFUND"]), 1)
         finally:
-            self.admin.req("/api/admin/config", "POST", {"mode": "demo"})
+            with sqlite3.connect(self.db) as conn:
+                conn.execute("UPDATE settings SET value=? WHERE key='mode'", (json.dumps('demo'),))
+
+    def test_deleted_asset_can_be_restored_by_owner(self):
+        status, asset = self.post('/api/assets', {'name':'恢复测试', 'kind':'其他', 'content':'保留的资料'})
+        self.assertEqual(status, 200)
+        ident = asset['id']
+        self.assertEqual(self.c.req('/api/assets/'+ident, 'DELETE', {'project_id':self.p})[0], 200)
+        self.assertEqual(self.c.req('/api/assets/'+ident+'?project_id='+self.p)[0], 404)
+        self.assertIn(ident, [r['id'] for r in self.c.req('/api/assets/trash?project_id='+self.p)[1]])
+        self.assertEqual(self.post('/api/assets/'+ident+'/restore', {})[0], 200)
+        self.assertEqual(self.c.req('/api/assets/'+ident+'?project_id='+self.p)[1]['content'], '保留的资料')
+        self.assertEqual(self.c.req('/api/assets/'+ident, 'DELETE', {'project_id':self.p})[0], 200)
+        with sqlite3.connect(self.db) as conn:
+            conn.execute("UPDATE asset_trash SET deleted_at='2000-01-01T00:00:00+00:00' WHERE id=?", (ident,))
+        self.assertEqual(self.post('/api/assets/'+ident+'/restore', {})[0], 404)
 
     def test_insufficient_credits_no_partial_writes(self):
         with sqlite3.connect(self.db) as conn:

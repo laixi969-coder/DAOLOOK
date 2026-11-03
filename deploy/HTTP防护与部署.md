@@ -38,3 +38,9 @@ DAOLOOK_HTTP_CONNECTIONS=64
 保留标准库 HTTP 服务的轻量架构；[Python 官方明确不建议将 http.server 直接用于生产](https://docs.python.org/3/library/http.server.html)。公网必须在受管理反向代理后运行，后续多实例应迁移生产服务器和共享 Redis 限流，当前不能声明跨实例全局限流。[Nginx 限流模块](https://nginx.org/en/docs/http/ngx_http_limit_req_module.html) 可按 IP 限制请求处理速率，配置需结合真实 NAT/企业用户访问分布调参。
 
 监控至少记录 429/503 比例、请求耗时、活跃连接、任务积压、失败退款、磁盘空间。当前应用未新增用户行为分析或外部日志上传。
+
+## 管理员动态验证码
+
+真实服务要求 `DAOLOOK_SECURE_COOKIE=1`、有效的 HTTPS `DAOLOOK_PUBLIC_ORIGIN` 和 `DAOLOOK_ADMIN_TOTP_SECRET`。这些条件不满足时无法切换或启动真实模式。先在私密终端执行 `python3 -c 'import base64,secrets; print(base64.b32encode(secrets.token_bytes(20)).decode())'`，把生成的 Base32 密钥加入认证器并以私密方式配置到服务环境；不要写入仓库或共享日志。当前安装使用一个管理员 TOTP 密钥，适合单管理员；多管理员应各自配置独立认证系统，不应共享该密钥。重启后管理员使用密码和动态验证码登录；重放同一验证码会被拒绝。重置管理员密码后仍需动态验证码登录。密钥轮换会使旧管理员会话失效，须妥善保管恢复渠道和系统时间同步。
+
+运维在上线前需配置数据保留和备份轮换，补充运营主体、联络方式和正式隐私政策/服务条款。`/privacy.html` 仅描述应用行为，不构成完整的法律文件。

@@ -93,6 +93,14 @@ class DurabilityReviewTests(unittest.TestCase):
         finally:
             connection.close()
 
+    def test_backup_can_be_restored_to_a_fresh_directory(self):
+        backup_file = backup(self.source, self.root / 'backups', 2)
+        target = private_directory(self.root / 'restore') / 'restored.db'
+        snapshot(backup_file, target)
+        with closing(sqlite3.connect(target)) as connection:
+            self.assertEqual(connection.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+            self.assertEqual(connection.execute('SELECT value FROM users').fetchone()[0], 'expected')
+
     def test_restore_rejects_rollback_journal_and_broken_sidecar_link(self):
         folder = private_directory(self.root / 'restore')
         for suffix in ('-journal', '-wal'):

@@ -2,6 +2,8 @@
 import base64
 import datetime
 import json
+import os
+from zoneinfo import ZoneInfo
 from .db import db
 from .ranking import score
 from . import catalog, production
@@ -59,7 +61,8 @@ def stats(project):
             "WHERE o.project_id=? AND o.deleted_at IS NULL",
             (project,),
         ).fetchall()
-    today = datetime.date.today()
+    timezone = ZoneInfo(os.environ.get('DAOLOOK_DISPLAY_TIMEZONE', 'Asia/Shanghai'))
+    today = datetime.datetime.now(timezone).date()
     value = {
         "today": 0,
         "directions": {},
@@ -73,7 +76,9 @@ def stats(project):
             created = datetime.datetime.fromisoformat(row["created_at"])
         except (TypeError, ValueError):
             created = None
-        if created is not None and created.astimezone().date() == today:
+        if created is not None and created.tzinfo is None:
+            created = created.replace(tzinfo=datetime.timezone.utc)
+        if created is not None and created.astimezone(timezone).date() == today:
             value["today"] += 1
         direction = data.get("direction")
         if isinstance(direction, str) and direction.strip() and row["platform"] in ("xhs", "douyin"):

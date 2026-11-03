@@ -810,12 +810,40 @@ def validate_comment_layout(layout):
         raise ValueError("评论布局缺少发布后一小时的第一波安排")
 
 
+REFERENCE_FIELDS = {'platform', 'title', 'body', 'author', 'likes', 'saves', 'comments', 'followers', 'age_days', 'transcript', 'transcript_source', 'transcript_note'}
+
+
+def reference_for_model(content):
+    """Limit untrusted provider fields without forwarding raw provider nodes or URLs."""
+    result = {}
+    for key in REFERENCE_FIELDS:
+        value = content.get(key)
+        if isinstance(value, str):
+            result[key] = value[:20000 if key == 'transcript' else 8000 if key == 'body' else 500]
+        elif value is None or type(value) in (int, float, bool):
+            result[key] = value
+    return result
+
+
+def bounded_reference(value, depth=0):
+    if depth > 5:
+        return None
+    if isinstance(value, str):
+        return value[:1000]
+    if isinstance(value, list):
+        return [bounded_reference(v, depth + 1) for v in value[:20]]
+    if isinstance(value, dict):
+        return {str(k)[:80]: bounded_reference(v, depth + 1) for k, v in list(value.items())[:30]
+                if k not in ('evidence', 'media_url', 'url', 'origin')}
+    return value if value is None or type(value) in (int, float, bool) else None
+
+
 def analyze(content, version):
     p = content["platform"]
     fields = XHS_FIELDS if p == "xhs" else DY_FIELDS
     if not content.get("demo"):
         result, model = model_json(
-            content,
+            reference_for_model(content),
             {
                 "sections": [
                     {
@@ -1032,11 +1060,7 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
         result, model = model_json(
             {
                 # 原始接口节点与媒体地址对创作没有用，只占上下文，不发给模型。
-                "reference": {
-                    k: v
-                    for k, v in content.items()
-                    if k not in ("evidence", "media_url", "selection", "origin")
-                },
+                "reference": reference_for_model(content),
                 "analysis": analysis or [],
                 "previous_outputs": previous or [],
                 "assets": assets,
@@ -1123,7 +1147,7 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
         result, model = model_json(
             {
                 "brief": {"platform": p, "topic": brief["topic"]},
-                "benchmark": benchmark,
+                "benchmark": bounded_reference(benchmark),
                 "assets": assets,
                 "structured_facts": facts or [],
                 "objective": objective(goal),

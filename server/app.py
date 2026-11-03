@@ -1,5 +1,5 @@
 import base64
-import os, json, re, time, secrets, hashlib, hmac, csv, io, zipfile, html, urllib.parse, socket, threading, http.client
+import os, json, re, time, secrets, hashlib, hmac, csv, io, zipfile, html, urllib.parse, socket, threading, http.client, datetime
 from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -7,7 +7,7 @@ from .db import db, init, uid, now, dumps, setting, ledger
 from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed
 from .ranking import score
 from .skills import SKILL_NAMES
-from . import audit, secret_store, spending, resource_limits, workspace, access, intake
+from . import audit, secret_store, spending, resource_limits, workspace, access, intake, account_deletion, mfa
 from .config import load_env, database_path
 from .http_security import BoundedHTTPServer, RateLimiter, StaticCache, Rejected, client_ip, validate_request
 
@@ -209,15 +209,17 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD" and status != 304:
             self.wfile.write(body)
 
-    def session(self, user):
+    def session(self, user, mfa_verified=False):
         token = secrets.token_urlsafe(32)
         with db() as c:
             c.execute(
-                "INSERT INTO sessions VALUES (?,?,?)",
+                "INSERT INTO sessions(token,user_id,expires,mfa_verified,mfa_fingerprint) VALUES (?,?,?,?,?)",
                 (
                     hashlib.sha256(token.encode()).hexdigest(),
                     user,
                     time.time() + 604800,
+                    int(mfa_verified),
+                    mfa.fingerprint() if mfa_verified else "",
                 ),
             )
         secure = "; Secure" if os.environ.get("DAOLOOK_SECURE_COOKIE") == "1" else ""
@@ -230,7 +232,7 @@ class Handler(BaseHTTPRequestHandler):
         token = cookies.get("daolook_session")
         with db() as c:
             u = c.execute(
-                "SELECT u.id,u.email,u.role FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?",
+                "SELECT u.id,u.email,u.role,s.mfa_verified,s.mfa_fingerprint FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>?",
                 (
                     hashlib.sha256(token.value.encode()).hexdigest() if token else "",
                     time.time(),
@@ -238,7 +240,12 @@ class Handler(BaseHTTPRequestHandler):
             ).fetchone()
         if not u:
             raise Error("请先登录", 401)
-        return dict(u)
+        value = dict(u)
+        if value['role'] == 'admin' and (mfa.configured() or setting('mode') == 'live') and (not value['mfa_verified'] or not mfa.configured() or not hmac.compare_digest(value['mfa_fingerprint'], mfa.fingerprint())):
+            raise Error('管理员需要使用动态验证码重新登录', 401)
+        value.pop('mfa_verified')
+        value.pop('mfa_fingerprint')
+        return value
 
     def project(self, ident, user):
         with db() as c:
@@ -401,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
                 mailer.verify(email, "reset", data.get("code"))
                 with db() as c:
                     u = c.execute(
-                        "SELECT id FROM users WHERE email=?", (email,)
+                        "SELECT id,role FROM users WHERE email=?", (email,)
                     ).fetchone()
                     if not u:
                         raise Error("验证码已过期，请重新获取")
@@ -410,6 +417,8 @@ class Handler(BaseHTTPRequestHandler):
                         (password_hash(password), u["id"]),
                     )
                     c.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))
+                if u["role"] == "admin" and (mfa.configured() or setting("mode") == "live"):
+                    return self.send({"ok": True, "login_required": True})
                 return self.send({"ok": True}, headers=self.session(u["id"]))
             password = str(data.get("password", ""))
             if (
@@ -442,6 +451,12 @@ class Handler(BaseHTTPRequestHandler):
                 ):
                     raise Error("邮箱或密码不正确", 401)
                 ident = u["id"]
+                if u['role'] == 'admin' and (mfa.configured() or setting('mode') == 'live'):
+                    with db() as c:
+                        c.execute('BEGIN IMMEDIATE')
+                        if not mfa.verify(c, ident, data.get('totp', '')):
+                            raise Error('管理员动态验证码不正确或已使用', 401)
+                    return self.send({"ok": True}, headers=self.session(ident, mfa_verified=True))
             return self.send({"ok": True}, headers=self.session(ident))
         if path == "/api/auth/logout" and method == "POST":
             token = SimpleCookie(self.headers.get("Cookie", "")).get("daolook_session")
@@ -480,6 +495,13 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute('BEGIN IMMEDIATE')
                 access.approve(c,u['id'],u['id'],'mailbox_verified',request_id=self.request_id)
             return self.send({'ok':True})
+        if path == '/api/auth/logout-others' and method == 'POST':
+            token = SimpleCookie(self.headers.get('Cookie', '')).get('daolook_session')
+            current = hashlib.sha256(token.value.encode()).hexdigest() if token else ''
+            with db() as c:
+                c.execute('DELETE FROM sessions WHERE user_id=? AND token<>?', (u['id'], current))
+                self.audit(c, u['id'], 'session.revoke_others', u['id'])
+            return self.send({'ok': True})
         if path == "/api/bootstrap":
             with db() as c:
                 projects = [
@@ -610,6 +632,26 @@ class Handler(BaseHTTPRequestHandler):
             path='/api/original'
         if path == '/api/workspace':
             return self.send(workspace.page(project_id,q.get('cursor',[''])[0],int(q.get('limit',['25'])[0])))
+        if path == '/api/assets/trash' and method == 'GET':
+            cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=setting('limits').get('temporary_ttl_hours', 24))).isoformat()
+            with db() as c:
+                rows = [{'id': r['id'], 'name': json.loads(r['data'])['asset']['name'], 'deleted_at': r['deleted_at']}
+                        for r in c.execute('SELECT id,data,deleted_at FROM asset_trash WHERE project_id=? AND deleted_at>=? ORDER BY deleted_at DESC LIMIT 100', (project_id, cutoff))]
+            return self.send(rows)
+        restore_asset = re.fullmatch(r'/api/assets/([a-f0-9]{32})/restore', path)
+        if restore_asset and method == 'POST':
+            cutoff = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(hours=setting('limits').get('temporary_ttl_hours', 24))).isoformat()
+            with db() as c:
+                c.execute('BEGIN IMMEDIATE')
+                row = c.execute('SELECT data FROM asset_trash WHERE id=? AND project_id=? AND deleted_at>=?', (restore_asset[1], project_id, cutoff)).fetchone()
+                if not row: raise Error('资料不存在或已超过保留期限', 404)
+                saved = json.loads(row['data'])
+                a = saved['asset']
+                c.execute('INSERT INTO assets(id,project_id,name,kind,content,created_at) VALUES (?,?,?,?,?,?)', (a['id'],project_id,a['name'],a['kind'],a['content'],a['created_at']))
+                for f in saved['facts']:
+                    c.execute('INSERT INTO asset_facts VALUES (?,?,?,?,?,?,?,?)', (f['id'],f['asset_id'],project_id,f['category'],f['fact'],f['quote'],f['demo'],f['updated_at']))
+                c.execute('DELETE FROM asset_trash WHERE id=?', (a['id'],))
+            return self.send({'ok': True})
         media=re.fullmatch(r'/api/media/(assets|images)/([a-f0-9]{32})',path)
         if media and method in ('GET','HEAD'):
             kind,ident=media.groups()
@@ -1102,6 +1144,9 @@ class Handler(BaseHTTPRequestHandler):
                             (now(), ident),
                         )
                     elif kind == "assets":
+                        asset = dict(c.execute('SELECT * FROM assets WHERE id=?', (ident,)).fetchone())
+                        facts = [dict(r) for r in c.execute('SELECT * FROM asset_facts WHERE asset_id=?', (ident,))]
+                        c.execute('INSERT INTO asset_trash VALUES (?,?,?,?)', (ident, project_id, dumps({'asset': asset, 'facts': facts}), now()))
                         c.execute("DELETE FROM asset_facts WHERE asset_id=?", (ident,))
                         c.execute("DELETE FROM assets WHERE id=?", (ident,))
                     else:
@@ -1387,6 +1432,9 @@ class Handler(BaseHTTPRequestHandler):
     def admin(self, method, path, data, u, q):
         if u["role"] != "admin":
             raise Error("需要超级管理员权限", 403)
+        if path == '/api/admin/user/delete' and method == 'POST':
+            account_deletion.delete_user(data.get('user_id'), u['id'], self.request_id)
+            return self.send({'ok': True})
         if path == '/api/admin/access' and method == 'POST':
             preserve=data.get('preserve_balance',False)
             if type(preserve) is not bool:raise Error('保留积分选项无效')
@@ -1519,6 +1567,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({"ok": True})
         if path == "/api/admin/ledger":
             with db() as c:
+                self.audit(c, u['id'], 'credits.ledger_view', q.get('user_id', [''])[0])
                 rows = [
                     dict(r)
                     for r in c.execute(
@@ -1589,6 +1638,13 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("配置项必须为 JSON 对象")
                 if key == "mode" and value not in ("demo", "live"):
                     raise Error("模式无效")
+                if key == 'mode' and value == 'live':
+                    mfa.validate_live_security()
+                    token = SimpleCookie(self.headers.get('Cookie', '')).get('daolook_session')
+                    with db() as c:
+                        verified = c.execute('SELECT mfa_verified FROM sessions WHERE token=? AND user_id=?', (hashlib.sha256(token.value.encode()).hexdigest() if token else '', u['id'])).fetchone()
+                    if not verified or not verified['mfa_verified']:
+                        raise Error('请先使用管理员动态验证码重新登录', 403)
                 if key == "rules" and (
                     not {"analyze", "create", "cover"} <= set(value)
                     or not set(value) <= {"analyze", "create", "cover", "original", "search", "rewrite", "facts"}
@@ -1845,17 +1901,21 @@ def main():
     load_env()
     from . import db as database
     database.DB_PATH = str(database_path())
-    init()
-    bootstrap_admin()
-    jobs.start()
-    maintenance.start()
-    from . import overseas_translation
-    overseas_translation.start()
-    overseas_feed.start()
-    host = os.environ.get("HOST", "127.0.0.1")
-    port = int(os.environ.get("PORT", "8000"))
-    print(f"DAOLOOK ready: http://{host}:{port}", flush=True)
-    BoundedHTTPServer((host, port), Handler).serve_forever()
+    from .config import instance_lock
+    with instance_lock(database.DB_PATH):
+        init()
+        if setting("mode") == "live":
+            mfa.validate_live_security()
+        bootstrap_admin()
+        jobs.start()
+        maintenance.start()
+        from . import overseas_translation
+        overseas_translation.start()
+        overseas_feed.start()
+        host = os.environ.get("HOST", "127.0.0.1")
+        port = int(os.environ.get("PORT", "8000"))
+        print(f"DAOLOOK ready: http://{host}:{port}", flush=True)
+        BoundedHTTPServer((host, port), Handler).serve_forever()
 
 
 if __name__ == "__main__":

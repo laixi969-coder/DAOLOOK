@@ -916,7 +916,7 @@ function assets() {
     heading(
       "让 AI 更了解你的品牌",
       "沉淀品牌、产品和受众信息。创作时按需选择，让表达有据可依。",
-      button("添加资料", "new-asset", "primary", "plus"),
+      button("最近删除", "asset-trash", "secondary", "clock") + button("添加资料", "new-asset", "primary", "plus"),
       "YOUR BRAND, IN CONTEXT",
     ) +
     (S.workspace.assets.length
@@ -1010,7 +1010,7 @@ function adminBody() {
   if (S.adminTab === "models")
     return `<div class="admin-grid"><section class="panel"><h2>模型供应商</h2><p class="muted">默认供应商在服务配置中维护；可添加其他供应商作为主模型或备用。</p><div class="actions" style="margin:20px 0">${button("添加供应商", "new-provider", "primary small", "plus")}</div>${a.providers.map((p) => `<div class="asset-card" style="margin-top:12px"><span class="status">${p.enabled ? "已启用" : "已停用"}</span><h3>${esc(p.name)}</h3><p>${esc(p.base_url)}</p><div class="actions">${button("编辑", "edit-provider", "secondary small", "edit", `data-id="${p.id}"`)}${button("测试 / 同步", "test-provider", "secondary small", "refresh", `data-id="${p.id}"`)}</div></div>`).join("")}</section><section class="panel"><h2>按任务配置主备模型</h2><form id="routes-form">${["analyze", "create", "cover"].map((kind) => `<h3 style="font-size:14px;margin:18px 0">${{ analyze: "内容拆解", create: "再创作", cover: "封面生成" }[kind]}</h3>${["primary", "backup"].map((pos) => `<label class="field"><span>${pos === "primary" ? "主" : "备用"}供应商</span><select id="route-${kind}-${pos}-provider">${[{ id: "default", name: "默认供应商" }, ...a.providers].map((p) => `<option value="${p.id}" ${a.routes[kind][pos].provider === p.id ? "selected" : ""}>${esc(p.name)}</option>`).join("")}</select></label>${field("模型 ID（留空继承默认配置）", `route-${kind}-${pos}-model`, a.routes[kind][pos].model)}`).join("")}`).join("")}<button class="btn primary full" type="submit">保存路由</button></form></section></div>`;
   if (S.adminTab === "users")
-    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("调整积分", "grant", "secondary small", "coin", `data-id="${u.id}" data-balance="${u.balance}" data-email="${esc(u.email)}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)} ${u.demo_account?'<span class="hint">演示账号</span>':(u.live_access===false || u.live_access===0)?button("开通真实服务", "activate-access", "secondary small", "check", `data-id="${u.id}"`):'<span class="hint">已开通真实服务</span>'}</td></tr>`).join("")}</tbody></table></div>`;
+    return `<div class="table-wrap"><table><thead><tr><th>邮箱</th><th>角色</th><th>可用 / 冻结</th><th>操作</th></tr></thead><tbody>${a.users.map((u) => `<tr><td>${esc(u.email)}</td><td>${u.role}</td><td>${u.balance} / ${u.frozen}</td><td>${button("调整积分", "grant", "secondary small", "coin", `data-id="${u.id}" data-balance="${u.balance}" data-email="${esc(u.email)}"`)} ${button("查看流水", "user-ledger", "secondary small", "clock", `data-id="${u.id}"`)} ${button("重置密码", "reset-password", "secondary small", "edit", `data-id="${u.id}"`)} ${u.role !== "admin" ? button("删除账号", "delete-user", "secondary small", "close", `data-id="${u.id}"`) : ""} ${u.demo_account?'<span class="hint">演示账号</span>':(u.live_access===false || u.live_access===0)?button("开通真实服务", "activate-access", "secondary small", "check", `data-id="${u.id}"`):'<span class="hint">已开通真实服务</span>'}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "tasks")
     return `<div class="table-wrap"><table><thead><tr><th>任务 ID</th><th>类型</th><th>状态 / 错误</th><th>操作</th></tr></thead><tbody>${a.tasks.map((t) => `<tr><td>${t.id.slice(0, 10)}</td><td>${t.kind}</td><td>${states[t.state]} ${esc(t.error || "")}</td><td>${t.state === "FAILED" ? button("重试（重新计费）", "retry", "secondary small", "refresh", `data-id="${t.id}"`) : "—"}</td></tr>`).join("")}</tbody></table></div>`;
   if (S.adminTab === "skills")
@@ -1216,13 +1216,14 @@ function login(register = false, reset = false) {
   const fields =
     field("邮箱地址", "email", "", "email") +
     (reset || (register && S.mail) ? codeField : "") +
-    field(reset ? "新密码（至少 8 位）" : "密码（至少 8 位）", "password", "", "password");
+    field(reset ? "新密码（至少 8 位）" : "密码（至少 8 位）", "password", "", "password") +
+    (!register && !reset ? `<label class="field"><span>管理员动态验证码（普通账号留空）</span><input id="totp" inputmode="numeric" maxlength="6" autocomplete="one-time-code"></label>` : "");
   const submit = reset ? "重置并登录" : register ? "创建账号" : "邮箱登录";
   const links = reset
     ? '<button class="text-btn" data-action="toggle-login">返回登录</button>'
     : `<button class="text-btn" data-action="toggle-login">${register ? "已有账号？去登录" : S.whitelist ? "受邀邮箱注册" : "还没有账号？免费注册"}</button>${register ? "" : '<button class="text-btn" data-action="forgot">忘记密码？</button>'}`;
   $("#app").innerHTML =
-    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>给业务资料 → 选目标 → 拿到文案</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full" ${(reset || (register && S.publicMode==='live')) && !S.mail ? "disabled" : ""}>${submit} ${icon("arrow")}</button></form>${(reset || (register && S.publicMode==='live')) && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员开通邮件验证后继续。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div></div></section></div>`;
+    `<div class="login"><section class="login-art"><div><div class="brand">DAOLOOK<span class="brand-dot">✳</span></div><div class="brand-sub">有依据 · 有灵感 · 有表达</div></div><div><h1>好内容，<br>是新灵感的<em>开始。</em></h1><p>给业务资料 → 选目标 → 拿到文案</p></div><p>YOUR NEXT GREAT IDEA STARTS HERE.</p><div class="orb"></div></section><section class="login-form"><div><h2>${title}</h2><p>${intro}</p><form id="login-form">${fields}<div id="login-error" class="inline-error"></div><button type="submit" class="btn primary full" ${(reset || (register && S.publicMode==='live')) && !S.mail ? "disabled" : ""}>${submit} ${icon("arrow")}</button></form>${(reset || (register && S.publicMode==='live')) && !S.mail ? '<p class="muted" style="margin-top:12px">管理员尚未配置邮件服务，请联系管理员开通邮件验证后继续。</p>' : ""}<div class="actions">${links}${S.publicMode === "demo" ? '<button class="text-btn" data-action="demo">体验演示空间 →</button>' : ""}</div><p><a href="/privacy.html" target="_blank" rel="noopener">数据使用说明</a></p></div></section></div>`;
 }
 async function loadPublic() {
   const pub = await api("/api/public");
@@ -1577,7 +1578,11 @@ const actions = {
     const pending=user.live_access===false || user.live_access===0;
     const access=user.demo_account?'<p class="notice">演示身份不能开通真实服务。请退出后使用自己的邮箱登录或注册。</p>':pending?
       `<p class="notice">开通真实服务时会清零此前未经验证的赠送积分，管理员可重新调整积分。</p>${S.mail?`<form id="verify-access-form"><label class="field"><span>邮箱验证码</span><div class="code-row"><input id="verify-access-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" required><button class="btn secondary small" type="button" data-action="send-access-code">发送验证码</button></div></label><button class="btn primary" type="submit">验证邮箱并开通</button></form>`:'<p class="hint">邮件服务尚未启用，请联系管理员开通真实服务。</p>'}`:'<p class="hint">账号已开通真实服务。</p>';
-    modal("账号与工作空间",`<p class="subtext">${esc(user.email)}</p>${access}<div class="actions">${button("项目设置", "project-settings", "secondary", "settings")}${button(user.demo_account ? "登录 / 注册" : "退出账号", "logout", "secondary", "logout")}</div>`);
+    modal("账号与工作空间",`<p class="subtext">${esc(user.email)}</p>${access}<div class="actions">${button("项目设置", "project-settings", "secondary", "settings")}${button("退出其他设备", "logout-others", "secondary", "logout")}${button(user.demo_account ? "登录 / 注册" : "退出账号", "logout", "secondary", "logout")}</div>`);
+  },
+  "logout-others": async () => {
+    await post('/api/auth/logout-others', {});
+    close(); toast('其他设备已退出');
   },
   "send-access-code": async el => {
     const key=workspaceKey(),email=S.boot.user.email;
@@ -1586,6 +1591,13 @@ const actions = {
       await post('/api/auth/code',{email,purpose:'verify'});
       if(key===workspaceKey())toast('验证码已发送，请查看账号邮箱');
     } finally {if(key===workspaceKey())el.disabled=false;}
+  },
+  "delete-user": async el => {
+    const user = S.admin.users.find(row => row.id === el.dataset.id);
+    if (!user || user.role === 'admin') return;
+    if (!confirm(`永久删除账号 ${user.email} 及其项目、资料和积分？此操作无法撤销。`)) return;
+    await post('/api/admin/user/delete', {user_id: user.id});
+    S.admin = await api('/api/admin'); close(); render(); toast('账号已删除');
   },
   "activate-access": el => {
     const user=S.admin.users.find(row=>row.id===el.dataset.id);
@@ -1818,13 +1830,23 @@ const actions = {
     S.deleteAsset = el.dataset.id;
     modal(
       "删除项目资料？",
-      `<p class="subtext">后续创作将无法选择这份资料，已有稿件保持不变。</p><div class="actions">${button("删除资料", "confirm-delete-asset", "danger", "trash")}${button("取消", "close")}</div>`,
+      `<p class="subtext">后续创作将无法选择这份资料，已有稿件保持不变。删除后可在保留期内从「最近删除」恢复。</p><div class="actions">${button("删除资料", "confirm-delete-asset", "danger", "trash")}${button("取消", "close")}</div>`,
     );
   },
   "confirm-delete-asset": async () => {
     await mutate("/api/assets/" + S.deleteAsset, "DELETE", {});
     close();
     toast("资料已删除");
+  },
+  "asset-trash": async () => {
+    const key = workspaceKey();
+    const rows = await api('/api/assets/trash?project_id=' + encodeURIComponent(S.project));
+    if (key !== workspaceKey()) return;
+    modal('最近删除', `<p class="subtext">资料在临时资料保留期内可以恢复，并继续占用存储额度。</p>${rows.length ? rows.map(r => `<div class="asset-card"><strong>${esc(r.name)}</strong> <small>${date(r.deleted_at)}</small> ${button('恢复', 'restore-asset', 'secondary small', 'refresh', `data-id="${r.id}"`)}</div>`).join('') : '<p class="hint">没有可恢复的资料。</p>'}`);
+  },
+  "restore-asset": async el => {
+    await mutate('/api/assets/' + el.dataset.id + '/restore', 'POST', {});
+    close(); toast('资料已恢复');
   },
   "save-temporary": async () => {
     await post(
@@ -2057,15 +2079,17 @@ document.addEventListener("submit", async (e) => {
         break;
       }
       case "login-form":
-        await post(
+        const loginResult = await post(
           "/api/auth/" +
             (S.loginReset ? "reset" : S.loginRegister ? "register" : "login"),
           {
             email: $("#email").value,
             password: $("#password").value,
             code: $("#code")?.value.trim() || "",
+            totp: $("#totp")?.value.trim() || "",
           },
         );
+        if (loginResult.login_required) { login(false, false); toast("密码已重置，请使用动态验证码登录"); break; }
         S.loginReset = false;
         await bootstrap();
         S.page = "discover";

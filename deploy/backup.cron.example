@@ -1,0 +1,4 @@
+# Install with crontab -e for the service account after replacing BOTH paths.
+# Cron runs daily at 02:00 in the scheduler's local time. Ensure the log path
+# is private and monitor failures; copy snapshots to independent storage.
+0 2 * * * cd /absolute/path/to/Daolook && /usr/bin/python3 scripts/backup_db.py --keep 30 >> /absolute/private/path/daolook-backup.log 2>&1

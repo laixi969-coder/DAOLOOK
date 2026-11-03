@@ -126,6 +126,9 @@ def methodology_hints(output, p):
 def assess(output, assets, p):
     """Checks are observable checks, not semantic fact verification."""
     issues = []
+    text = unicodedata.normalize('NFKC', public_text(output))
+    if re.search(r'百分之百有效|100%有效|保证(?:治愈|痊愈|赚钱|盈利)|绝对安全|零风险|永久有效|国家级|世界第一', text, re.I):
+        issues.append('检测到可能的绝对化或效果保证表述，请核实并修改后发布')
     if output.get("demo"):
         issues.append("这是演示模板，请切换真实服务后生成正式内容")
     if re.search(r"(?<![A-Za-z])X{2,}(?![A-Za-z])|待补充|待填写|请补充|【[^】]*待填", public_text(output), re.I):

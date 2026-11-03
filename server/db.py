@@ -40,12 +40,16 @@ def db():
 
 def init():
     with db() as c:
+        if c.execute('PRAGMA user_version').fetchone()[0] > 1:
+            raise RuntimeError('数据库版本高于当前程序，拒绝启动旧版本')
         c.execute("PRAGMA journal_mode=WAL")
         c.executescript("""
         CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY,email TEXT UNIQUE NOT NULL,password TEXT,role TEXT NOT NULL DEFAULT 'user',created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),expires REAL NOT NULL);
+        CREATE TABLE IF NOT EXISTS admin_totp_counters(user_id TEXT PRIMARY KEY REFERENCES users(id),last_counter INTEGER NOT NULL);
         CREATE TABLE IF NOT EXISTS projects(id TEXT PRIMARY KEY,user_id TEXT REFERENCES users(id),name TEXT NOT NULL,description TEXT,created_at TEXT);
         CREATE TABLE IF NOT EXISTS assets(id TEXT PRIMARY KEY,project_id TEXT REFERENCES projects(id),name TEXT,kind TEXT,content TEXT,created_at TEXT);
+        CREATE TABLE IF NOT EXISTS asset_trash(id TEXT PRIMARY KEY,project_id TEXT NOT NULL REFERENCES projects(id),data TEXT NOT NULL,deleted_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS source_contents(id TEXT PRIMARY KEY,project_id TEXT REFERENCES projects(id),platform TEXT,url TEXT,data TEXT,saved INTEGER DEFAULT 0,created_at TEXT);
         CREATE TABLE IF NOT EXISTS analysis_outputs(id TEXT PRIMARY KEY,source_id TEXT REFERENCES source_contents(id),data TEXT,skill_version TEXT,task_id TEXT,created_at TEXT);
         CREATE TABLE IF NOT EXISTS creation_outputs(id TEXT PRIMARY KEY,project_id TEXT REFERENCES projects(id),source_id TEXT REFERENCES source_contents(id),task_id TEXT,data TEXT,skill_version TEXT,saved INTEGER DEFAULT 0,deleted_at TEXT,created_at TEXT);
@@ -82,7 +86,12 @@ def init():
         CREATE INDEX IF NOT EXISTS idx_tasks_active ON tasks(state,user_id);
         CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id,created_at);
         CREATE INDEX IF NOT EXISTS idx_creation_project ON creation_outputs(project_id,deleted_at);
+        CREATE INDEX IF NOT EXISTS idx_creation_project_created ON creation_outputs(project_id,deleted_at,created_at,id);
         """)
+        if "mfa_verified" not in {row[1] for row in c.execute("PRAGMA table_info(sessions)")}:
+            c.execute("ALTER TABLE sessions ADD COLUMN mfa_verified INTEGER NOT NULL DEFAULT 0")
+        if "mfa_fingerprint" not in {row[1] for row in c.execute("PRAGMA table_info(sessions)")}:
+            c.execute("ALTER TABLE sessions ADD COLUMN mfa_fingerprint TEXT NOT NULL DEFAULT ''")
         c.execute("INSERT OR IGNORE INTO overseas_feed_state VALUES (1,?)",(dumps({'state':'idle','added_count':0,'changed_count':0}),))
         defaults = {
             "mode": os.environ.get("DAOLOOK_MODE", "demo"),
@@ -233,6 +242,7 @@ def init():
                     (uid(), name, version, prompt, "Published", now()),
                 )
             c.execute("INSERT INTO settings VALUES (?,'1')", (release_key,))
+        c.execute('PRAGMA user_version=1')
 
 
 def setting(key):
