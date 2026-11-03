@@ -1296,6 +1296,25 @@ tr:last-child td {
   color: var(--ink-3);
   margin-top: 6px;
 }
+.methodology-hints {
+  margin: 10px 0;
+  border: 1px dashed var(--lime);
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-size: 12px;
+}
+.methodology-hints summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  user-select: none;
+}
+.methodology-hints ul {
+  margin: 6px 0 2px;
+  padding-left: 18px;
+  color: var(--ink-2);
+  display: grid;
+  gap: 4px;
+}
 .overlay {
   position: fixed;
   inset: 0;

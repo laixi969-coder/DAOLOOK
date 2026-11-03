@@ -74,6 +74,55 @@ def evidence_valid(output, assets):
     )
 
 
+# Daolook 方法论 v1 的结构性自检：只检查「规范要素是否在场」，不预测流量或转化结果。
+_HOOK_NUMBER = re.compile(r"\d")
+_HOOK_QUESTION = re.compile(r"？|\?|吗|怎么|怎样|为什么|什么|哪|如何")
+_HOOK_AUDIENCE = re.compile(r"新手|小白|入门|学生|上班族|通勤|打工人|宝妈|宝爸|租房|宿舍|送礼|老人|男生|女生|老板|开店|第一个|第一次")
+_HOOK_CONTRAST = re.compile(r"别再|还在|居然|竟然|原来|其实|真相|误区|踩坑|避坑|翻车|对比|反差|错了|反过来")
+_SPECIFIC = re.compile(r"\d|元|块|克|分钟|小时|天|月|年|次|步骤")
+_PURCHASE = re.compile(r"下单|购买|到店|链接|店铺|小店|团购|淘宝|京东|拼多多|咨询|私信")
+_ASK = re.compile(r"问|留言|私信|评论|聊聊|说|告诉")
+_ASK_SALES = re.compile(r"私信|留言|咨询|问我|提问")
+_REACH = re.compile(r"收藏|关注|转发|问|评论|留言")
+
+
+def methodology_hints(output, p):
+    """方法论自检（内容效果升级·创意/流量/转化三层）。提示性，不阻塞发布。"""
+    hints = []
+    goal_value = output.get("goal") if output.get("goal") in GOALS else "leads"
+    cta = output.get("cta", "")
+    body = output.get("body", "")
+    # 转化层：行动引导与目标一致
+    if goal_value == "sales" and not _PURCHASE.search(f"{cta}\n{body[-160:]}"):
+        hints.append("目标是下单，但结尾没有指向购买或咨询路径；资料里有入口就写入口，没有就明确邀请咨询")
+    elif goal_value == "leads" and not _ASK.search(cta):
+        hints.append("目标是咨询，行动引导可以直接邀请读者提问或私信说明需求")
+    elif goal_value == "reach" and not _REACH.search(cta):
+        hints.append("目标是曝光，行动引导可以指向收藏、关注或一个想让人回答的问题")
+    # 转化层：小红书置顶评论承接转化（sales 要有入口或明确咨询邀请；leads 引导提问即可）
+    pinned = ((output.get("comment_layout") or {}).get("pinned") or {}).get("text", "")
+    if p == "xhs" and goal_value in ("sales", "leads") and pinned:
+        pinned_ok = (
+            (_PURCHASE.search(pinned) or _ASK_SALES.search(pinned))
+            if goal_value == "sales"
+            else (_PURCHASE.search(pinned) or _ASK.search(pinned))
+        )
+        if not pinned_ok:
+            hints.append("置顶评论建议承接转化：写明购买入口或引导读者说明需求")
+    # 流量层：钩子要素（数字 / 人群 / 疑问 / 反差 至少占一样）
+    hook_text = " ".join([output.get("title", ""), *(output.get("titles") or [])])
+    if p == "douyin":
+        hook_text += " " + str(output.get("hook", ""))
+    if hook_text.strip() and not any(
+        pattern.search(hook_text) for pattern in (_HOOK_NUMBER, _HOOK_QUESTION, _HOOK_AUDIENCE, _HOOK_CONTRAST)
+    ):
+        hints.append("标题缺钩子要素：具体数字、明确人群、真实疑问或可见反差，至少占一样")
+    # 创意层：具体细节
+    if body.strip() and not _SPECIFIC.search(body[:400]):
+        hints.append("开头缺具体细节（数字、时间、分量或场景），容易显得空泛")
+    return hints[:3]
+
+
 def assess(output, assets, p):
     """Checks are observable checks, not semantic fact verification."""
     issues = []
@@ -90,8 +139,12 @@ def assess(output, assets, p):
     if not evidence_valid(output, assets):
         issues.append("业务事实缺少可核对的文字依据，请补充产品或服务资料")
     issues.extend(m for m in output.get("missing", []) if m.strip())
-    return {"status": "needs_input" if issues else "checked", "issues": list(dict.fromkeys(issues)),
-            "note": "发布前仍需核对价格、产品效果和购买方式是否准确。"}
+    return {
+        "status": "needs_input" if issues else "checked",
+        "issues": list(dict.fromkeys(issues)),
+        "hints": methodology_hints(output, p),
+        "note": "发布前仍需核对价格、产品效果和购买方式是否准确。方法论自检是结构提示，不预测流量或转化。",
+    }
 
 
 def annotate(outputs, assets, p, selected_goal):

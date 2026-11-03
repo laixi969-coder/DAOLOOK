@@ -267,6 +267,32 @@ RELEASES.append(("skill_release_2026_10_31_rewrite", {
     "xhs_rewrite": XHS_REWRITE_V1,
     "douyin_rewrite": DOUYIN_REWRITE_V1,
 }))
+
+# Daolook 方法论 v1（2026-10-31）：创意 / 流量 / 转化三层结构规范，注入创作 Skill。
+# 结构性规范，不预测流量或转化结果；实际效果以发布后手动记录为准。
+METHOD_XHS_V1 = """七、创意、流量与转化（Daolook 方法论 v1）
+1. 流量层——先被看见：标题与首句至少含一种钩子要素（具体数字、明确人群、真实疑问、可见反差）；标题与 tags 埋「核心词+场景词+人群词」，正文前两行复现核心词；每条至少 1 个收藏点（清单/步骤/避坑）。
+2. 创意层——被记住：本批至少两条用创意算子拉开——反差（常识×意外）、具体化（数字/时间/分量/地点替代「很好用」类空泛形容）、身份错位（产品放进意外人群或场景）、借势（季节、热点、普遍误区）。
+3. 转化层——带来咨询和订单：测评方向先给标准再给结论；全文只留一个下一步，goal 决定其指向——reach 收藏/关注/提问，leads 邀请提问或私信，sales 指向资料里真实的购买路径（没有就邀请咨询并记入 missing）；置顶评论承接转化（入口或引导咨询），第一小时完成第一波。
+4. 边界：这些是结构规范，不构成流量或转化预测；实际效果以发布后手动记录的 history_results 为准。"""
+
+METHOD_DOUYIN_V1 = """六、创意、流量与转化（Daolook 方法论 v1）
+1. 流量层——先被看见：第一句制造可见异常或强反差（预期违背），伏笔要公平（线索提前给），结尾才揭示产品或结论；每 10–15 秒一个新信息点，结尾用循环、悬念或利益回收保完读。
+2. 创意层——被记住：本批至少两条用创意算子拉开——反差、具体化（数字/时间/分量替代空泛形容）、身份错位、借势误区；细节写到能执行。
+3. 转化层——带来咨询和订单：建立信任方向先给标准再给结论；全文只留一个下一步，goal 决定其指向——reach 关注/评论，leads 评论提问或私信，sales 指向资料里真实的购买路径（没有就邀请咨询并记入 missing）；CTA 埋评论区话题，不伪装路人。
+4. 边界：这些是结构规范，不构成流量或转化预测；实际效果以发布后手动记录的 history_results 为准。"""
+
+
+def _inject_methodology(base, section):
+    marker = "只输出符合 JSON Schema 的 JSON，不要输出任何解释文字。"
+    return base.replace(marker, section + "\n\n" + marker)
+
+
+RELEASES.append(("skill_release_2026_10_31_methodology", {
+    "xhs_creation": _inject_methodology(XHS_CREATION_V5, METHOD_XHS_V1),
+    "douyin_creation": _inject_methodology(DOUYIN_CREATION_V5, METHOD_DOUYIN_V1),
+}))
+
 SKILL_NAMES = [
     "xhs_analysis",
     "douyin_analysis",

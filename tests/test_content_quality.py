@@ -19,7 +19,6 @@ class DeliveryTests(unittest.TestCase):
             "audience": "通勤上班族", "value": "了解包装规格", "cta": "你每天在哪喝咖啡？",
             "evidence": [{"asset_id": "product", "quote": "冷萃挂耳每包12克"}],
         }
-
     def test_basic_checks_do_not_claim_to_verify_effect(self):
         result = quality.assess(self.output, self.assets, "xhs")
         self.assertEqual(result["status"], "checked")
@@ -184,6 +183,92 @@ class OutcomeApiTests(unittest.TestCase):
         balance = self.c.req("/api/bootstrap")[1]["credits"]
         self.assertEqual(self.post("/api/create", {"source_id": source})[0], 400)
         self.assertEqual(self.c.req("/api/bootstrap")[1]["credits"], balance)
+
+
+class MethodologyHintsTests(unittest.TestCase):
+    """Daolook 方法论 v1 自检：结构性提示，不阻塞、不预测流量。"""
+
+    setUp = fixture.OriginalTests.setUp
+    tearDown = fixture.OriginalTests.tearDown
+
+    def setUp(self):
+        fixture.OriginalTests.setUp(self)
+        self.output = {
+            "goal": "sales",
+            "title": "冷萃挂耳",
+            "titles": [],
+            "hook": "",
+            "body": "这款挂耳很适合日常喝，风味平衡，包装也好看。你平时喜欢喝什么咖啡？",
+            "cta": "你平时喜欢喝什么咖啡？",
+            "tags": [],
+            "missing": [],
+            "audience": "通勤上班族",
+            "value": "了解挂耳咖啡怎么选",
+            "comment_layout": {"pinned": {"text": "欢迎聊聊你的口味"}, "atmosphere": [], "knowledge": []},
+        }
+
+    def test_sales_without_purchase_path_is_hinted(self):
+        hints = quality.methodology_hints(self.output, "xhs")
+        self.assertTrue(any("购买或咨询路径" in h for h in hints))
+
+    def test_sales_with_purchase_path_not_hinted(self):
+        output = {
+            **self.output,
+            "title": "45 元的冷萃挂耳怎么选",
+            "cta": "点击链接下单，或私信咨询",
+            "body": "12 克一包 45 元，小店链接下单。你平时喜欢喝什么咖啡？",
+            "comment_layout": {"pinned": {"text": "点击链接下单，有问题私信我"}, "atmosphere": [], "knowledge": []},
+        }
+        self.assertEqual(quality.methodology_hints(output, "xhs"), [])
+
+    def test_goal_specific_cta_hints(self):
+        leads = {**self.output, "goal": "leads", "cta": "这款挂耳很好喝", "body": "12 克一包。你平时喜欢喝什么咖啡？"}
+        self.assertTrue(any("邀请读者提问或私信" in h for h in quality.methodology_hints(leads, "xhs")))
+        reach = {**self.output, "goal": "reach", "cta": "这款挂耳很好喝", "body": "12 克一包。你平时喜欢喝什么咖啡？"}
+        self.assertTrue(any("收藏、关注" in h for h in quality.methodology_hints(reach, "xhs")))
+
+    def test_hook_element_hint(self):
+        output = {**self.output, "cta": "链接下单", "title": "一款不错的咖啡", "titles": ["好咖啡推荐"]}
+        hints = quality.methodology_hints(output, "xhs")
+        self.assertTrue(any("钩子要素" in h for h in hints))
+        ok = {**output, "title": "通勤第 3 年，我囤的挂耳", "cta": "链接下单"}
+        self.assertFalse(any("钩子要素" in h for h in quality.methodology_hints(ok, "xhs")))
+
+    def test_specificity_and_douyin_hook(self):
+        output = {
+            **self.output,
+            "title": "45 元的冷萃挂耳怎么选",
+            "cta": "点击链接下单，或私信咨询",
+            "comment_layout": {"pinned": {"text": "链接下单，有问题私信我"}, "atmosphere": [], "knowledge": []},
+        }
+        hints = quality.methodology_hints(output, "xhs")
+        self.assertTrue(any("具体细节" in h for h in hints))
+        douyin = {
+            "goal": "leads", "title": "挂耳咖啡实测", "hook": "同事都问我这杯是什么",
+            "body": "第 3 天实测，12 克一包。想喝的评论区问我。", "cta": "想喝的评论区问我",
+        }
+        self.assertEqual(quality.methodology_hints(douyin, "douyin"), [])
+
+    def test_pinned_conversion_for_sales(self):
+        output = {**self.output, "cta": "链接下单", "comment_layout": {"pinned": {"text": "喜欢可以聊聊"}, "atmosphere": [], "knowledge": []}}
+        hints = quality.methodology_hints(output, "xhs")
+        self.assertTrue(any("置顶评论" in h for h in hints))
+
+    def test_hints_are_advisory_only(self):
+        result = quality.assess({**self.output, "evidence": [{"asset_id": "p", "quote": "冷萃挂耳每包12克"}]},
+                                [{"id": "p", "kind": "产品信息", "content": "冷萃挂耳每包12克，每盒10包。"}], "xhs")
+        self.assertEqual(result["status"], "checked")
+        self.assertTrue(result["hints"])
+        self.assertTrue(all("不预测" in result["note"] for _ in [0]))
+
+    def test_methodology_release_and_instruction(self):
+        with fixture.D.db() as c:
+            rows = c.execute("SELECT prompt FROM skill_versions WHERE name='xhs_creation' AND status='Published'").fetchall()
+            douyin = c.execute("SELECT prompt FROM skill_versions WHERE name='douyin_creation' AND status='Published'").fetchall()
+        self.assertTrue(any("Daolook 方法论 v1" in r["prompt"] for r in rows))
+        self.assertTrue(any("强反差" in r["prompt"] for r in douyin))
+        self.assertIn("钩子要素", adapters.creation_instruction("xhs"))
+        self.assertIn("创意算子", adapters.creation_instruction("douyin"))
 
 
 if __name__ == "__main__":
