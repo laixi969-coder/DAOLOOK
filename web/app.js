@@ -627,7 +627,9 @@ async function openDraftEditor(id) {
   const image = S.workspace.images.filter(i => i.creation_id === id).sort((a,b) => b.created_at.localeCompare(a.created_at))[0];
   const input = (key, label, rows, max) => `<label class="field"><span>${label}</span><${rows ? "textarea" : "input"} id="edit-${key}" data-edit-field="${key}" maxlength="${max}" ${rows ? `rows="${rows}"` : `value="${esc(values[key] || "")}"`} ${["title", "body"].includes(key) ? "required" : ""}>${rows ? esc(values[key] || "") + "</textarea>" : ""}</label>`;
   const comments = values.comments;
-  modal("编辑与发布准备", `<p class="subtext">直接修改这篇，同步查看正文效果。保存和恢复版本不消耗积分。</p>${local ? `<div class="notice">已找回本标签页未保存的修改。${local.revision !== (c.revision || 0) ? "服务器已有更新；请先复制备份，再打开最新稿。" : ""}</div>` : ""}${readonly ? '<div class="notice">已发布或已记录效果的稿件保留原文，可复制与查看历史。</div>' : ""}<div class="draft-editor-layout"><form id="draft-editor"><div id="editor-feedback"></div><fieldset ${readonly ? "disabled" : ""}>${input("title", "标题", 0, 300)}${input("body", "正文", 12, 30000)}<label class="field"><span>话题（用空格分隔）</span><input id="edit-tags" data-edit-field="tags" maxlength="1220" value="${esc((values.tags || []).join(" "))}"></label><details class="editor-extra"><summary>封面文字、开头与评论</summary>${input("cover_text", "封面文字", 2, 300)}${input("hook", "开头 / 口播钩子", 3, 2000)}${input("cta", "正文中的下一步行动", 2, 2000)}${comments ? Object.entries({atmosphere:"互动提问",knowledge:"补充说明",pinned:"置顶评论"}).map(([k,label])=>`<label class="field"><span>${label}</span><textarea id="edit-comment-${k}" data-edit-field="comment-${k}" rows="3" maxlength="4000">${esc(comments[k])}</textarea></label>`).join("") : ""}</details></fieldset><p class="hint" id="editor-save-status" aria-live="polite"></p><div class="editor-actions">${!readonly ? '<button class="btn primary" type="submit">保存修改</button>' : ""}<button class="btn secondary" type="button" data-action="copy-editor">复制当前正文</button><button class="text-btn" type="button" data-action="download-editor">下载正文 TXT</button></div><button class="text-btn editor-reload" type="button" data-action="latest-draft" ${local ? "" : "hidden"}>放弃本地修改，打开最新稿</button></form><aside class="draft-preview"><div class="preview-label"><span>正文预览</span><small id="editor-length"></small></div><div id="draft-live-preview"></div><p class="hint">预览用于检查内容与阅读顺序，实际排版以发布平台为准。${image ? "已保存封面不会随改稿自动更新。" : ""}</p>${image ? coverCard(image) : button("制作封面", "editor-cover", "secondary small", "image")}<details class="editor-history"><summary>已保存的历史版本</summary><p class="hint">恢复会新增一个版本。请先保存当前修改。</p><div id="editor-history-list">正在读取…</div></details></aside></div>`, true);
+  const source = [...(S.workspace.sources || []), ...(S.workspace.briefs || [])].find(s => s.id === c.source_id);
+  const rewritable = !readonly && source && ["xhs", "douyin"].includes(source.platform);
+  modal("编辑与发布准备", `<p class="subtext">直接修改这篇，同步查看正文效果。保存和恢复版本不消耗积分。</p>${local ? `<div class="notice">已找回本标签页未保存的修改。${local.revision !== (c.revision || 0) ? "服务器已有更新；请先复制备份，再打开最新稿。" : ""}</div>` : ""}${readonly ? '<div class="notice">已发布或已记录效果的稿件保留原文，可复制与查看历史。</div>' : ""}<div class="draft-editor-layout"><form id="draft-editor"><div id="editor-feedback"></div><fieldset ${readonly ? "disabled" : ""}>${input("title", "标题", 0, 300)}${input("body", "正文", 12, 30000)}<label class="field"><span>话题（用空格分隔）</span><input id="edit-tags" data-edit-field="tags" maxlength="1220" value="${esc((values.tags || []).join(" "))}"></label><details class="editor-extra"><summary>封面文字、开头与评论</summary>${input("cover_text", "封面文字", 2, 300)}${input("hook", "开头 / 口播钩子", 3, 2000)}${input("cta", "正文中的下一步行动", 2, 2000)}${comments ? Object.entries({atmosphere:"互动提问",knowledge:"补充说明",pinned:"置顶评论"}).map(([k,label])=>`<label class="field"><span>${label}</span><textarea id="edit-comment-${k}" data-edit-field="comment-${k}" rows="3" maxlength="4000">${esc(comments[k])}</textarea></label>`).join("") : ""}</details></fieldset>${rewritable ? `<details class="editor-rewrite"><summary>AI 定向重写 · ${S.boot.rules.rewrite ?? 3} 积分/次</summary><label class="field"><span>这次要改什么</span><textarea id="rewrite-instruction" rows="2" maxlength="500" placeholder="比如：开头换成加班场景；第 2 段加价格锚点；置顶评论补一个价格问题"></textarea></label><div class="actions">${button("按指令重写这一条", "rewrite-draft", "secondary small", "spark")}</div><p class="hint">只改这一条并保存为新版本，可随时恢复；不引入资料之外的新事实。发起前请先保存手动修改。</p></details>` : ""}<p class="hint" id="editor-save-status" aria-live="polite"></p><div class="editor-actions">${!readonly ? '<button class="btn primary" type="submit">保存修改</button>' : ""}<button class="btn secondary" type="button" data-action="copy-editor">复制当前正文</button><button class="text-btn" type="button" data-action="download-editor">下载正文 TXT</button></div><button class="text-btn editor-reload" type="button" data-action="latest-draft" ${local ? "" : "hidden"}>放弃本地修改，打开最新稿</button></form><aside class="draft-preview"><div class="preview-label"><span>正文预览</span><small id="editor-length"></small></div><div id="draft-live-preview"></div><p class="hint">预览用于检查内容与阅读顺序，实际排版以发布平台为准。${image ? "已保存封面不会随改稿自动更新。" : ""}</p>${image ? coverCard(image) : button("制作封面", "editor-cover", "secondary small", "image")}<details class="editor-history"><summary>已保存的历史版本</summary><p class="hint">恢复会新增一个版本。请先保存当前修改。</p><div id="editor-history-list">正在读取…</div></details></aside></div>`, true);
   $(".dialog").classList.add("draft-editor-dialog");
   const session = {id, key, project: S.project, storageKey, revision: local?.revision ?? c.revision ?? 0, readonly, imageURL: image?.data.url || "", savedFeedback: "", baseline: CreationTools.fingerprint(CreationTools.editable(c.data)), dirty: false};
   S.editSession = session;
@@ -1417,6 +1419,29 @@ function providerModal(id) {
 }
 const actions = {
   "edit-draft": el => openDraftEditor(el.dataset.id),
+  "rewrite-draft": async () => {
+    const session = S.editSession;
+    if (!session || session.readonly) return;
+    if (session.dirty) {
+      toast("请先保存当前手动修改，再发起 AI 重写");
+      return;
+    }
+    const instruction = ($("#rewrite-instruction")?.value || "").trim();
+    if (instruction.length < 2) {
+      toast("请先用 2 到 500 字写清这次要改什么");
+      return;
+    }
+    const key = workspaceKey();
+    const r = await post(`/api/creations/${session.id}/rewrite`, body({ revision: session.revision, instruction }));
+    if (key !== workspaceKey()) return;
+    toast("正在按指令重写这一条…");
+    await poll(r.task_ids, async () => {
+      if (workspaceKey() !== key) return;
+      await refresh();
+      await openDraftEditor(session.id);
+      toast("重写完成，已保存为新版本");
+    });
+  },
   "restore-draft": el => saveDraftEdit(Number(el.dataset.revision)),
   "copy-editor": async () => {
     await navigator.clipboard.writeText(CreationTools.publicCopy(editorValues()));

@@ -1,4 +1,4 @@
-import json, os, urllib.request, urllib.parse, urllib.error, html, base64, re
+import json, os, urllib.request, urllib.parse, urllib.error, html, base64, re, copy
 import http.client, ipaddress, socket, time
 import contextvars
 from contextlib import contextmanager
@@ -718,48 +718,52 @@ def used_pairs(previous):
     }
 
 
+def _validate_output_fields(output, p):
+    if not isinstance(output, dict) or any(
+        not isinstance(output.get(k), str) or not output[k].strip()
+        for k in ("title", "body", "cover_text")
+    ):
+        raise ValueError("稿件字段缺失")
+    for key in (
+        "tags",
+        "image_suggestions",
+        "missing",
+        "storyboard",
+        "shooting_list",
+        "titles",
+    ):
+        if not isinstance(output.get(key), list) or any(
+            not isinstance(x, str) for x in output[key]
+        ):
+            raise ValueError("稿件列表字段无效：" + key)
+    for key in ("hook", "audience", "value", "cta"):
+        if key in output and not isinstance(output[key], str):
+            raise ValueError("稿件文本字段无效：" + key)
+    if output.get("direction") not in DIRECTIONS[p]:
+        raise ValueError(
+            "每条稿件必须标明内容方向：" + " / ".join(DIRECTIONS[p])
+        )
+    for key in ("role", "angle"):
+        if not isinstance(output.get(key), str) or not output[key].strip():
+            raise ValueError("稿件缺少岗位或切角说明")
+    if p == "xhs" and len(output["titles"]) != 3:
+        raise ValueError("小红书稿件需要三个标题候选")
+    if p == "xhs" or "comment_layout" in output:
+        validate_comment_layout(output.get("comment_layout"))
+    if p == "douyin" and (
+        not output.get("hook")
+        or not output["storyboard"]
+        or not output["shooting_list"]
+    ):
+        raise ValueError("抖音脚本缺少钩子、分镜或拍摄清单")
+
+
 def validate_creation(result, p, previous=None):
     outputs = result.get("outputs") if isinstance(result, dict) else None
     if not isinstance(outputs, list) or not CREATION_MIN <= len(outputs) <= CREATION_MAX:
         raise ValueError("必须返回 6 到 8 条独立稿件")
     for output in outputs:
-        if not isinstance(output, dict) or any(
-            not isinstance(output.get(k), str) or not output[k].strip()
-            for k in ("title", "body", "cover_text")
-        ):
-            raise ValueError("稿件字段缺失")
-        for key in (
-            "tags",
-            "image_suggestions",
-            "missing",
-            "storyboard",
-            "shooting_list",
-            "titles",
-        ):
-            if not isinstance(output.get(key), list) or any(
-                not isinstance(x, str) for x in output[key]
-            ):
-                raise ValueError("稿件列表字段无效：" + key)
-        for key in ("hook", "audience", "value", "cta"):
-            if key in output and not isinstance(output[key], str):
-                raise ValueError("稿件文本字段无效：" + key)
-        if output.get("direction") not in DIRECTIONS[p]:
-            raise ValueError(
-                "每条稿件必须标明内容方向：" + " / ".join(DIRECTIONS[p])
-            )
-        for key in ("role", "angle"):
-            if not isinstance(output.get(key), str) or not output[key].strip():
-                raise ValueError("稿件缺少岗位或切角说明")
-        if p == "xhs" and len(output["titles"]) != 3:
-            raise ValueError("小红书稿件需要三个标题候选")
-        if p == "xhs" or "comment_layout" in output:
-            validate_comment_layout(output.get("comment_layout"))
-        if p == "douyin" and (
-            not output.get("hook")
-            or not output["storyboard"]
-            or not output["shooting_list"]
-        ):
-            raise ValueError("抖音脚本缺少钩子、分镜或拍摄清单")
+        _validate_output_fields(output, p)
     if len({o["body"] for o in outputs}) != len(outputs):
         raise ValueError("稿件正文不能重复")
     from .content_quality import normalized
@@ -1192,6 +1196,42 @@ def extract_facts(asset, version, demo=False):
         )
         return result["facts"], model
     return demo_facts(content), "demo"
+
+
+def validate_rewrite(result, p):
+    """单条定向重写的结构校验：返回一条结构完整的稿件。"""
+    output = result.get("output") if isinstance(result, dict) else None
+    if not isinstance(output, dict):
+        raise ValueError("必须返回改写后的单条稿件")
+    _validate_output_fields(output, p)
+    return output
+
+
+def demo_rewrite(output, instruction):
+    """演示重写模板：明确标注未调用模型，不冒充真实改写。"""
+    draft = copy.deepcopy(output)
+    note = f"（演示重写 · 指令「{instruction[:24]}」：接入真实模型后才会按指令改写）"
+    draft["body"] = note + "\n" + (draft.get("body") or "")
+    quality = draft.get("quality") if isinstance(draft.get("quality"), dict) else {}
+    quality["note"] = "演示模式重写：模板输出，不代表模型改写结果。"
+    draft["quality"] = quality
+    return draft
+
+
+def rewrite(output, instruction, version, p, demo=False):
+    """单条定向重写（内容效果升级·第一优先）：只按指令改这一条，不引入新事实。"""
+    if not demo:
+        result, model = model_json(
+            {"draft": output, "instruction": instruction},
+            {"output": creation_example(p)},
+            version,
+            "create",
+            lambda r: validate_rewrite(r, p),
+        )
+        new_output = result["output"]
+        new_output.pop("demo", None)
+        return new_output, model
+    return demo_rewrite(output, instruction), "demo"
 
 
 def cover(output, direction, demo=None):

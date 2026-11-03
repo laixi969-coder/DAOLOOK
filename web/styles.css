@@ -1277,6 +1277,25 @@ tr:last-child td {
   color: var(--ink-3);
   margin: 0;
 }
+.editor-rewrite {
+  margin-top: 14px;
+  border: 1px dashed var(--lime);
+  border-radius: 9px;
+  padding: 8px 12px;
+  font-size: 13px;
+}
+.editor-rewrite summary {
+  cursor: pointer;
+  color: var(--ink-2);
+  user-select: none;
+}
+.editor-rewrite .field {
+  margin-top: 10px;
+}
+.editor-rewrite .hint {
+  color: var(--ink-3);
+  margin-top: 6px;
+}
 .overlay {
   position: fixed;
   inset: 0;

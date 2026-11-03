@@ -286,7 +286,7 @@ def _run(ident):
         name = (
             "asset_facts"
             if kind == "facts"
-            else p + "_" + {"analyze": "analysis", "create": "creation", "original": "original"}[kind]
+            else p + "_" + {"analyze": "analysis", "create": "creation", "original": "original", "rewrite": "rewrite"}[kind]
         )
         with db() as c:
             version = c.execute(
@@ -514,6 +514,30 @@ def _run(ident):
         facts, model = adapters.extract_facts(asset, prompt, demo)
         if not facts:
             raise ValueError("这份资料没有整理出可用要点")
+    elif kind == "rewrite":
+        if not state(ident, "GENERATING"):
+            return
+        with db() as c:
+            row = c.execute(
+                "SELECT o.data AS data,o.created_at AS created_at FROM creation_outputs o "
+                "JOIN source_contents s ON s.id=o.source_id "
+                "WHERE o.id=? AND o.project_id=? AND o.deleted_at IS NULL",
+                (payload["creation_id"], t["project_id"]),
+            ).fetchone()
+            if not row:
+                raise ValueError("稿件已删除，重写任务已终止")
+            if (
+                c.execute(
+                    "SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?",
+                    (payload["creation_id"],),
+                ).fetchone()[0]
+                != payload["revision"]
+            ):
+                raise ValueError("稿件已被修改，请打开最新版本后重新发起重写")
+        original = (row["data"], row["created_at"])
+        output, model = adapters.rewrite(
+            json.loads(row["data"]), payload["instruction"], prompt, p, demo
+        )
     else:
         if not state(ident, "GENERATING"):
             return
@@ -616,6 +640,31 @@ def _run(ident):
                     ),
                 )
             result["facts"] = len(facts)
+        if kind == "rewrite":
+            target = payload["creation_id"]
+            if c.execute(
+                "SELECT 1 FROM creation_tracking WHERE creation_id=? AND status='published'",
+                (target,),
+            ).fetchone() or c.execute(
+                "SELECT 1 FROM creation_results WHERE creation_id=?", (target,)
+            ).fetchone():
+                raise ValueError("稿件已发布或已记录效果，保留原文；重写已取消并退回积分")
+            current = c.execute(
+                "SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?",
+                (target,),
+            ).fetchone()[0]
+            if current != payload["revision"]:
+                raise ValueError("稿件在重写期间被修改，已退回积分，请重新发起")
+            c.execute(
+                "INSERT OR IGNORE INTO creation_revisions VALUES (?,?,?,?,?)",
+                (target, 0, original[0], "初始稿", original[1]),
+            )
+            c.execute(
+                "INSERT INTO creation_revisions VALUES (?,?,?,?,?)",
+                (target, payload["revision"] + 1, dumps(output), "AI 定向重写", now()),
+            )
+            c.execute("UPDATE creation_outputs SET data=? WHERE id=?", (dumps(output), target))
+            result["revision"] = payload["revision"] + 1
         if outputs:
             ids = []
             for output in outputs:

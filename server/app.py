@@ -1017,6 +1017,56 @@ class Handler(BaseHTTPRequestHandler):
                 {"task_ids": [jobs.submit(u["id"], project_id, "facts", {"asset_id": ident})]},
                 202,
             )
+        match = re.fullmatch(r"/api/creations/([a-f0-9]+)/rewrite", path)
+        if match and method == "POST":
+            ident = match.group(1)
+            instruction = data.get("instruction")
+            if not isinstance(instruction, str) or not 2 <= len(instruction.strip()) <= 500:
+                raise Error("请用 2 到 500 字写清这次要改什么")
+            if type(data.get("revision")) is not int or data["revision"] < 0:
+                raise Error("缺少有效版本号，请重新打开稿件")
+            with db() as c:
+                row = c.execute(
+                    "SELECT s.platform AS platform FROM creation_outputs o "
+                    "JOIN source_contents s ON s.id=o.source_id "
+                    "WHERE o.id=? AND o.project_id=? AND o.deleted_at IS NULL",
+                    (ident, project_id),
+                ).fetchone()
+                if not row:
+                    raise Error("稿件不存在", 404)
+                if row["platform"] not in ("xhs", "douyin"):
+                    raise Error("定向重写目前支持小红书与抖音稿件")
+                if c.execute(
+                    "SELECT 1 FROM creation_tracking WHERE creation_id=? AND status='published'",
+                    (ident,),
+                ).fetchone() or c.execute(
+                    "SELECT 1 FROM creation_results WHERE creation_id=?", (ident,)
+                ).fetchone():
+                    raise Error("已发布或已记录效果的稿件保留原文，请另行创作新稿", 409)
+                current = c.execute(
+                    "SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?",
+                    (ident,),
+                ).fetchone()[0]
+                if current != data["revision"]:
+                    raise Error("稿件已在其他页面更新，请重新打开最新版本", 409)
+            return self.send(
+                {
+                    "task_ids": [
+                        jobs.submit(
+                            u["id"],
+                            project_id,
+                            "rewrite",
+                            {
+                                "creation_id": ident,
+                                "revision": data["revision"],
+                                "instruction": instruction.strip(),
+                                "platform": row["platform"],
+                            },
+                        )
+                    ]
+                },
+                202,
+            )
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/(revisions|edit|restore)", path)
         if match:
             ident, operation = match.groups()
