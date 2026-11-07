@@ -2395,3 +2395,44 @@ tr:last-child td {
 .topic-basis p { margin: 10px 0; }
 .topic-basis blockquote { margin: 12px 0; padding: 8px 12px; border-left: 2px solid currentColor; }
 .question-records { display: grid; gap: 12px; margin-bottom: 12px; }
+
+/* Supplementary help: keyboard/touch accessible, hidden until requested. */
+.info-tip {
+  position: relative;
+  display: inline-block;
+  margin: 0 0 12px;
+  vertical-align: middle;
+}
+.info-tip > summary {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  list-style: none;
+  color: var(--muted, #62675c);
+}
+.info-tip > summary::-webkit-details-marker { display: none; }
+.info-tip > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+.info-tip[open] > summary { background: #e8eddd; }
+.info-tip-content {
+  display: block;
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 20;
+  width: min(320px, calc(100vw - 80px));
+  padding: 14px 16px;
+  border: 1px solid #d8dccf;
+  border-radius: 12px;
+  background: #fffef8;
+  color: #454a40;
+  box-shadow: 0 8px 24px #252b1820;
+  font-size: 13px;
+  line-height: 1.7;
+}
+.sidebar > .brand { margin-bottom: 24px; }
