@@ -24,7 +24,7 @@ def delete_user(user_id, actor, request_id=''):
                 identifiers.extend(r[0] for r in c.execute(f'SELECT id FROM {table} WHERE project_id=?', (project,)))
             for table in ('creation_revisions', 'creation_tracking', 'creation_results'):
                 c.execute(f'DELETE FROM {table} WHERE creation_id IN (SELECT id FROM creation_outputs WHERE project_id=?)', (project,))
-            for table in ('generated_images', 'asset_facts', 'asset_trash', 'overseas_ideas', 'overseas_searches'):
+            for table in ('question_observations', 'generated_images', 'asset_facts', 'asset_trash', 'overseas_ideas', 'overseas_searches'):
                 c.execute(f'DELETE FROM {table} WHERE project_id=?', (project,))
             c.execute('DELETE FROM analysis_outputs WHERE source_id IN (SELECT id FROM source_contents WHERE project_id=?)', (project,))
             for table in ('creation_outputs', 'source_contents', 'assets', 'tasks'):

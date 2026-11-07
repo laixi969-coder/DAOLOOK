@@ -43,6 +43,10 @@ def cleanup():
             if "asset_snapshot" in payload:
                 del payload["asset_snapshot"]
                 changed = True
+            for field in ("question_context", "observation"):
+                if field in payload:
+                    del payload[field]
+                    changed = True
             if changed:
                 c.execute(
                     "UPDATE tasks SET payload=? WHERE id=?", (dumps(payload), row["id"])

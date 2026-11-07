@@ -183,6 +183,8 @@ async function refresh() {
   if (S.workspaceKey !== key) {
     S.original = { goal: "leads", platform: "xhs", topic: "", keyword: "", assets: [], requirements: "", temporary: "", ...(drafts.read(key) || {}) };
     S.selectedAssets = [];
+    S.observation = {};
+    S.questionLibrary = S.questionEdit = null;
     S.requirements = S.temporary = S.entryText = S.transcript = "";
     S.creationSource = null;
     S.focusCreation = null;
@@ -495,7 +497,7 @@ function detail() {
       "请返回发现灵感页面重新选择。",
       button("返回", "discover", "primary"),
     );
-  return `<button class="back" data-page="discover">${icon("back")}返回发现灵感</button>${heading(esc(s.data.title), "先理解内容为什么有效，再找到属于自己的表达。", button(s.saved ? "已保存参考" : "保存参考", "save-source", s.saved ? "secondary" : "primary", s.saved ? "check" : "plus", `data-id="${s.id}"`), "CONTENT BREAKDOWN / " + (s.platform === "xhs" ? "小红书" : "抖音"))}<div class="two-col"><section class="panel"><div class="detail-cover"><img src="${art(s)}" alt="参考主题插画"></div><div class="source-meta"><span>${esc(s.data.author || "未知作者")}</span><span>${fmt(s.data.likes)} 赞</span><span>${fmt(s.data.saves)} 收藏</span>${s.url && /^https?:/.test(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>` : ""}</div>${s.data.demo ? '<div class="notice">演示拆解：以下内容用于体验产品流程，不是真实平台抓取或模型分析。</div>' : ""}${s.data.transcript_source ? `<div class="hint">口播与字幕依据：${esc(s.data.transcript_source)}</div>` : s.data.transcript_note ? `<div class="notice">${esc(s.data.transcript_note)}；口播、镜头、节奏相关判断仅供参考。</div>` : ""}<h2>把好内容拆开看</h2>${(s.analysis.sections || []).map((a, i) => `<div class="analysis-section"><span class="num">${String(i + 1).padStart(2, "0")}</span><div><h3>${esc(a.name)}</h3><p>${esc(a.text)}</p></div></div>`).join("")}</section><section class="panel composer"><h2>${icon("spark")} 创作我的版本</h2><p class="intro">借鉴这条内容的创作思路，结合你的品牌与本次要求，一次获得 6 到 8 条不同角度的文案。</p><form id="create-form">${goalPicker("create-goal", S.goal)}<label class="field"><span>本次创作要求 <small style="display:inline;font-weight:400">可选</small></span><textarea id="requirements" rows="5" placeholder="比如：改成适合独立咖啡店的日常分享，语气轻松，面向刚接触手冲的年轻人…">${esc(S.requirements)}</textarea></label><div class="field"><span>选择项目资料 <small style="display:inline;font-weight:400">可选，不会自动使用</small></span>${S.workspace.assets.length ? S.workspace.assets.map((a) => `<label class="check-row"><input type="checkbox" name="asset" value="${esc(a.id)}" ${S.selectedAssets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("") : '<p class="muted">还没有长期资料，去「项目资料」添加品牌或产品信息。</p>'}</div><div class="inline-photo-upload"><label class="field"><span>上传产品图 / 个人 IP 形象图</span><input type="file" id="creation-photo-file" accept="image/png,image/jpeg,image/webp" multiple><small>每张最多 2 MB，一次最多 6 张。上传后保存到当前项目并自动勾选，用于本次创作；封面默认带入一张，可重新选择。</small></label></div><label class="field"><span>本次临时资料 <small style="display:inline;font-weight:400">可选</small></span><textarea id="temporary" rows="3" placeholder="补充本次需要的真实信息，不会自动存入项目">${esc(S.temporary)}</textarea></label><label class="text-btn" style="cursor:pointer">${icon("plus")}上传文本资料<input type="file" id="temporary-file" accept=".txt,.md,.csv,.docx,.pdf" hidden></label><div class="hint">每次生成 6 到 8 条独立稿件 · 新结果追加保留<br>预计消耗 ${S.boot.rules.create} 积分，失败自动退还</div><button class="btn primary full" type="submit" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}生成 6 到 8 条我的版本 ${icon("arrow")}</button></form><div class="actions" style="margin-top:16px">${button(`查看已有稿件 (${S.workspace.creations.filter((c) => c.source_id === s.id).length})`, "source-creations", "secondary small", "edit")}</div></section></div>`;
+  return `<button class="back" data-page="discover">${icon("back")}返回发现灵感</button>${heading(esc(s.data.title), "先理解内容为什么有效，再找到属于自己的表达。", button(s.saved ? "已保存参考" : "保存参考", "save-source", s.saved ? "secondary" : "primary", s.saved ? "check" : "plus", `data-id="${s.id}"`), "CONTENT BREAKDOWN / " + (s.platform === "xhs" ? "小红书" : "抖音"))}<div class="two-col"><section class="panel"><div class="detail-cover"><img src="${art(s)}" alt="参考主题插画"></div><div class="source-meta"><span>${esc(s.data.author || "未知作者")}</span><span>${fmt(s.data.likes)} 赞</span><span>${fmt(s.data.saves)} 收藏</span>${s.url && /^https?:/.test(s.url) ? `<a href="${esc(s.url)}" target="_blank" rel="noopener noreferrer">查看原文 ↗</a>` : ""}</div>${s.data.demo ? '<div class="notice">演示拆解：以下内容用于体验产品流程，不是真实平台抓取或模型分析。</div>' : ""}${s.data.transcript_source ? `<div class="hint">口播与字幕依据：${esc(s.data.transcript_source)}</div>` : s.data.transcript_note ? `<div class="notice">${esc(s.data.transcript_note)}；口播、镜头、节奏相关判断仅供参考。</div>` : ""}<h2>把好内容拆开看</h2>${(s.analysis.sections || []).map((a, i) => `<div class="analysis-section"><span class="num">${String(i + 1).padStart(2, "0")}</span><div><h3>${esc(a.name)}</h3><p>${esc(a.text)}</p></div></div>`).join("")}</section><section class="panel composer"><h2>${icon("spark")} 创作我的版本</h2><p class="intro">借鉴这条内容的创作思路，结合你的品牌与本次要求，一次获得 6 到 8 条不同角度的文案。</p><form id="create-form">${goalPicker("create-goal", S.goal)}<label class="field"><span>本次创作要求 <small style="display:inline;font-weight:400">可选</small></span><textarea id="requirements" rows="5" placeholder="比如：改成适合独立咖啡店的日常分享，语气轻松，面向刚接触手冲的年轻人…">${esc(S.requirements)}</textarea></label><div class="field"><span>选择项目资料 <small style="display:inline;font-weight:400">可选，不会自动使用</small></span>${S.workspace.assets.length ? S.workspace.assets.map((a) => `<label class="check-row"><input type="checkbox" name="asset" value="${esc(a.id)}" ${S.selectedAssets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("") : '<p class="muted">还没有长期资料，去「项目资料」添加品牌或产品信息。</p>'}</div><div class="inline-photo-upload"><label class="field"><span>上传产品图 / 个人 IP 形象图</span><input type="file" id="creation-photo-file" accept="image/png,image/jpeg,image/webp" multiple><small>每张最多 2 MB，一次最多 6 张。上传后保存到当前项目并自动勾选，用于本次创作；封面默认带入一张，可重新选择。</small></label></div><label class="field"><span>本次临时资料 <small style="display:inline;font-weight:400">可选</small></span><textarea id="temporary" rows="3" placeholder="补充本次需要的真实信息，不会自动存入项目">${esc(S.temporary)}</textarea></label><label class="text-btn" style="cursor:pointer">${icon("plus")}上传文本资料<input type="file" id="temporary-file" accept=".txt,.md,.csv,.docx,.pdf" hidden></label>${questionIntake("create", S.observation)}<div class="hint">每次生成 6 到 8 条独立稿件 · 新结果追加保留<br>预计消耗 ${S.boot.rules.create} 积分，失败自动退还</div><button class="btn primary full" type="submit" ${S.busy ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}生成 6 到 8 条我的版本 ${icon("arrow")}</button></form><div class="actions" style="margin-top:16px">${button(`查看已有稿件 (${S.workspace.creations.filter((c) => c.source_id === s.id).length})`, "source-creations", "secondary small", "edit")}</div></section></div>`;
 }
 function creations() {
   let items = S.workspace.creations.filter(
@@ -541,7 +543,7 @@ function draftCard(c, featured = false, suggestionNumber = 0) {
   const textBlock = (label, value) => typeof value === "string" && value.trim()
     ? `<section class="draft-output-section"><h4>${label}</h4><p>${esc(value)}</p></section>` : "";
   const supplementary = `<div class="draft-output-grid">${textBlock("创意", d.concept || d.angle)}${lineList("画面描述", d.storyboard)}${textBlock("脚本", d.script || d.hook)}${textBlock("中文翻译", d.translation_zh)}${lineList("标题备选", d.titles)}</div>${d.quality?.hints?.length ? `<details class="methodology-hints"><summary>方法论自检 · ${d.quality.hints.length} 条建议</summary><ul>${d.quality.hints.map(h => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}`;
-  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${platformLabel(source?.platform)}${d.demo?" · 演示":""}</span><span>${date(c.created_at)}</span></div><h3>${esc(d.title)}</h3>${supplementary}<section class="draft-output-section"><h4>发布内容 / Tags</h4><div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}</section>${images.map(coverCard).join("")}<div class="actions">${button("编辑内容","edit-draft","secondary small","edit",`data-id="${c.id}"`)}${button("复制内容","copy","secondary small","copy",`data-id="${c.id}"`)}${button(c.saved?"已收藏":"收藏","save-creation","secondary small",c.saved?"check":"star",`data-id="${c.id}"`)}${button("封面","cover","secondary small","image",`data-id="${c.id}"`)}${button("删除","delete-creation","secondary small","trash",`data-id="${c.id}"`)}</div></article>`;
+  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${platformLabel(source?.platform)}${d.demo?" · 演示":""}</span><span>${date(c.created_at)}</span></div><h3>${esc(d.title)}</h3>${supplementary}${topicBasis(d)}<section class="draft-output-section"><h4>发布内容 / Tags</h4><div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}</section>${images.map(coverCard).join("")}<details class="transcript-box"><summary>发布与反馈${c.tracking?.status === "published" ? " · 已发布" : ""}</summary>${pipeline(c,source)}${resultSummary(c)}</details><div class="actions">${button("编辑内容","edit-draft","secondary small","edit",`data-id="${c.id}"`)}${button("复制内容","copy","secondary small","copy",`data-id="${c.id}"`)}${button(c.saved?"已收藏":"收藏","save-creation","secondary small",c.saved?"check":"star",`data-id="${c.id}"`)}${button("封面","cover","secondary small","image",`data-id="${c.id}"`)}${button("删除","delete-creation","secondary small","trash",`data-id="${c.id}"`)}</div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
@@ -572,6 +574,44 @@ const GOAL_LABELS = { reach: "更多人看到", leads: "更多人咨询", sales:
 function goalPicker(id, value) {
   return `<label class="field"><span>这次最想要什么？</span><select id="${id}">${Object.entries(GOAL_LABELS).map(([v, label]) => `<option value="${v}" ${value === v ? "selected" : ""}>${label}</option>`).join("")}</select></label>`;
 }
+
+const QUESTION_SOURCES = {
+  merchant_record: "商家转述 / 经验记录", customer_quote: "客户咨询原话",
+  field_observation: "服务现场观察", own_comment: "自己内容下的评论",
+  market_comment: "同行评论 / 评价", search_record: "搜索记录",
+  market_topic: "市场话题 / 热门标题", hypothesis: "待验证的想法",
+};
+function questionFields(prefix, value = {}) {
+  value ||= {};
+  return `<label class="field"><span>客户原话或发生的事</span><textarea id="${prefix}-question-text" rows="2" maxlength="2000" placeholder="例如：客户问，套餐之外还会有哪些费用？请去掉姓名和联系方式。">${esc(value.text || "")}</textarea></label><label class="field"><span>这条记录来自哪里？</span><select id="${prefix}-question-source">${Object.entries(QUESTION_SOURCES).map(([key,label])=>`<option value="${key}" ${(value.source || "merchant_record")===key ? "selected" : ""}>${label}</option>`).join("")}</select></label><details><summary>补充场景或出处（可选）</summary><label class="field"><span>谁在什么情况下遇到的</span><input id="${prefix}-question-context" maxlength="300" value="${esc(value.context || "")}" placeholder="例如：第一次拍写真的客户，正在比较套餐"></label><label class="field"><span>原始链接或记录位置</span><input id="${prefix}-question-reference" maxlength="500" value="${esc(value.reference || "")}" placeholder="评论链接、咨询记录位置等"></label><label class="field"><span>发生日期（不知道可留空）</span><input type="date" id="${prefix}-question-occurred_on" value="${esc(value.occurred_on || "")}"></label></details>`;
+}
+function questionValues(prefix) {
+  const value = {};
+  for (const key of ["text","source","context","reference","occurred_on"])
+    value[key] = $(`#${prefix}-question-${key}`)?.value || (key === "source" ? "merchant_record" : "");
+  return value;
+}
+function questionIntake(prefix, value) {
+  return `<details class="transcript-box" ${value?.text ? "open" : ""}><summary>最近客户问过什么？（可选）</summary>${questionFields(prefix,value)}<p class="hint">提交创作时保存到当前项目，以后可自动参考。没有记录也能继续，探索选题会标明待验证。</p><button type="button" class="text-btn" data-action="question-library">查看已有记录与发布追问</button></details>`;
+}
+function topicBasis(d) {
+  const b=d.topic_basis, p=d.topic_plan;
+  if (!b || !p) return "";
+  const label=b.status==='demo'?'演示选题':b.status==='sourced'?'有来源记录 · 适用性仍需核对':b.status==='clue'?'资料 / 市场线索 · 待验证':'根据资料探索 · 待验证';
+  return `<details class="transcript-box topic-basis"><summary>为什么写这条 · ${esc(label)}</summary>${b.review_required?'<p class="notice">稿件已修改，以下是原始选题依据，请重新核对与当前正文是否一致。</p>':''}<p><strong>问题 / 主题：</strong>${esc(p.problem)}</p><p><strong>谁会关心：</strong>${esc(p.relevance)}</p><p><strong>核心答案：</strong>${esc(p.answer)}</p><p><strong>观众收获：</strong>${esc(p.takeaway)}</p><p><strong>切入方式：</strong>${esc(p.approach)}</p>${(b.sources||[]).map(o=>`<blockquote><p>${esc(o.quote)}</p><small>${esc(o.source_label)}${o.context?' · '+esc(o.context):''}${o.occurred_on?' · 发生于 '+esc(o.occurred_on):''}${o.recorded_at?' · 记录于 '+esc(date(o.recorded_at)):''}${o.reference?' · 出处：'+esc(o.reference):''}</small></blockquote>`).join('')}${!b.sources?.length?'<p class="hint">尚无被引用的问题记录，不能据此声称客户普遍有此需求。</p>':''}<p><strong>回答依据：</strong></p>${b.answer_sources?.length?`<ul>${b.answer_sources.map(e=>`<li>${esc(S.workspace.assets.find(a=>a.id===e.asset_id)?.name || (e.asset_id==='temporary'?'本次临时资料':e.asset_id))}：${esc(e.quote)}</li>`).join('')}</ul>`:'<p class="hint">没有可核对的业务文字引用，请补充资料或缩小回答范围。</p>'}<p class="hint">来源证明记录存在，不证明用户动机、普遍性或答案成立。</p></details>`;
+}
+async function questionLibrary(offset = 0) {
+  const key=workspaceKey();
+  const result=await api(`/api/questions?project_id=${encodeURIComponent(S.project)}&offset=${offset}`);
+  if(key!==workspaceKey()) return;
+  S.questionLibrary={...result,key,offset};
+  modal("客户问题与发布追问", `<p class="subtext">相关记录会在创作时自动参考。这里保留原话和来源，不把记录条数当作人数或需求频率。来源、场景和因果解释请分别核对。</p><div class="question-records">${result.items.map(o=>`<section class="panel"><p>${esc(o.text)}</p><small>${esc(o.source_label)} · ${esc(date(o.recorded_at))}${o.context?' · '+esc(o.context):''}${o.reference?' · '+esc(o.reference):''}</small><div class="actions">${button('修改','question-edit','secondary small','edit',`data-id="${o.id}"`)}${button('删除','question-delete','secondary small','trash',`data-id="${o.id}"`)}</div></section>`).join('') || '<p class="hint">还没有保存的问题。可以先记录一句客户原话，也可以直接根据业务资料创作。</p>'}</div><div class="actions">${button('记录一个问题','question-new','secondary small','plus')}${offset?button('上一页','question-page','secondary small','back',`data-offset="${Math.max(0,offset-20)}"`):''}${result.more?button('下一页','question-page','secondary small','arrow',`data-offset="${offset+20}"`):''}</div>${offset===0?`<h3>发布后的追问</h3><p class="hint">仅使用已发布正式稿件的当前备注；修改或清空效果备注后自动更新。跨目标保留问题线索，效果比较仍限同平台同目标。</p>${result.feedback.map(o=>`<section class="panel"><p>${esc(o.text)}</p><small>来自「${esc(o.context)}」· 手动记录，未经平台验证</small><button class="text-btn" data-action="question-feedback" data-id="${o.creation_id}">修改这条效果记录</button></section>`).join('') || '<p class="hint">发布后，在稿件的「记录效果」里填一句客户追问即可回流。</p>'}`:''}`, true);
+}
+function editQuestion(value = {}) {
+  S.questionEdit={id:value.id || null,key:workspaceKey()};
+  modal(value.id?'修改问题记录':'记录一个问题',`<form id="question-form">${questionFields('question-edit',value)}<p class="hint">保存到当前项目。事实观察与原因推测请分开写；不填写客户身份和联系方式。</p><button class="btn primary" type="submit">保存记录</button></form>`);
+}
+
 function originalForm() {
   const o = S.original;
   const assets = S.workspace.assets.filter((a) => a.kind !== "账号");
@@ -582,6 +622,7 @@ function originalForm() {
     <label class="field"><span>把业务资料给我</span><textarea id="original-temporary" rows="4" maxlength="100000" placeholder="直接粘贴产品介绍、客户常问的问题或服务说明。比如：卖给谁、能解决什么、有什么真实特点、怎么咨询或购买。">${esc(o.temporary)}</textarea><small>已有资料可在下方勾选。输入会在当前标签页保留 24 小时，退出账号后清除。</small></label>
     <div class="actions"><label class="text-btn upload-label">${icon("plus")}上传业务文档<input type="file" id="original-file" accept=".txt,.md,.csv,.docx,.pdf" hidden></label><label class="text-btn upload-label">${icon("image")}添加产品 / 人物照片<input type="file" id="original-photo-file" accept="image/png,image/jpeg,image/webp" multiple hidden></label></div>
     ${assets.length ? `<details class="transcript-box" ${o.assets.length || !o.temporary.trim() ? "open" : ""}><summary>使用已保存的资料（共 ${assets.length} 份，已选 ${o.assets.length} 份）</summary><div class="original-assets">${assets.map((a) => `<label class="check-row"><input type="checkbox" name="original-asset" value="${esc(a.id)}" ${o.assets.includes(a.id) ? "checked" : ""}>${a.kind === "图片" ? `<img class="asset-choice-thumb" src="${esc(safeImage(a.content))}" alt="">` : icon("folder")}${esc(a.name)}</label>`).join("")}</div></details>` : ""}
+    ${questionIntake("original", o.observation)}
     <details class="transcript-box"><summary>还有想补充的？（可选）</summary><label class="field"><span>语气或特别要求</span><textarea id="original-requirements" rows="2" placeholder="比如：面向第一次买挂耳的上班族，语气轻松">${esc(o.requirements)}</textarea></label><label class="field"><span>参考内容的搜索词</span><input id="original-keyword" maxlength="60" value="${esc(o.keyword)}" placeholder="不用填，系统会根据主题查找"></label></details>
     <div class="entry-bottom"><span class="platform-marks">${S.boot.mode === "demo" ? "当前为演示模式，生成的是体验模板" : "生成标题、正文、配图建议和评论回复"}</span><span>预计 ${originalCost()} 积分 · 失败自动退还</span></div>
     <button type="submit" class="btn primary" ${S.busy || S.imageUploading ? "disabled" : ""}>${S.busy ? '<span class="spinner"></span>' : icon("spark")}${S.busy ? "正在准备内容" : "帮我写好"} ${icon("arrow")}</button>
@@ -839,6 +880,7 @@ async function startOriginal(briefId) {
       assets: selectedAssetIDs("original-asset",S.original.assets),
       requirements: $("#original-requirements").value,
       temporary: $("#original-temporary").value,
+      observation: questionValues("original"),
     };
     saveDraft();
     if (S.original.topic.length < 2) throw new Error("请填写创作主题");
@@ -859,11 +901,16 @@ async function startOriginal(briefId) {
             assets: S.original.assets,
             requirements: S.original.requirements,
             temporary: S.original.temporary,
+            observation: S.original.observation,
           },
       (d) => post("/api/original", body(d)),
     );
     toast("正在根据你的资料写内容，可在任务记录查看进度…");
     if (operationKey !== workspaceKey()) return;
+    // Admission saved the observation transactionally. Do not re-submit an old
+    // input after its saved record has subsequently been edited or deleted.
+    S.original.observation = {};
+    saveDraft();
     await poll(r.task_ids, async (success) => {
       S.creationSource = r.brief_id;
       S.page = "creations";
@@ -1361,6 +1408,7 @@ async function startCreate(againId) {
   const sourceId = againId || S.detail;
   if (!againId) {
     if (S.imageUploading) throw new Error("图片正在上传，请完成后再生成");
+    S.observation = questionValues("create");
     S.requirements = $("#requirements").value;
     S.temporary = $("#temporary").value;
     S.selectedAssets = selectedAssetIDs("asset",S.selectedAssets);
@@ -1377,11 +1425,13 @@ async function startCreate(againId) {
             requirements: S.requirements,
             temporary: S.temporary,
             assets: S.selectedAssets,
+            observation: S.observation,
           },
       (d) => post("/api/create", body(d)),
     );
     toast("正在创作 6 到 8 条独立稿件…");
     if (operationKey !== workspaceKey()) return;
+    S.observation = {};
     await poll(r.task_ids, async (success) => {
       S.creationSource = sourceId;
       S.page = "creations";
@@ -1419,6 +1469,26 @@ function providerModal(id) {
   );
 }
 const actions = {
+  "question-library": () => questionLibrary(),
+  "question-page": (el) => questionLibrary(Number(el.dataset.offset)),
+  "question-new": () => editQuestion(),
+  "question-edit": (el) => {
+    if(S.questionLibrary?.key !== workspaceKey()) return;
+    const row=S.questionLibrary.items.find(o=>o.id===el.dataset.id);
+    if(row)editQuestion(row);
+  },
+  "question-delete": async (el) => {
+    const key=workspaceKey();
+    await api(`/api/questions/${el.dataset.id}?project_id=${encodeURIComponent(S.project)}`, {method:"DELETE"});
+    if(key!==workspaceKey())return;
+    toast("记录已删除，后续创作不再引用；历史稿件保留原始依据");
+    await questionLibrary(S.questionLibrary?.offset || 0);
+  },
+  "question-feedback": async (el) => {
+    const key=workspaceKey();
+    const c=await ensureCreationContext(el.dataset.id);
+    if(c && key===workspaceKey()) actions["record-results"](el);
+  },
   "edit-draft": el => openDraftEditor(el.dataset.id),
   "rewrite-draft": async () => {
     const session = S.editSession;
@@ -1503,7 +1573,7 @@ const actions = {
     const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
     const r = c.results || {};
     S.resultsId = c.id;
-    modal("这条内容带来了什么？", `<form id="results-form"><p class="subtext">填写截至目前的累计数据。不知道的留空，确实没有填 0。有效咨询指目标客户提出了具体需求。记录发布状态后，下次创作会参考同平台、同目标的结果。</p>${[["views", "浏览次数"], ["leads", "有效咨询人数"], ["orders", "订单数"], ["spend", "推广花费（元）"]].map(([key, label]) => `<label class="field"><span>${label}</span><input type="number" id="result-${key}" min="0" max="1000000000" step="${key === "spend" ? "0.01" : "1"}" value="${r[key] ?? ""}" placeholder="未记录"></label>`).join("")}<label class="field"><span>客户问了什么？（可选，不填写联系方式）</span><textarea id="result-note" maxlength="1000" rows="2">${esc(r.note || "")}</textarea></label><button type="submit" class="btn primary full">保存效果</button></form>`);
+    modal("这条内容带来了什么？", `<form id="results-form"><p class="subtext">填写截至目前的累计数据。不知道的留空，确实没有填 0。有效咨询指目标客户提出了具体需求。标记发布后，问题摘要会自动成为后续选题线索；效果比较限同平台、同目标。演示稿件不回流。</p>${[["views", "浏览次数"], ["leads", "有效咨询人数"], ["orders", "订单数"], ["spend", "推广花费（元）"]].map(([key, label]) => `<label class="field"><span>${label}</span><input type="number" id="result-${key}" min="0" max="1000000000" step="${key === "spend" ? "0.01" : "1"}" value="${r[key] ?? ""}" placeholder="未记录"></label>`).join("")}<label class="field"><span>客户问了什么？（可选，不填写联系方式）</span><textarea id="result-note" maxlength="1000" rows="2" placeholder="尽量记录客户原话和场景；观察与推测分开写。清空后，后续创作不再使用这条追问。">${esc(r.note || "")}</textarea></label><button type="submit" class="btn primary full">保存效果</button></form>`);
   },
   "user-ledger": async (el) => {
     const rows = await api("/api/admin/ledger?user_id=" + el.dataset.id);
@@ -2036,6 +2106,15 @@ document.addEventListener("submit", async (e) => {
         if(key!==workspaceKey())return;
         close();S.overseasFilters={query:"",category:"",platform:"all",saved:true};await loadOverseasIdeas();toast("已收集到当前项目的海外收藏");break;
       }
+      case "question-form": {
+        const session=S.questionEdit;
+        if(!session || session.key!==workspaceKey())break;
+        await post("/api/questions"+(session.id?"/"+session.id:""),body({observation:questionValues("question-edit")}));
+        if(session.key!==workspaceKey())break;
+        toast("问题记录已保存，后续创作自动参考相关记录");
+        await questionLibrary();
+        break;
+      }
       case "results-form": {
         const results = { note: $("#result-note").value };
         for (const key of ["views", "leads", "orders", "spend"]) {
@@ -2255,6 +2334,11 @@ document.addEventListener("input", (e) => {
     const cost = $("#entry-cost");
     if (cost)
       cost.textContent = analyzeEstimate();
+  }
+  const observationField = /^(original|create)-question-(text|source|context|reference|occurred_on)$/.exec(e.target.id || "");
+  if (observationField) {
+    if(observationField[1]==="original") { (S.original.observation ||= {})[observationField[2]]=e.target.value; saveDraft(); }
+    else (S.observation ||= {})[observationField[2]]=e.target.value;
   }
   if (e.target.id === "transcript") S.transcript = e.target.value;
   if (e.target.id === "create-goal") S.goal = e.target.value;

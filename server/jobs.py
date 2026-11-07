@@ -1,6 +1,6 @@
 import hashlib, json, queue, threading
 from .db import db, uid, now, dumps, setting, ledger
-from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access
+from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access, questions
 
 MAX_USER_ACTIVE = 20
 MAX_GLOBAL_ACTIVE = 200
@@ -23,18 +23,21 @@ def history_results(project, platform, goal):
     """Only this project's same-platform, same-objective published results."""
     with db() as c:
         rows = c.execute(
-            "SELECT o.data,r.data AS results,r.updated_at,k.published_at FROM creation_results r "
+            "SELECT o.data,r.data AS results,r.updated_at,k.published_at,COALESCE(json_extract(o.data,'$.target_platform'),s.platform) AS platform FROM creation_results r "
             "JOIN creation_outputs o ON o.id=r.creation_id JOIN source_contents s ON s.id=o.source_id "
             "JOIN creation_tracking k ON k.creation_id=o.id "
-            "WHERE o.project_id=? AND s.platform=? AND k.status='published' AND o.deleted_at IS NULL "
-            "ORDER BY r.updated_at DESC LIMIT 100", (project, platform),
+            "WHERE o.project_id=? AND k.status='published' AND o.deleted_at IS NULL "
+            "AND COALESCE(json_extract(o.data,'$.demo'),0)=0 AND json_extract(o.data,'$.goal')=? "
+            "AND (COALESCE(json_extract(o.data,'$.target_platform'),s.platform)=? "
+            "OR (?='overseas' AND COALESCE(json_extract(o.data,'$.target_platform'),s.platform) IN ('tiktok','instagram','youtube'))) "
+            "ORDER BY r.updated_at DESC LIMIT 12", (project, goal, platform, platform),
         ).fetchall()
     result = []
     for row in rows:
         output = json.loads(row["data"])
         if output.get("goal") != goal or output.get("demo"):
             continue
-        result.append({"title": output.get("title"), "angle": output.get("angle"),
+        result.append({"title": output.get("title"), "angle": output.get("angle"), "platform": row["platform"],
                        "results": json.loads(row["results"]), "source": "用户手动记录，未经平台验证",
                        "published_at": row["published_at"], "recorded_at": row["updated_at"]})
     return result[:12]
@@ -51,7 +54,7 @@ def selected_facts(c, asset_ids):
     if not ids:
         return []
     rows = c.execute(
-        f"SELECT asset_id,category,fact,quote FROM asset_facts WHERE asset_id IN ({','.join('?' * len(ids))})",
+        f"SELECT asset_id,category,fact,quote,demo FROM asset_facts WHERE asset_id IN ({','.join('?' * len(ids))})",
         ids,
     ).fetchall()
     return [dict(r) for r in rows]
@@ -83,7 +86,7 @@ def submit(user, project, kind, payload, actor=None, request_id=""):
 
 def submission_fingerprint(kind, payload):
     # Generated metadata must not make a double click look like a new request.
-    omitted = {"execution_mode", "unit_cost", "pick", "asset_snapshot"}
+    omitted = {"execution_mode", "unit_cost", "pick", "asset_snapshot", "question_context", "observation_id"}
     if kind == "original":
         omitted.add("source_id")
     value = {k: v for k, v in payload.items() if k not in omitted}
@@ -150,6 +153,29 @@ def submit_many(user, project, kind, payloads, actor=None, request_id=""):
                 if set(wanted) != {r["id"] for r in rows}:
                     raise ValueError("所选资料已删除或不属于当前项目")
                 payload["asset_snapshot"] = rows
+                platform = payload.get("brief", {}).get("platform")
+                topic = payload.get("brief", {}).get("topic", "")
+                if kind == "create":
+                    source_row = c.execute("SELECT platform,data FROM source_contents WHERE id=? AND project_id=?", (payload.get("source_id"), project)).fetchone()
+                    if source_row:
+                        platform, topic = source_row["platform"], json.loads(source_row["data"]).get("title", "")
+                if platform in ("xhs", "douyin", *overseas.PLATFORMS):
+                    observation = questions.clean(payload.get("observation"))
+                    if observation:
+                        payload["observation_id"] = questions.save(c, project, observation)
+                    # Validate the user input independently, then fit optional
+                    # retrieved evidence into the remaining input allowance.
+                    payload["question_context"] = []
+                    resource_limits.validate_inputs(payload)
+                    payload["question_context"] = questions.context(
+                        c, project, platform, topic + " " + payload.get("requirements", ""),
+                        payload.get("observation_id"), selected_facts(c, wanted), rows)
+                    while payload["question_context"]:
+                        try:
+                            resource_limits.validate_inputs(payload)
+                            break
+                        except ValueError:
+                            payload["question_context"].pop()
                 resource_limits.validate_inputs(payload)
             resource_limits.check_storage(c, user, len(dumps(payload).encode()))
             c.execute(
@@ -438,6 +464,7 @@ def _run(ident):
             goal=payload.get("goal", "leads"),
             history_results=history_results(t["project_id"], content["platform"], payload.get("goal", "leads")),
             facts=facts,
+            observations=payload.get("question_context", []),
         )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -482,6 +509,7 @@ def _run(ident):
                 previous=previous,
                 demo=demo,
                 history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
+                observations=payload.get("question_context", []),
             )
         else:
             outputs, model = adapters.create_original(
@@ -495,6 +523,7 @@ def _run(ident):
                 demo=demo,
                 history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
                 facts=facts,
+                observations=payload.get("question_context", []),
             )
         for output in outputs:
             output["image_asset_ids"] = selected_image_ids
@@ -599,6 +628,7 @@ def _run(ident):
                 "benchmark": benchmark,
                 "assets": payload.get("assets", []),
                 "requirements": payload.get("requirements", ""),
+                "observation_id": payload.get("observation_id"),
             }
             if c.execute(
                 "SELECT 1 FROM source_contents WHERE id=? AND project_id=?",

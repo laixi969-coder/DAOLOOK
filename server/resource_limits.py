@@ -25,7 +25,7 @@ def validate_inputs(payload):
 
 def usage(c, user=None):
     total = 0
-    for table, column in (('assets','content'),('asset_trash','data'),('source_contents','data'),('creation_outputs','data'),
+    for table, column in (('question_observations','data'),('assets','content'),('asset_trash','data'),('source_contents','data'),('creation_outputs','data'),
                           ('generated_images','data'),('creation_revisions','data'),('overseas_ideas','data'),
                           ('creation_results','data'),('overseas_searches','ids'),('analysis_outputs','data'),('creation_tracking','checklist')):
         where = ' JOIN projects p ON p.id=t.project_id WHERE p.user_id=?' if user else ''

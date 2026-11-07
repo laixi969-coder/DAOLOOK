@@ -153,7 +153,12 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    const suggestions=[1,2,3].map(n=>({id:'suggestion-'+n,created_at:'2026-10-12',data:{title:'Idea '+n,body:'Full script '+n,overseas:{platform:'tiktok',market:'US',duration:24,skill:'hiccai-pop'}}}));
    const displayed=creationSelection(suggestions);
    for(let n=1;n<=3;n++) {assert.equal(displayed.includes('建议 '+n),true);assert.equal(displayed.includes('Full script '+n),true);}
-   assert.equal(displayed.includes('<details'),false);
+   // Creative deliverables remain expanded; only publishing/feedback is secondary.
+   assert.equal((displayed.match(/<summary>发布与反馈/g)||[]).length,3);
+   for(const suggestion of suggestions) {
+     const card=overseasCard(suggestion);
+     assert.equal(card.indexOf(suggestion.data.body)<card.indexOf('<details'),true);
+   }
    // Only useful deliverables appear, including copyable prompts for old/new records.
    const full={id:'lean-plan',created_at:'2026-10-12',data:{title:'Title',body:'Caption',tags:['product'],concept:'A concrete idea',script:'Spoken script',translation_zh:'中文口播',overseas:{platform:'tiktok',duration:24},shots:[{start:0,end:24,camera:'Close-up',action:'A light moves across the table',ai_prompt:'A scene with <sample>'}],quality:{status:'needs_input',issues:['发布前还需补充']},role:'岗位',shooting_list:['拍摄清单'],missing:['素材缺口'],value:'内容价值',cta:'行动引导'}};
    const lean=overseasCard(full,1),planText=overseasPlanText(full.data);

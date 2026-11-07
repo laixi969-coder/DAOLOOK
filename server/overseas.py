@@ -1,6 +1,6 @@
 """Viral creative production using existing model routing, queue and credits."""
 import copy
-from . import adapters, content_quality
+from . import adapters, content_quality, questions
 from .overseas_library import PLATFORMS as SOCIAL_PLATFORMS
 
 LANGUAGES = {'en-zh':'English','es-zh':'Spanish','fr-zh':'French','de-zh':'German'}
@@ -154,17 +154,35 @@ def demo_outputs(brief,assets,batch):
                      for visual in (idea['first_second'],'第一帧从另一侧机位拍摄：'+idea['actions'][0],'第一帧从近景切入：'+idea['actions'][2])],
             'shots':shots,'evidence':[],'demo':True,
         })
+    for output in outputs:
+        output['topic_plan']={**questions.example(), 'problem':output['concept'], 'approach':'故事'}
     return outputs
 
 
-def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False,history_results=None):
+def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False,history_results=None,observations=None):
     if demo:
         outputs=demo_outputs(brief,assets,batch);model='demo-hiccai-pop'
     else:
         payload={'brief':brief,'language':LANGUAGES[brief['language']],'assets':assets,'reference':bench,'requirements':requirements,'previous_outputs':previous or [],'history_results':history_results or [],'batch':batch,
-                 'objective':content_quality.objective(brief['goal'])}
-        result,model=adapters.model_json(payload,SCHEMA,prompt,kind='create',validator=lambda r:validate(r,brief,assets,previous))
+                 'objective':content_quality.objective(brief['goal']), 'question_observations':observations or []}
+        schema=copy.deepcopy(SCHEMA)
+        schema['properties']['outputs']['items']['properties']['topic_plan']={
+            'type':'object','required':['problem','relevance','answer','takeaway','approach','refs'],
+            'properties':{**{key:{'type':'string','maxLength':600} for key in ('problem','relevance','answer','takeaway')},
+                          'approach':{'enum':['比较','反差','风险说明','判断','答疑','故事','展示']},
+                          'refs':{'type':'array','maxItems':3,'items':{'type':'object','required':['id','quote'],'properties':{'id':{'type':'string'},'quote':{'type':'string','maxLength':500}}}}}}
+        schema['properties']['outputs']['items']['required'].append('topic_plan')
+        def validator(result):
+            validate(result,brief,assets,previous)
+            if observations is not None:
+                questions.validate(result['outputs'],observations)
+        instructions=questions.INSTRUCTION + "\n海外创作保持原有故事与展示结构。问题仅作为相关场景线索，不强制答疑；没有相关记录就保留探索创意。内部选题依据用中文。不同市场与平台的需求不能默认相同。history_results 保留实际 platform，只有与当前方案 target_platform 相同的效果可作比较。"
+        result,model=adapters.model_json(payload,schema,prompt+'\n'+instructions,kind='create',validator=validator)
         outputs=result['outputs']
+        for output in outputs:
+            output.pop('demo',None)
+    if observations is not None or demo:
+        questions.attach(outputs,observations or [],demo=demo)
     for output in outputs:
         output['storyboard']=[f"{s['start']}–{s['end']}s | {s['camera']} | {s['action']} | {s['line']} / {s['translation_zh']} | {s['screen_text']} | {s['sfx']} | {s['implementation']}" for s in output['shots']]
         output['overseas']={'platform':output['target_platform'],'market':brief['market'],'language':brief['language'],'duration':brief['duration'],'skill':'hiccai-pop v2.2.0'}

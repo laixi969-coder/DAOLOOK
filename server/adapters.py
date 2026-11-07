@@ -3,7 +3,7 @@ import http.client, ipaddress, socket, time
 import contextvars
 from contextlib import contextmanager
 from .db import setting, db
-from . import discovery, spending, secret_store, resource_limits
+from . import discovery, spending, secret_store, resource_limits, questions
 
 # 单次创作的批量是 6 到 8 篇，不是每日上限。
 CREATION_MIN = 6
@@ -1029,6 +1029,8 @@ def demo_outputs(p, topic, batch):
                 },
                 "first_hour": "发布后先发置顶，再补知识句，最后用气氛句提问带动讨论。",
             }
+    for output in outputs:
+        output["topic_plan"] = {**questions.example(), "problem": output["title"], "answer": "演示答案，需以业务资料核对"}
     return outputs
 
 
@@ -1051,11 +1053,17 @@ def validate_grounded_creation(result, p, previous, assets):
             raise ValueError("事实引用必须来自本次所选文字资料的原文，不得引用参考或杜撰资料 ID")
 
 
-def create(content, assets, requirements, version, batch, analysis=None, previous=None, demo=False, goal="leads", history_results=None, facts=None):
+def validate_topic_creation(result, p, previous, assets, observations):
+    validate_grounded_creation(result, p, previous, assets)
+    if observations is not None:
+        questions.validate(result["outputs"], observations)
+
+
+def create(content, assets, requirements, version, batch, analysis=None, previous=None, demo=False, goal="leads", history_results=None, facts=None, observations=None):
     """demo 为运行模式；演示模式或演示参考都只用模板，不调用模型。"""
     p = content["platform"]
     from .content_quality import objective, annotate
-    schema = {"outputs": [creation_example(p)]}
+    schema = {"outputs": [{**creation_example(p), "topic_plan": questions.example()}]}
     if not demo and not content.get("demo"):
         result, model = model_json(
             {
@@ -1065,6 +1073,7 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
                 "previous_outputs": previous or [],
                 "assets": assets,
                 "structured_facts": facts or [],
+                "question_observations": observations or [],
                 "objective": objective(goal),
                 "history_results": history_results or [],
                 "requirements": requirements,
@@ -1072,9 +1081,9 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
                 "batch": batch,
             },
             schema,
-            version,
+            version + "\n" + questions.INSTRUCTION,
             "create",
-            lambda r: validate_grounded_creation(r, p, previous, assets),
+            lambda r: validate_topic_creation(r, p, previous, assets, observations),
         )
         outputs = result.get("outputs", [])
         if not CREATION_MIN <= len(outputs) <= CREATION_MAX or any(
@@ -1084,9 +1093,11 @@ def create(content, assets, requirements, version, batch, analysis=None, previou
             raise ValueError("模型未返回完整的 6 到 8 条稿件")
         for output in outputs:
             output.pop("demo", None)
+        if observations is not None:
+            questions.attach(outputs, observations)
         return annotate(outputs, assets, p, goal), model
     topic = requirements.strip()[:60] or (content.get("title") or "这个主题").split("｜")[0]
-    return annotate(demo_outputs(p, topic, batch), assets, p, goal), "demo"
+    return annotate(questions.attach(demo_outputs(p, topic, batch), observations or [], demo=True), assets, p, goal), "demo"
 
 
 def original_instruction(p):
@@ -1139,7 +1150,7 @@ def fetch_benchmark(keyword, p, demo=False):
         }
 
 
-def create_original(brief, benchmark, assets, requirements, version, batch, previous=None, demo=False, history_results=None, facts=None):
+def create_original(brief, benchmark, assets, requirements, version, batch, previous=None, demo=False, history_results=None, facts=None, observations=None):
     p = brief["platform"]
     from .content_quality import objective, annotate
     goal = brief.get("goal", "leads")
@@ -1150,6 +1161,7 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
                 "benchmark": bounded_reference(benchmark),
                 "assets": assets,
                 "structured_facts": facts or [],
+                "question_observations": observations or [],
                 "objective": objective(goal),
                 "history_results": history_results or [],
                 "requirements": requirements,
@@ -1157,15 +1169,17 @@ def create_original(brief, benchmark, assets, requirements, version, batch, prev
                 "instruction": original_instruction(p),
                 "batch": batch,
             },
-            {"outputs": [creation_example(p)]},
-            version,
+            {"outputs": [{**creation_example(p), "topic_plan": questions.example()}]},
+            version + "\n" + questions.INSTRUCTION,
             "create",
-            lambda r: validate_grounded_creation(r, p, previous, assets),
+            lambda r: validate_topic_creation(r, p, previous, assets, observations),
         )
         for output in result["outputs"]:
             output.pop("demo", None)
+        if observations is not None:
+            questions.attach(result["outputs"], observations)
         return annotate(result["outputs"], assets, p, goal), model
-    return annotate(demo_outputs(p, brief["topic"][:60], batch), assets, p, goal), "demo"
+    return annotate(questions.attach(demo_outputs(p, brief["topic"][:60], batch), observations or [], demo=True), assets, p, goal), "demo"
 
 
 FACT_CATEGORIES = ("卖给谁", "卖什么", "可信证据", "常见顾虑", "购买路径")
@@ -1255,8 +1269,8 @@ def rewrite(output, instruction, version, p, demo=False):
         )
         new_output = result["output"]
         new_output.pop("demo", None)
-        return new_output, model
-    return demo_rewrite(output, instruction), "demo"
+        return questions.mark_edited(new_output, output), model
+    return questions.mark_edited(demo_rewrite(output, instruction), output), "demo"
 
 
 def cover(output, direction, demo=None):

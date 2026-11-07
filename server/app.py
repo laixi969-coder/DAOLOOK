@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed, questions
 from .ranking import score
 from .skills import SKILL_NAMES
 from . import audit, secret_store, spending, resource_limits, workspace, access, intake, account_deletion, mfa
@@ -741,6 +741,36 @@ class Handler(BaseHTTPRequestHandler):
                 ],
             )
             return self.send({"task_ids": ids}, 202)
+        if path == "/api/questions" and method == "GET":
+            try:
+                offset = int(q.get("offset", ["0"])[0])
+                if not 0 <= offset <= 500:
+                    raise ValueError()
+            except ValueError:
+                raise Error("问题分页无效")
+            with db() as c:
+                items = questions.saved(c, project_id, 21, offset)
+                feedback = questions.feedback(c, project_id) if offset == 0 else []
+            return self.send({"items": items[:20], "more": len(items) > 20, "feedback": feedback})
+        if path == "/api/questions" and method == "POST":
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                ident = questions.save(c, project_id, data.get("observation"))
+                resource_limits.check_storage(c, u["id"])
+            return self.send({"id": ident})
+        question_match = re.fullmatch(r"/api/questions/([a-f0-9]+)", path)
+        if question_match and method in ("POST", "DELETE"):
+            ident = question_match.group(1)
+            with db() as c:
+                c.execute("BEGIN IMMEDIATE")
+                if not c.execute("SELECT 1 FROM question_observations WHERE id=? AND project_id=?", (ident, project_id)).fetchone():
+                    raise Error("问题记录不存在", 404)
+                if method == "DELETE":
+                    c.execute("DELETE FROM question_observations WHERE id=? AND project_id=?", (ident, project_id))
+                else:
+                    questions.save(c, project_id, data.get("observation"), ident)
+                    resource_limits.check_storage(c, u["id"])
+            return self.send({"ok": True})
         if path == "/api/create" and method == "POST":
             with db() as c:
                 source = c.execute(
@@ -791,6 +821,8 @@ class Handler(BaseHTTPRequestHandler):
                     "requirements": data.get("requirements", last.get("requirements", "")),
                     "temporary": data.get("temporary", last.get("temporary", "")),
                     "goal": data.get("goal", last.get("goal", "leads")),
+                    "observation": data.get("observation"),
+                    "observation_id": last.get("observation_id"),
                 }
                 # 追加生成时沿用客户端对追问的显式选择
                 for flag in ("skip_question", "answer"):
@@ -808,6 +840,11 @@ class Handler(BaseHTTPRequestHandler):
                     ("goal", "leads"),
                 ]
             }
+            payload["observation"] = questions.clean(data.get("observation"))
+            if isinstance(data.get("observation_id"), str):
+                with db() as c:
+                    if c.execute("SELECT 1 FROM question_observations WHERE id=? AND project_id=?", (data["observation_id"], project_id)).fetchone():
+                        payload["observation_id"] = data["observation_id"]
             payload["goal"] = content_quality.goal(payload["goal"])
             if setting("mode") != "demo" and not selected and not payload["temporary"].strip():
                 raise Error("请提供自己的产品或服务资料，参考内容不能代替你的业务事实")
@@ -911,6 +948,8 @@ class Handler(BaseHTTPRequestHandler):
             payload = {
                 "source_id": brief_id or uid(),
                 "brief": brief,
+                "observation": questions.clean(data.get("observation")),
+                "observation_id": old_brief.get("observation_id") if old_brief else None,
                 "assets": selected,
                 "requirements": requirements,
                 "temporary": temporary,
@@ -1316,6 +1355,7 @@ class Handler(BaseHTTPRequestHandler):
                 "海外目标市场", "台词语言", "目标时长（秒）", "完整口播", "口播中文翻译", "创新算子", "原创变化", "Hook备选", "循环结尾", "平台适配", "讨论问题",
                 "第一秒画面", "观众误判", "公平伏笔", "结尾反转", "产品角色", "收尾方式", "出镜方式", "产品揭晓镜号", "产品揭晓", "制作路径", "成本依据",
                 "创意", "AI镜头提示词", "视频屏幕文案", "屏幕文案中文翻译",
+                "选题状态", "选题依据", "问题出处", "回答依据",
             ]
         ]
         with db() as c:
@@ -1367,7 +1407,12 @@ class Handler(BaseHTTPRequestHandler):
                         d.get('loop',''),d.get('adaptation',''),'\n'.join(d.get('comments',[])),
                         *(d.get(k,'') for k in ('first_second','misread','clue','reveal','product_role','ending_type','casting','reveal_shot','product_reveal','production_method','cost_basis')),
                         d.get('concept',''), '\n\n'.join(f"镜头 {i+1}\n{s.get('ai_prompt','')}" for i,s in enumerate(d.get('shots',[]))),
-                        *('\n'.join(f"{s.get('start','')}–{s.get('end','')}s | {s.get(k,'')}" for s in d.get('shots',[]) if s.get(k)) for k in ('screen_text','screen_text_zh'))]
+                        *('\n'.join(f"{s.get('start','')}–{s.get('end','')}s | {s.get(k,'')}" for s in d.get('shots',[]) if s.get(k)) for k in ('screen_text','screen_text_zh')),
+                        ("已修改，请复核原始依据" if d.get("topic_basis",{}).get("review_required") else
+                         {"demo":"演示", "hypothesis":"待验证", "clue":"资料/市场线索，待验证", "sourced":"有来源记录，适用性待核对"}.get(d.get("topic_basis",{}).get("status"), "")),
+                        dumps(d["topic_plan"]) if d.get("topic_plan") else "",
+                        dumps(d["topic_basis"].get("sources",[])) if d.get("topic_basis") else "",
+                        dumps(d["topic_basis"].get("answer_sources",[])) if d.get("topic_basis") else ""]
                 )
         if fmt == "xlsx":
             out = io.BytesIO()

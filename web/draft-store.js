@@ -9,6 +9,11 @@
         if (typeof value?.[key] === 'string') result[key] = value[key].slice(0,100000);
       if (Array.isArray(value?.assets)) result.assets = value.assets.filter(x=>typeof x==='string').slice(0,100);
       if (Number.isInteger(value?.duration)) result.duration = value.duration;
+      if (value?.observation && typeof value.observation === 'object') {
+        result.observation = {};
+        for (const [key,limit] of Object.entries({text:2000,source:40,context:300,reference:500,occurred_on:10}))
+          if(typeof value.observation[key] === 'string') result.observation[key]=value.observation[key].slice(0,limit);
+      }
       return result;
     };
     return {

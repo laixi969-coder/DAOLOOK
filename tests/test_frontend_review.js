@@ -234,6 +234,63 @@ async function test(name,code) {
     assert.equal(r2.task_ids[0],'t3');
     assert.equal(asked,0);
   `);
+  await test('optional observation form captures source and persists per project',`
+    const fields={'#original-goal':'leads','#original-platform':'xhs','#original-topic':'写真', '#original-keyword':'', '#original-requirements':'', '#original-temporary':'业务资料',
+      '#original-question-text':'底片全部给吗？','#original-question-source':'customer_quote', '#original-question-context':'首次拍摄','#original-question-reference':'咨询记录','#original-question-occurred_on':'2026-11-06'};
+    document.querySelector=s=>({value:fields[s]});let submitted;
+    api=async(path,options)=>{submitted=JSON.parse(options.body);throw Error('stop after capture');};
+    await startOriginal();
+    assert.equal(submitted.observation.text,'底片全部给吗？');assert.equal(submitted.observation.source,'customer_quote');
+    assert.equal(drafts.read(workspaceKey()).observation.context,'首次拍摄');
+    assert.equal(drafts.read('user:another'),null);
+  `);
+  await test('topic provenance escapes user content and never enters public copy',`
+    S.workspace.assets=[];
+    const data={title:'标题',body:'正文',tags:[],topic_plan:{problem:'<script>bad</script>',relevance:'人群',answer:'回答',takeaway:'收获',approach:'答疑'},topic_basis:{status:'sourced',sources:[{source_label:'客户原话',quote:'<img src=x>',reference:'javascript:alert(1)'}],answer_sources:[]}};
+    const html=topicBasis(data);
+    assert.equal(html.includes('<script>'),false);assert.equal(html.includes('<img src=x>'),false);
+    assert.equal(html.includes('href="javascript:'),false);assert.equal(html.includes('来源证明记录存在'),true);
+    assert.equal(CreationTools.publicCopy(data),'标题\\n\\n正文');
+    assert.equal(topicBasis({...data,topic_basis:{...data.topic_basis,status:'hypothesis'}}).includes('待验证'),true);
+    assert.equal(topicBasis({...data,topic_basis:{...data.topic_basis,status:'clue'}}).includes('市场线索'),true);
+    assert.equal(topicBasis({...data,topic_basis:{...data.topic_basis,review_required:true}}).includes('稿件已修改'),true);
+  `);
+  await test('draft cards expose existing publish and result workflows',`
+    S.workspace={sources:[{id:'s',platform:'xhs'}],assets:[],images:[]};
+    const html=draftCard({id:'c',source_id:'s',created_at:'2026-11-07',data:{title:'标题',body:'正文',tags:[]}});
+    assert.equal(html.includes('data-action="publish"'),true);
+    assert.equal(html.includes('data-action="record-results"'),true);
+    assert.equal(html.includes('发布与反馈'),true);
+  `);
+  await test('question library discards late responses after switching projects',`
+    let finish,shown=false;api=()=>new Promise(resolve=>finish=resolve);modal=()=>{shown=true;};
+    const pending=questionLibrary();S.project='different';finish({items:[{text:'private'}],feedback:[]});await pending;
+    assert.equal(shown,false);assert.equal(S.questionLibrary,undefined);
+  `);
+  await test('reference creation submits observation separately from business facts',`
+    S.detail='source';S.selectedAssets=[];
+    const fields={'#requirements':'语气自然','#temporary':'业务事实','#create-question-text':'真实问题','#create-question-source':'field_observation'};
+    document.querySelector=s=>({value:fields[s]});let submitted;
+    api=async(path,options)=>{submitted=JSON.parse(options.body);throw Error('stop after capture');};
+    await startCreate();assert.equal(submitted.observation.source,'field_observation');
+    assert.equal(submitted.temporary,'业务事实');
+  `);
+  await test('accepted creation clears submitted observation without clearing business draft',`
+    const fields={'#original-goal':'leads','#original-platform':'xhs','#original-topic':'写真', '#original-keyword':'', '#original-requirements':'', '#original-temporary':'真实资料', '#original-question-text':'底片给吗？','#original-question-source':'customer_quote'};
+    document.querySelector=s=>({value:fields[s]});api=async()=>({task_ids:['task'],brief_id:'brief'});poll=async()=>{};
+    await startOriginal();assert.equal(S.original.temporary,'真实资料');
+    assert.equal(JSON.stringify(S.original.observation),'{}');
+    assert.equal(JSON.stringify(drafts.read(workspaceKey()).observation),'{}');
+  `);
+  await test('overseas shares optional evidence and published feedback without changing creative format',`
+    S.overseasForm={...overseasDefaults(),topic:'charger',observation:{text:'Too many cables',source:'field_observation'}};
+    S.workspace={assets:[],images:[],sources:[]};
+    const html=overseasPage();assert.equal(html.includes('overseas-question-text'),true);
+    assert.equal(html.includes('Too many cables'),true);
+    const card=overseasCard({id:'c',data:{title:'Story',body:'Copy',tags:[],overseas:{platform:'tiktok'}}});
+    assert.equal(card.includes('data-action="publish"'),true);
+    assert.equal(card.includes('data-action="record-results"'),true);
+  `);
   await test('closing the question dialog settles as skip',`
     S.intakeSkipped={};
     const submit=async d=>d.skip_question?{task_ids:['t']}:{ask:{id:'leads_missing',question:'q'}};
@@ -245,5 +302,5 @@ async function test(name,code) {
     assert.equal(r.task_ids[0],'t');
     assert.equal(S.intakeSkipped['user:project:leads_missing'],true);
   `);
-  console.log('Frontend review regressions passed (18 cases).');
+  console.log('Frontend review regressions passed (25 cases).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

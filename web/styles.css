@@ -2389,3 +2389,9 @@ tr:last-child td {
     grid-template-columns: 1fr 1fr;
   }
 }
+
+/* Provenance remains secondary to the public copy and wraps long source text. */
+.topic-basis, .question-records { min-width: 0; overflow-wrap: anywhere; }
+.topic-basis p { margin: 10px 0; }
+.topic-basis blockquote { margin: 12px 0; padding: 8px 12px; border-left: 2px solid currentColor; }
+.question-records { display: grid; gap: 12px; margin-bottom: 12px; }

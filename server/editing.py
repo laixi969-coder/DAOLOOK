@@ -2,7 +2,7 @@
 import copy
 import json
 from .db import db, dumps, now
-from . import content_quality, resource_limits
+from . import content_quality, resource_limits, questions
 
 FIELDS = {"title": 300, "body": 30000, "cover_text": 300, "hook": 2000, "cta": 2000}
 
@@ -74,7 +74,7 @@ def edited_data(original, changes, platform):
     quality["status"] = "needs_input" if quality["issues"] else "review"
     quality["note"] = "已手动编辑；原始引用不代表修改后的事实已核验，请核对价格、卖点与购买方式。"
     output["quality"] = quality
-    return output
+    return questions.mark_edited(output, original)
 
 
 def save(ident, project, expected, changes=None, restore=None):
