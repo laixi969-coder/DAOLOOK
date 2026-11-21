@@ -87,14 +87,14 @@ function overseasIdeasPage() {
   const navigation=Object.entries(tabs).map(([id,label])=>`<button class="chip ${scope===id?"active":""}" aria-pressed="${scope===id}" data-action="overseas-tab" data-scope="${id}">${label}</button>`).join("");
   const actions=`<div class="actions"><button class="btn secondary" data-action="refresh-overseas-ideas" ${updating?"disabled":""}>${icon("refresh")}${updating?"正在检查…":"检查新片"}</button>${button("收集链接","collect-overseas","secondary","plus")}${button("开始海外创作","overseas","primary","spark")}</div>`;
   const controls=`<section class="panel overseas-library-controls"><div class="overseas-library-tabs">${navigation}</div>${scope==="today"?"":overseasLibraryFilters(filters,lib)}${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`;
-  const header=heading("海外灵感","",actions)+controls;
+  const header=heading("海外灵感","",scope==="today"?"":actions)+controls;
   if(!lib) return header+'<div class="loading-line">正在读取海外创意库…</div>';
   const today=scope==="today", limit=lib.daily?.front_page||10;
   const expanded=filters.expandedDay && filters.expandedDay===lib.daily?.day;
   const visible=today&&!expanded?lib.items.slice(0,limit):lib.items;
-  const status=today||scope==="candidates"?overseasFeedStatus(lib.refresh):"";
+  const status=scope==="candidates"?overseasFeedStatus(lib.refresh):"";
   const label=today?lib.daily?.day||"":`${lib.total ?? lib.items.length} 条`;
-  let body=visible.length?`<div class="overseas-idea-grid">${visible.map(i=>overseasIdeaCard(i,today)).join("")}</div>`:empty("暂时没有匹配的创意","可以去易拍片库查看其他拍法。",button("浏览易拍片库","overseas-tab","secondary","grid",'data-scope="selected"'));
+  let body=visible.length?`<div class="overseas-idea-grid">${visible.map(today?overseasDailyCard:overseasIdeaCard).join("")}</div>`:empty("暂时没有匹配的创意","可以去易拍片库查看其他拍法。",button("浏览易拍片库","overseas-tab","secondary","grid",'data-scope="selected"'));
   if(today && !expanded && lib.items.length>limit) body+=`<div class="actions overseas-more">${button("再看 "+(lib.items.length-limit)+" 条","overseas-daily-more","secondary","arrow")}</div>`;
   if(lib.previous_offset!=null || lib.next_offset!=null) body+=`<div class="actions">${lib.previous_offset!=null?button("上一页","overseas-idea-page","secondary small","back",`data-offset="${lib.previous_offset}"`):""}${lib.next_offset!=null?button("下一页","overseas-idea-page","secondary small","arrow",`data-offset="${lib.next_offset}"`):""}</div>`;
   return header+`<div class="section-head"><h2>${tabs[scope]} <span>${esc(String(label))}</span></h2></div>`+status+body;
@@ -118,13 +118,60 @@ function overseasFeedStatus(sync) {
   const counts=["succeeded","partial"].includes(sync.state)?`本次新入选 ${sync.new_match_count||0} 条，新增候选 ${sync.added_count||0} 条`:"";
   return `<p class="overseas-feed-status" role="status">${esc(["每天更新",latest,counts,status].filter(Boolean).join(" · "))}</p>`;
 }
-function overseasIdeaCard(item,today=false) {
+function overseasPlayerUrl(link) {
+  let url;
+  try { url=new URL(link); } catch { return ""; }
+  if(url.protocol!=="https:" || url.username || url.password || url.port) return "";
+  const host=url.hostname.replace(/^www\./,"");
+  if(host==="youtube.com" || host==="youtu.be") {
+    const id=host==="youtu.be"?url.pathname.slice(1):url.pathname==="/watch"?url.searchParams.get("v"):url.pathname.match(/^\/shorts\/([^/]+)\/?$/)?.[1];
+    return /^[\w-]{11}$/.test(id||"")?`https://www.youtube-nocookie.com/embed/${id}`:"";
+  }
+  if(host==="instagram.com") {
+    const post=url.pathname.match(/^\/(?:reels?|p)\/([\w-]+)\/?$/);
+    return post?`https://www.instagram.com/p/${post[1]}/embed/`:"";
+  }
+  if(host==="tiktok.com") {
+    const post=url.pathname.match(/^\/@[^/]+\/video\/(\d+)\/?$/);
+    return post?`https://www.tiktok.com/player/v1/${post[1]}?autoplay=0&description=0&music_info=0`:"";
+  }
+  return "";
+}
+
+function overseasFrame(player,label) {
+  return `<iframe class="daily-player" src="${esc(player)}" title="${esc(label)}" loading="lazy" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+
+function overseasDailyCard(item) {
+  const trusted=link=>/^https:\/\/(?:(?:(?:www|m)\.)?(?:youtube\.com|instagram\.com|tiktok\.com)|youtu\.be|(?:vm|vt)\.tiktok\.com)\//i.test(link||"");
+  const link=[item.reference_video?.url,item.url].find(trusted);
+  const player=link && overseasPlayerUrl(link);
+  const chinese=text=>typeof text==="string" && /[\u3400-\u9fff]/.test(text);
+  const payoff=item.mechanism==="实物错觉揭晓" ? "" : (item.idea_zh || item.visual_payoff);
+  const idea=[payoff,item.summary_zh,item.summary,item.title_zh,item.mechanism].find(chinese);
+  const hook=chinese(item.hook_zh) ? item.hook_zh : "";
+  const title=[item.title_zh,item.title,item.mechanism].find(chinese) || "推荐短片";
+  const position=item.daily_pick?.position;
+  const label=position?`第 ${position} 条原片 · ${title}`:title;
+  const image=item.daily_poster || item.reference_video?.thumbnail || "";
+  const poster=/^\/art\/overseas\/[\w-]+\.webp$/.test(image) ? image : safeImage(image);
+  let media=player ? overseasFrame(player,label) : "";
+  if(poster && player) {
+    media=`<button type="button" class="daily-poster" data-action="play-overseas-video" data-id="${esc(item.id)}" aria-label="播放：${esc(label)}"><img src="${esc(poster)}" alt="${esc(title)}" loading="${position<=3?"eager":"lazy"}" referrerpolicy="no-referrer"><span aria-hidden="true">▶</span></button>`;
+  }
+  const original=link?`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(label)}，在原平台观看">在原平台观看 ↗</a>`:"";
+  const notes=[["钩子",hook],["创意",idea]].filter(([,value])=>value)
+    .map(([label,value])=>`<p><strong>${label}</strong>${esc(value)}</p>`).join("");
+  return `<article class="overseas-idea-card">${media}${original}<div class="daily-notes" lang="zh-CN">${notes}</div></article>`;
+}
+
+function overseasIdeaCard(item) {
   const title=item.title_zh||item.title, summary=item.summary_zh||item.summary;
   const originals=[item.title_zh?item.title:"",item.summary_zh?item.summary:""].filter((text,i,all)=>text&&all.indexOf(text)===i);
-  const context=[today && item.daily_pick ? (item.daily_pick.new_match?"今日新入选":"片库精选") : "",item.industry,item.publisher_type].filter(Boolean).join(" · ");
+  const context=[item.industry,item.publisher_type].filter(Boolean).join(" · ");
   const basis=item.filming_basis && item.filming_basis!=="画面参考" ? item.filming_basis : "";
   const proof=["https://kabo.sh/breakdown/","https://www.sfom.ai/blog/","https://www.webjunction.org/news/","https://www.the-independent.com/life-style/"].some(prefix=>item.review_source?.startsWith(prefix));
-  const filming = item.filming ? `<details class="transcript-box"><summary>参考拍法${today && item.mechanism?" · "+esc(item.mechanism):""}</summary>${item.visual_payoff?`<p>${esc(item.visual_payoff)}</p>`:""}<p>${esc(item.filming)}</p>${basis?`<small class="muted">${esc(item.filming_basis)}</small>`:""}${proof?`<a href="${esc(item.review_source)}" target="_blank" rel="noopener noreferrer">查看参考出处 ↗</a>`:""}</details>` : "";
+  const filming = item.filming ? `<details class="transcript-box"><summary>参考拍法</summary>${item.visual_payoff?`<p>${esc(item.visual_payoff)}</p>`:""}<p>${esc(item.filming)}</p>${basis?`<small class="muted">${esc(item.filming_basis)}</small>`:""}${proof?`<a href="${esc(item.review_source)}" target="_blank" rel="noopener noreferrer">查看参考出处 ↗</a>`:""}</details>` : "";
   return `<article class="overseas-idea-card">${context?`<span class="muted">${esc(context)}</span>`:""}<h3 lang="${item.title_zh?"zh-CN":""}">${esc(title)}</h3><p class="idea-summary">${esc(summary||"尚未补充创意说明")}</p>${originals.length?`<p class="idea-original"><span>原文</span>${originals.map(esc).join("\n\n")}</p>`:""}${overseasReferenceVideo(item)}${filming}<div class="actions">${button(item.saved?"已收藏":"收藏","save-overseas-idea","secondary small",item.saved?"check":"star",`data-id="${item.id}"`)}${button("用这个创意创作","use-overseas-idea","primary small","spark",`data-id="${item.id}"`)}</div></article>`;
 }
 function overseasReferenceVideo(item) {
@@ -132,7 +179,7 @@ function overseasReferenceVideo(item) {
   if(video?.url) return `<a class="overseas-reference-video" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${video.thumbnail?`<img src="${esc(safeImage(video.thumbnail))}" alt="${esc(video.title_zh||video.title)}" loading="lazy" referrerpolicy="no-referrer">`:""}<span class="video-source">${video.relation==="来源视频"?"来源视频":"同类产品参考"} · ${esc({tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube"}[video.platform]||"YouTube")}</span><strong>${esc(video.title_zh||video.title)}</strong>${video.title_zh?`<span class="video-original">原文：${esc(video.title)}</span>`:""}<span class="video-source">发布者：${esc(video.publisher)}</span>${video.published_at?`<span class="video-source">发布于 ${esc(/^\d{4}-\d{2}-\d{2}$/.test(video.published_at)?video.published_at:date(video.published_at))}</span>`:""}<span class="video-watch">观看参考视频 ↗</span></a>`;
   return item.url?`<a class="video-watch" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">查看原始内容 ↗</a>`:"";
 }
-async function loadOverseasIdeas() {
+async function loadOverseasIdeas(background=false) {
   clearTimeout(overseasRefreshTimer);
   const key=workspaceKey(); const request=++S.overseasLoadToken;
   const f=S.overseasFilters;
@@ -140,17 +187,20 @@ async function loadOverseasIdeas() {
   const params=new URLSearchParams({project_id:S.project,query:today?"":f.query,category:today?"":f.category,
     platform:today?"all":f.platform,scope:f.saved?"selected":f.scope||"today",saved:f.saved?"1":"0",offset:String(today?0:f.offset||0),
     industry:today?"":f.industry||"",publisher_type:today?"":f.publisher_type||""});
+  let keepPlayers=false;
   try {
     const library=await api("/api/overseas/ideas?"+params);
     if(key!==workspaceKey() || request!==S.overseasLoadToken) return;
+    const previous=background && today && S.page==="overseas-ideas" && S.overseasLibrary ? overseasIdeasPage() : "";
     S.overseasLibrary=library;
+    keepPlayers=Boolean(previous) && previous===overseasIdeasPage();
     if(library.refresh?.daily && S.page==="overseas-ideas") {
       overseasRefreshTimer=setTimeout(()=>{
-        if(key===workspaceKey() && request===S.overseasLoadToken && S.page==="overseas-ideas") loadOverseasIdeas();
+        if(key===workspaceKey() && request===S.overseasLoadToken && S.page==="overseas-ideas") loadOverseasIdeas(true);
       },library.refresh.state==="running"||library.translation_pending?10000:600000);
     }
   } catch(error) { if(key===workspaceKey() && request===S.overseasLoadToken) {S.overseasMessage=error.message;S.overseasLibrary={items:[],categories:{}};} }
-  if(key===workspaceKey() && S.page==="overseas-ideas") render();
+  if(!keepPlayers && key===workspaceKey() && S.page==="overseas-ideas") render();
 }
 async function refreshOverseasIdeas() {
   const key=workspaceKey();
@@ -276,6 +326,15 @@ function overseasPlanText(d) {
 Object.assign(actions,{
   "focus-overseas-creation":el=>{S.focusCreation=el.dataset.id;render();window.scrollTo({top:0});},
   overseas:()=>navigate("overseas"),"overseas-ideas":()=>navigate("overseas-ideas"),
+  "play-overseas-video":el=>{
+    const item=S.overseasLibrary?.items.find(i=>i.id===el.dataset.id);
+    const link=item?.reference_video?.url || item?.url;
+    const player=link && overseasPlayerUrl(link);
+    if(!player)return;
+    const src=new URL(player);
+    if(src.hostname!=="www.instagram.com")src.searchParams.set("autoplay","1");
+    modal("观看原片",overseasFrame(src.href,"原片播放器")+`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在原平台观看 ↗</a>`);
+  },
   "refresh-overseas-ideas":refreshOverseasIdeas,
   "collect-overseas":collectOverseasModal,"search-overseas":searchOverseas,
   "overseas-idea-page":async el=>{S.overseasFilters.offset=Number(el.dataset.offset);await loadOverseasIdeas();},
@@ -309,3 +368,12 @@ document.addEventListener("change",async e=>{
   if(e.target.id!=="overseas-material-files") return;
   try {await uploadOverseasMaterials(e.target);} catch(error) {e.target.value="";toast(error.message);}
 });
+
+// A signed provider thumbnail can expire between feed refreshes.
+document.addEventListener("error",event=>{
+  const button=event.target.closest?.("button.daily-poster");
+  if(!button || event.target.tagName!=="IMG")return;
+  const item=S.overseasLibrary?.items.find(i=>i.id===button.dataset.id);
+  const player=overseasPlayerUrl(item?.reference_video?.url || item?.url);
+  if(player)button.outerHTML=overseasFrame(player,button.getAttribute("aria-label"));
+},true);

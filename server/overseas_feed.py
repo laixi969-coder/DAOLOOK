@@ -165,6 +165,7 @@ def parse_instagram(blob, source):
         key='feed_'+hashlib.sha256(url.encode()).hexdigest()[:32]
         published=datetime.datetime.fromtimestamp(seconds,datetime.timezone.utc).isoformat()
         video={'url':url,'title':caption[:200],'publisher':source['publisher'],'platform':'instagram',
+               'thumbnail':post.get('display_url') or post.get('thumbnail_src') or '',
                'published_at':published,'source':'Instagram 官方公开嵌入','relation':'来源视频'}
         cat=category(caption,source)
         items.append({'id':key,'feed_id':key,'url':url,'title':caption[:200],'summary':caption[:20000],
@@ -178,15 +179,17 @@ def instagram_details(item):
     code=item['url'].rsplit('/',1)[-1]
     current=reference(item['id'])
     duration=(current or {}).get('duration')
-    if duration is None:
+    video=dict(item['reference_video'])
+    if duration is None or not video.get('thumbnail'):
         payload=instagram_context(fetch_page(item['url']+'/embed/'))
         post=(payload.get('gql_data') or {}).get('shortcode_media') or {}
         if (payload['context'].get('copyright_blocked') or payload['context'].get('shortcode')!=code
                 or post.get('shortcode')!=code or post.get('product_type')!='clips' or not post.get('is_video')
                 or (post.get('owner') or {}).get('username','').lower()!=item['source_id'].split(':',1)[1]):return None
         duration=post.get('video_duration')
+        video['thumbnail']=post.get('display_url') or post.get('thumbnail_src') or video.get('thumbnail','')
     if type(duration) not in (int,float) or not 3<=duration<=90:return None
-    return {**item,'duration':duration,'reference_video':{**item['reference_video'],'duration':duration}}
+    return {**item,'duration':duration,'reference_video':{**video,'duration':duration}}
 
 
 def youtube_page_data(url):

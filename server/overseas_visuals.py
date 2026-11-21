@@ -1,7 +1,7 @@
 """Public source references and conservative caption matches for shootable shorts."""
 import json
 import re
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 from pathlib import Path
 
 
@@ -27,6 +27,25 @@ def _load_cases():
 
 CASES = _load_cases()
 BY_URL = {case['url']: case for case in CASES.values()}
+
+POSTERS = {p.name for p in (Path(__file__).resolve().parents[1] / 'web/art/overseas').glob('*.webp')}
+
+
+def daily_poster(item):
+    video = item.get('reference_video') or {}
+    source = urlsplit(video.get('url') or item.get('url') or '')
+    code = source.path.rstrip('/').rsplit('/', 1)[-1]
+    if source.path == '/watch':
+        code = parse_qs(source.query).get('v', [''])[0]
+    name = f"{item.get('platform')}-{code}.webp"
+    if name in POSTERS:
+        return '/art/overseas/' + name
+    if isinstance(video.get('thumbnail'), str) and video['thumbnail'].startswith('https://'):
+        return video['thumbnail']
+    if item.get('platform') == 'youtube' and re.fullmatch(r'[A-Za-z0-9_-]{11}', code):
+        return 'https://i.ytimg.com/vi/' + code + '/hqdefault.jpg'
+    return ''
+
 
 def review_key(url):
     parts = urlsplit(url)
@@ -119,6 +138,30 @@ PAYOFF_CUES = {
 }
 PAYOFF_CUES = {name:(re.compile(pattern,re.I),reason) for name,(pattern,reason) in PAYOFF_CUES.items()}
 
+# Only assigned after caption_review has matched a physical action and its payoff.
+CAPTION_HOOKS = {
+    '借影构图':'先只看影子，你能猜到镜头前摆的是什么吗？',
+    '刷痕显字':'刷子扫过，下面开始露字。这一整句会是什么？',
+    '封面借位接脸':'眼前这张脸，哪里是书封，哪里才是真人？',
+    '纸卡循环':'一张卡翻到尽头，怎么又有一面？',
+    '借位悬浮':'没有手托着，杯子怎么会停在半空？',
+    '折纸透视':'纸上的线条怎么有了高度？',
+    '遮镜换物':'手挡住的一瞬间，眼前的东西换了吗？',
+    '桌面定格':'桌上的小物件自己移动，最后要拼成什么？',
+    '叠盒亮标':'盒子一层层叠高，后面的人快被挡住了。',
+    '拨开关切景':'画面里这个开关，手一碰会发生什么？',
+    '动作拟音':'闭眼听像在另一个地方，声音是怎么做出来的？',
+    '轮廓对位':'刚才还是画出来的轮廓，实物从哪里接了上来？',
+    '甩物接镜':'菜单飞出了画面，下一镜会落在哪里？',
+    '机位错觉':'站得那么远，吸管怎么每次都能投中？',
+    '屏幕接字':'每块屏幕只亮出一部分，拼起来是哪句话？',
+    '剪绳落字':'这根绳一剪，下面会露出哪个字？',
+    '翻牌指路':'手里的纸牌转过来，背面藏着什么？',
+    '擦镜显字':'手刚擦过，玻璃上怎么留下了字？',
+    '纸飞机送信':'飞进画面的纸飞机，展开后写了什么？',
+    '实物错觉揭晓':'眼前的东西真是第一眼以为的那样吗？',
+}
+
 # A recognizable prop can occur inside an otherwise predictable format.
 ROUTINE_FORMAT = re.compile(
     r"what(?:['’]s| is) in my bag|bag dump|unpack my bag|client (?:calls?|face)|"
@@ -168,7 +211,7 @@ def with_setup(item):
     case = REVIEWED.get(review_key(item.get('url') or ''))
     if case:
         return {**case, **item, 'filming': case['filming'], 'mechanism': case['mechanism'],
-                'visual_payoff': case.get('visual_payoff', ''), 'filming_basis': case.get('filming_basis', '画面参考')}
+                'hook_zh': case.get('hook_zh', ''), 'visual_payoff': case.get('visual_payoff', ''), 'filming_basis': case.get('filming_basis', '画面参考')}
     item = {**item, 'visual_payoff': ''}
     if item.get('source_kind') in ('daily_feed', 'data_source', 'manual'):
         # Only the source description is evidence; never use search terms or suggested translations.
@@ -177,5 +220,5 @@ def with_setup(item):
             caption = (item.get('reference_video') or {}).get('title','')
         mechanism,setup,reason = caption_review(caption)
         if setup:
-            return {**item, 'mechanism':mechanism, 'visual_payoff':reason, 'filming': setup, 'filming_basis': '按内容说明匹配'}
+            return {**item, 'mechanism':mechanism, 'hook_zh':CAPTION_HOOKS[mechanism], 'visual_payoff':reason, 'filming': setup, 'filming_basis': '按内容说明匹配'}
     return item

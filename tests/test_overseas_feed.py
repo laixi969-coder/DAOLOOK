@@ -308,6 +308,13 @@ class DailyVideoTests(unittest.TestCase):
 
 
 class FeedParsingTests(unittest.TestCase):
+    def test_daily_posters_identify_the_specific_video(self):
+        case=overseas_visuals.CASES['case_juice_cup']
+        self.assertEqual(overseas_visuals.daily_poster(case),'/art/overseas/instagram-DaFuCwZB0BJ.webp')
+        fresh={'platform':'instagram','reference_video':{'url':'https://www.instagram.com/reel/newreel/',
+                                                        'thumbnail':'https://example.com/native-preview.jpg'}}
+        self.assertEqual(overseas_visuals.daily_poster(fresh),fresh['reference_video']['thumbnail'])
+
     def test_source_must_explain_the_visual_payoff(self):
         for caption in ('Swipe to make breakfast. Flip our menu to reveal the offer.',
                         'What’s in my bag? We flip a cardboard sign to reveal the price.',

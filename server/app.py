@@ -318,6 +318,7 @@ class Handler(BaseHTTPRequestHandler):
                 ".js": "application/javascript; charset=utf-8",
                 ".css": "text/css; charset=utf-8",
                 ".svg": "image/svg+xml",
+                ".webp": "image/webp",
             }
             body, etag = STATIC_CACHE.read(target)
             tags = [tag.strip().removeprefix("W/") for tag in self.headers.get("If-None-Match", "").split(",")]
@@ -328,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                 headers={
                     "Cache-Control": "public, no-cache",
                     "ETag": etag,
-                    "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'"
+                    "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.instagram.com https://www.tiktok.com; frame-ancestors 'none'"
                 },
             )
         except (Error, Rejected) as e:

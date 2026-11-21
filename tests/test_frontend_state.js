@@ -23,7 +23,7 @@ const vm = require('node:vm');
 const fs = require('node:fs');
 const source = fs.readFileSync(require.resolve('../web/app.js'),'utf8');
 const CreationTools = require('../web/creation-tools.js');
-const context = vm.createContext({createDraftStore, CreationTools, URLSearchParams, console, localStorage:storage, sessionStorage:storage,
+const context = vm.createContext({createDraftStore, CreationTools, URL, URLSearchParams, console, localStorage:storage, sessionStorage:storage,
   document:{querySelector:()=>null,querySelectorAll:()=>[],addEventListener(){}},
   window:{addEventListener(){}},location:{hash:''},setTimeout(){},clearTimeout(){},assert});
 vm.runInContext(source.slice(0,source.lastIndexOf('(async () => {')),context);
@@ -90,7 +90,22 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    S.overseasFilters={query:"",category:"",platform:"all",scope:"today"};
    S.overseasLibrary={daily:{day:"2026-11-21",front_page:10},items:Array.from({length:13},(_,i)=>({...freshVideo,id:"daily"+i,daily_pick:{position:i+1,new_match:i===0}}))};
    assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,10);
-   assert.ok(overseasIdeasPage().includes('再看 3 条') && overseasIdeasPage().includes('今日新入选') && overseasIdeasPage().includes('片库精选'));
+   const dailyPage=overseasIdeasPage();
+   assert.ok(dailyPage.includes('再看 3 条') && dailyPage.includes('在原平台观看'));
+   assert.equal((dailyPage.match(/class="daily-poster"/g)||[]).length,10);
+   assert.ok(!dailyPage.includes('<iframe'));
+   const noCover={...freshVideo,reference_video:{...freshVideo.reference_video,thumbnail:''}};
+   assert.ok(overseasDailyCard(noCover).includes('https://www.youtube-nocookie.com/embed/E8rFu6YYzsw'));
+   assert.ok(overseasDailyCard({...noCover,daily_poster:'/art/overseas/youtube-E8rFu6YYzsw.webp'}).includes('src="/art/overseas/youtube-E8rFu6YYzsw.webp"'));
+   for(const label of ['今日新入选','片库精选','原文','参考拍法','检查新片','用这个创意创作','save-overseas-idea']) assert.ok(!dailyPage.includes(label));
+   const dailyCard=overseasDailyCard({...translated,hook_zh:'她手里的纸板怎么少了一角？'});
+   assert.ok(dailyCard.includes('<strong>钩子</strong>她手里的纸板怎么少了一角？') && dailyCard.includes('<strong>创意</strong>完整的中文说明'));
+   assert.ok(dailyCard.includes('完整的中文说明') && !dailyCard.includes('original') && !dailyCard.includes('Robbers'));
+   assert.equal(overseasPlayerUrl(translated.reference_video.url),'https://www.tiktok.com/player/v1/7694716128580357398?autoplay=0&description=0&music_info=0');
+   assert.ok(overseasDailyCard({...translated,summary_zh:'',visual_payoff:'纸板翻过来露出预约信息。'}).includes('纸板翻过来露出预约信息。'));
+   assert.equal(overseasPlayerUrl('https://www.instagram.com/reel/demo/'),'https://www.instagram.com/p/demo/embed/');
+   assert.equal(overseasPlayerUrl(referenceItem.reference_video.url),'https://www.youtube-nocookie.com/embed/E8rFu6YYzsw');
+   assert.equal(overseasPlayerUrl('https://www.tiktok.com.example.org/@example/video/123'),'');
    actions['overseas-daily-more']();
    assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,13);
    S.overseasLibrary.daily.day="2026-11-22";

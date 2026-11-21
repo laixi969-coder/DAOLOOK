@@ -10,7 +10,8 @@
     "publisher": "Sweets by Nika",
     "url": "https://www.instagram.com/reel/Ddmkp8jyuMP",
     "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal",
-    "visual_payoff": "纸板缺口让人误以为女孩在吃纸；饼干入画解开误会，翻牌又给真正的甜品摊指路。"
+    "visual_payoff": "先露出藏在纸板后的饼干，再把纸板翻成路牌。观众刚弄懂她在吃什么，就看到去哪儿能买到。",
+    "hook_zh": "女孩举着缺了一口的纸板，嘴里嚼的到底是什么？"
   },
   {
     "id": "case_deli_frame",
@@ -21,7 +22,8 @@
     "publisher": "TV’s Deli & Diner",
     "url": "https://www.instagram.com/reel/DfC74B9CWLU",
     "review_source": "https://kabo.sh/breakdown/paper-frame-team-reveal",
-    "visual_payoff": "感谢语故意空着最后一格，纸窗每框住一个正在工作的人，那个人就补完一次句子。"
+    "visual_payoff": "纸框中间的空格套住正在工作的店员。每换一个人，同一句感谢就有了新的结尾。",
+    "hook_zh": "「这家店离不开……」只写了半句话，谁来补完？"
   },
   {
     "id": "case_juice_cup",
@@ -32,7 +34,8 @@
     "publisher": "Juice Junction",
     "url": "https://www.instagram.com/reel/DaFuCwZB0BJ",
     "review_source": "https://kabo.sh/breakdown/juice-junction-straw-challenge",
-    "visual_payoff": "远处三根吸管为什么全中？反打露出镜头旁偷偷投吸管的手，观众能回头找破绽。"
+    "visual_payoff": "正面只看得到杯口，反打才露出同伴在镜头旁放备用吸管的手。「全中就来试吃」变成了店员合演的玩笑。",
+    "hook_zh": "三个人站那么远，三根吸管怎么会全投中？"
   },
   {
     "id": "case_aura_booking",
@@ -45,7 +48,8 @@
     "publisher": "Aura Studio",
     "url": "https://www.instagram.com/reel/DdrLEgxMAa1",
     "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal",
-    "visual_payoff": "嘴边缺口像被咬过，翻过这块看似食物的纸板，它却是一张能读到价格的预约牌。"
+    "visual_payoff": "她把纸板翻过来，背面竟是工作室的价格和预约方式。让人看错的道具，正好用来递出广告。",
+    "hook_zh": "纸板缺了一口，戴墨镜的人还在嚼。她真在吃纸吗？"
   },
   {
     "id": "case_duna_menu",
@@ -57,7 +61,8 @@
     "publisher": "Duna Restobar",
     "url": "https://www.instagram.com/reel/DZiJFKzo4l-",
     "review_source": "https://www.sfom.ai/blog/restaurant-instagram-reels-reveal-trend-2026",
-    "visual_payoff": "刚给菜反光的菜单被甩出画面，同方向落回桌面揭开菜单，拍摄道具变成点餐入口。"
+    "visual_payoff": "菜单在下一镜顺着同一方向落到桌面摊开。前一秒的拍摄道具，变成了客人眼前的菜单。",
+    "hook_zh": "刚才拿来给松饼补光的菜单，怎么被甩走了？"
   },
   {
     "id": "case_sermon_tissue",
@@ -103,7 +108,8 @@
     "publisher_type": "独立商家",
     "url": "https://www.instagram.com/p/DdQtR1it9gI",
     "review_source": "https://kabo.sh/breakdown/floating-drink",
-    "visual_payoff": "杯子悬空等人靠近，跑过的人停下伸手喝到了它，可以让朋友猜杯子是怎么架起来的。"
+    "visual_payoff": "路人停下、伸手、喝了一口。原本像贴在画面上的杯子，突然成了人物能拿走的真饮料。",
+    "hook_zh": "街上悬着一杯冰饮，跑过来的人真能拿到它吗？"
   },
   {
     "id": "case_sermon_basket",
@@ -163,7 +169,8 @@
     "publisher": "Evergreen Park Public Library",
     "url": "https://www.instagram.com/reel/CfedPE9AEbG",
     "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html",
-    "visual_payoff": "封面上的半张脸与真人无缝接上，拿开书就看懂错觉，也会想找自己的书试一遍。"
+    "visual_payoff": "馆员把自己的身体和封面人物接齐。书放下来，刚才看成一个人的两部分才分开。",
+    "hook_zh": "封面上的那个人，怎么有一半身体站在书外面？"
   },
   {
     "id": "case_library_eyes",
@@ -178,7 +185,8 @@
     "publisher": "Glen Ellyn Public Library",
     "url": "https://www.youtube.com/watch?v=rdtb38_A4Kg",
     "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html",
-    "visual_payoff": "正经书封上多出一双会动的眼睛，每换一本书，同一双眼睛就让另一张脸改了表情。"
+    "visual_payoff": "给不同书封安上同一对活动眼睛。书名没变，只换了眼神，每个封面就像有了自己的表情。",
+    "hook_zh": "一本正经的书封上，怎么有一双眼睛在晃？"
   },
   {
     "id": "case_library_then_now",
@@ -241,7 +249,8 @@
     "mechanism": "折纸透视",
     "filming": "对折卡纸，在折线两边画相接的梯档。先从梯档接齐的角度拍，再转动纸露出折痕。可以把店名或指路箭头画在梯子尽头。",
     "filming_basis": "按作者作品说明整理",
-    "visual_payoff": "同一张纸从一个角度看有一把立体梯子，换个角度才看出平面线条，适合让观众猜观察点。"
+    "visual_payoff": "梯档画在折痕两边，从特定角度看刚好接齐。折纸和透视一起，让平面的线条有了高度。",
+    "hook_zh": "一张卡纸上的梯子，怎么看起来能爬上去？"
   },
   {
     "id": "case_infinity_card",
@@ -255,6 +264,7 @@
     "mechanism": "纸卡循环",
     "filming": "用一张无限翻折卡，把活动名、时间、地点写在不同面。固定手机俯拍双手，连续翻回片头图案。",
     "filming_basis": "按作者作品说明整理",
-    "visual_payoff": "卡片每次像要翻到底，却又打开一层，连续翻回起点让人想重看折法。"
+    "visual_payoff": "创作者把不同图案分在连续翻折的卡面上，最后一次又翻回开头，整段可以接成一个循环。",
+    "hook_zh": "同一张卡翻了好几次，为什么还有下一面？"
   }
 ]

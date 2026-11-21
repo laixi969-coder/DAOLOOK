@@ -1005,6 +1005,13 @@ svg.icon {
 .overseas-feed-status { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
 .overseas-idea-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .overseas-idea-card { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); padding: 24px; min-width: 0; display: flex; flex-direction: column; }
+.daily-notes { line-height: 1.65; font-size: 14px; overflow-wrap: anywhere; }
+.daily-notes p { margin: 8px 0 0; }
+.daily-notes strong { margin-right: .65em; color: var(--ink); }
+.daily-poster { position: relative; width: 100%; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: #111; cursor: pointer; }
+.daily-poster img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; }
+.daily-poster span { position: absolute; bottom: 10px; left: 10px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #000b; color: white; }
+.daily-player { width: 100%; max-width: 420px; height: min(550px, 65vh); border: 0; border-radius: 8px; align-self: center; }
 .overseas-idea-card h3 { margin: 0 0 12px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
 .idea-summary { white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
 .idea-original, .video-original { white-space: pre-wrap; line-height: 1.7; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }

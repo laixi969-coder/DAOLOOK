@@ -190,6 +190,9 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         seen.add(link)
         reason='匹配关键词：'+'、'.join(direct) if direct else ('同类创意：'+item.get('category_name','') if hits else ('匹配所选品类' if category else '可复用的创意结构，按资料顺序展示'))
         value={**item,'recommendation':item.get('visual_payoff') or reason}
+        if today:
+            value['daily_poster']=overseas_visuals.daily_poster(item)
+            value['idea_zh']=overseas_translation.REVIEWED.get(item.get('summary','')) or item.get('visual_payoff','')
         if pick:value['daily_pick']={'position':pick['position'],'new_match':bool(pick['new_match'])}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
