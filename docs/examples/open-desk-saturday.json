@@ -1,0 +1,385 @@
+{
+  "model": "codex-cli/gpt-6.2-sol",
+  "input": {
+    "platform": "overseas",
+    "topic": "Harbor Corner 社区网点的周六开放日",
+    "market": "United States",
+    "language": "en-zh",
+    "duration": 9,
+    "goal": "reach",
+    "temporary": "Harbor Corner is a fictional neighborhood branch for this creative test. Event name: Open Desk Saturday. Time: Saturday, 10 AM–12 PM. Location: Harbor Corner welcome desk. Visitors can meet the branch team. Walk-ins welcome.",
+    "requirements": "竖屏，9秒，无口播。在一个柜台，一人一部拍摄手机，现场有常见文具。让观众看懂活动和时间，适合美国本地账号。"
+  },
+  "outputs": [
+    {
+      "title": "Two Hours at Harbor Corner: Open Desk Saturday",
+      "body": "Making Saturday plans in the neighborhood? Harbor Corner’s Open Desk Saturday runs from 10 AM to noon. Stop by the welcome desk.",
+      "cover_text": "Open Desk Saturday\n10 AM–Noon",
+      "hook": "一只手顺着纸钟转动扇形遮片，10 到 12 之间露出一块亮色。",
+      "direction": "用纸钟上的两格记住开放时段。",
+      "angle": "斜俯拍固定机位。纸钟的数字始终可见，顺时针转动遮片，两小时的色块随之露出。",
+      "role": "开放时段邀请",
+      "audience": "正在安排周六上午行程的美国本地居民。",
+      "value": "一眼记住开放日从上午 10 点持续到中午。",
+      "cta": "Stop by the welcome desk.",
+      "script": "",
+      "translation_zh": "",
+      "concept": "第一帧是柜台上的纸钟，手指已经搭在一块灰色扇形遮片上。遮片从 10 点位置顺时针转到 12 点，底下露出完整的双色钟面中那一格亮黄。片尾定在亮黄的两小时区间，读到 Open Desk Saturday，Saturday, 10 AM–Noon。",
+      "adaptation": "TikTok 首帧就让手和遮片进入动作。揭出色块时保留纸面摩擦声，活动文字留在画面中部的空白区。",
+      "first_second": "纸钟占画面上半部，外圈的 10 和 12 已清楚可见。左手食指按住圆心，右手食指从 10 点刻度一侧开始推灰色扇片。",
+      "misread": "",
+      "clue": "",
+      "reveal": "10 至 12 的亮黄色弧区，以及同屏的 Open Desk Saturday 和 Saturday, 10 AM–Noon。",
+      "product_role": "活动是主角，纸钟把到场时段变成可见的两小时。",
+      "production_method": "把手机固定在柜台后沿斜俯拍。双手转动纸片，遮片完全离开亮黄色区时叠上两行英文，固定到片尾。",
+      "cost_basis": "一处柜台，一人。打印一张钟面并预先剪好一块纸扇片，录一条固定镜头，后期加两行字。",
+      "product_reveal": "第 1 镜约 2.5 秒，亮黄时段露全，完整活动名和时段同时出现。",
+      "ending_type": "动作传达信息",
+      "casting": "仅手部",
+      "reveal_shot": 1,
+      "titles": [
+        "Two Hours at Harbor Corner: Open Desk Saturday",
+        "Saturday at Harbor Corner, 10 AM to Noon",
+        "Watch the Clock Open Up for Open Desk Saturday"
+      ],
+      "tags": [
+        "#OpenDeskSaturday",
+        "#HarborCorner",
+        "#SaturdayPlans"
+      ],
+      "image_suggestions": [
+        "用亮黄标出 10 至 12 的扇区，外圈数字用深色。钟面下方留出两行文字的位置。"
+      ],
+      "storyboard": [
+        "0–2.5 秒，灰纸扇片顺时针移走，逐步露出黄色区间。2.5–9 秒，纸钟静止，活动名和时段可读。"
+      ],
+      "shooting_list": [
+        "打印钟面，数字排在扇片外沿之外。按亮黄色区的大小剪好灰色扇片。",
+        "固定竖屏手机，试推一次，确认转完后露出整个黄色区。录完动作后保持末帧构图。"
+      ],
+      "missing": [
+        "活动的具体日历日期未提供。"
+      ],
+      "comments": [],
+      "hooks": [
+        {
+          "visual": "灰扇片已经搭在钟面上，右手食指一入画就推，露出第一线黄色。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "纸面轻擦声"
+        },
+        {
+          "visual": "首帧从 10 和 12 两个数字的近景起，灰扇片的边缘转过数字下方。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "纸面滑动声"
+        },
+        {
+          "visual": "扇片离开起点前，右手指腹在 10 点刻度旁轻敲一下，接着带动纸片转向 12。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "指腹轻敲柜台声"
+        }
+      ],
+      "shots": [
+        {
+          "start": 0,
+          "end": 9,
+          "camera": "9:16，手机固定在柜台后沿，约 45 度斜俯拍。纸钟在中上部，下方留空。",
+          "action": "纸钟外圈印有刻度和数字，10 至 12 的内圈扇区涂黄，其余为浅色。左食指压住灰纸扇片尖端，右食指沿钟面把扇片顺时针推两格，直到前缘对齐 12 点刻度。约 2.5 秒色块完整露出时，下方出现两行活动文字。双手松开退出，纸片平放在柜台上，构图和文字保持到片尾。",
+          "line": "",
+          "translation_zh": "",
+          "screen_text": "Open Desk Saturday\nSaturday, 10 AM–Noon",
+          "screen_text_zh": "周六开放日\n周六上午 10 点至中午 12 点",
+          "sfx": "纸片转动的轻擦声",
+          "implementation": "一次连续实拍。灰扇片盖住内圈色块，外圈数字印在纸钟上。两行活动文字只在后期叠加，入点对齐色块完全露出的那一帧。",
+          "ai_prompt": "9:16 竖屏手机实拍质感，固定斜俯拍普通柜台。一张平放的模拟纸钟，外圈清楚显示 10 和 12 刻度。镜头里只有一双手把覆盖在钟面上的灰色纸扇片顺时针转动两格。结束画面露出 10 至 12 之间完整的亮黄色扇区，纸钟与扇片停稳，下方留白。活动字在后期添加。"
+        }
+      ],
+      "evidence": [
+        {
+          "asset_id": "temporary",
+          "quote": "Event name: Open Desk Saturday."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Time: Saturday, 10 AM–12 PM."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Location: Harbor Corner welcome desk."
+        }
+      ],
+      "target_platform": "tiktok",
+      "shoot_setup": {
+        "people": 1,
+        "locations": [
+          "柜台"
+        ],
+        "props": [
+          "打印纸钟 1 张",
+          "灰色扇形纸片 1 张",
+          "手机支架 1 个"
+        ],
+        "simpler_take": ""
+      },
+      "topic_plan": {
+        "problem": "周六什么时候可以到 Harbor Corner 参加开放日？",
+        "relevance": "附近居民安排周六上午行程时，需要先知道活动的起止时间。",
+        "answer": "Open Desk Saturday 在周六上午 10 点到中午 12 点举行。",
+        "takeaway": "记住钟面上的 10 点到 12 点，到 Harbor Corner 的迎宾柜台参加。",
+        "approach": "展示",
+        "refs": []
+      }
+    },
+    {
+      "title": "Meet the Harbor Corner Team at Open Desk Saturday",
+      "body": "Live nearby and want to meet the Harbor Corner team? They’ll be at the welcome desk for Open Desk Saturday from 10 AM to noon. Come by and say hello.",
+      "cover_text": "Meet the Harbor Corner Team",
+      "hook": "一张折卡刚打开一半，纸做的迎宾柜台就从折缝里立了起来。",
+      "direction": "把到柜台见团队变成一幕小型纸景。",
+      "angle": "从柜台一侧斜拍折卡。纸台抬起来时，背页和底页上的两幅人物线稿分别出现在柜台两侧。",
+      "role": "见面邀请",
+      "audience": "住在附近、想认识 Harbor Corner 网点团队的居民。",
+      "value": "知道开放日可以到迎宾柜台与网点团队见面。",
+      "cta": "Come by and say hello.",
+      "script": "",
+      "translation_zh": "",
+      "concept": "第一帧只看见一张合着的素色折卡和搭在卡边的手指。卡页打开时，夹在折缝里的纸台被两页拉起，两侧的线稿人形隔着小柜台相对。柜台立稳后，旁边出现 Open Desk Saturday，Saturday, 10 AM–Noon。",
+      "adaptation": "Reels 封面选柜台刚立起来、两边人物同时可见的一帧。正文用见面作为到访理由。",
+      "first_second": "合着的折卡横放在真实柜台上，右手指尖提起前缘，折缝内的纸台开始上抬。",
+      "misread": "",
+      "clue": "",
+      "reveal": "一个立起的纸柜台，两侧各有一个线稿人形。画面同时读到 Open Desk Saturday 和 Saturday, 10 AM–Noon。",
+      "product_role": "用纸景表现访客与网点团队在迎宾柜台见面的情景。",
+      "production_method": "把手机竖放在支架上，从柜台斜前方拍。左手压住底页，右手把背页打开到约 100 度，纸台立稳后在上方叠字。",
+      "cost_basis": "一处柜台，一人。拍前在对折卡纸上剪两条平行短缝、把中间纸舌反折成台阶，再画两个人形。拍一条连续镜头，后期叠字。",
+      "product_reveal": "第 1 镜约 2.5 秒，纸柜台展开到位，活动名和时段首次可辨认。",
+      "ending_type": "动作传达信息",
+      "casting": "仅手部",
+      "reveal_shot": 1,
+      "titles": [
+        "Meet the Harbor Corner Team at Open Desk Saturday",
+        "The Welcome Desk Pops Up for Open Desk Saturday",
+        "Say Hello at Harbor Corner This Saturday"
+      ],
+      "tags": [
+        "#HarborCorner",
+        "#OpenDeskSaturday",
+        "#NeighborhoodEvents"
+      ],
+      "image_suggestions": [
+        "卡纸选一种浅色，人物用粗线勾出头肩。封面保留纸台的正面和顶面，让立体结构清楚可见。"
+      ],
+      "storyboard": [
+        "0–2.5 秒，折卡开到约 100 度，立体纸台和两侧的人形进入视线。2.5–9 秒，画面停在展开的纸景，活动名称和时段保持可读。"
+      ],
+      "shooting_list": [
+        "将卡纸对折，从折边向内剪两条等长平行短缝。把中间纸舌向卡内反折，形成打开时会立起的台阶。",
+        "在背页画柜台后的头肩轮廓，在底页把访客轮廓画在台阶前方。试拍确认两个人形同时可见。"
+      ],
+      "missing": [
+        "活动的具体日历日期未提供。"
+      ],
+      "comments": [],
+      "hooks": [
+        {
+          "visual": "从折卡正面拍，卡页一掀，折缝里的纸台立即抬头。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "卡纸折痕弹动声"
+        },
+        {
+          "visual": "沿折卡侧边近拍，开头先看到薄薄的折缝，纸台竖面从缝里伸出来。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "两页卡纸分开的轻响"
+        },
+        {
+          "visual": "略高机位先看到底页的访客线稿，背页打开后，纸台和对面的另一道人形一起出现。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "卡纸翻动声"
+        }
+      ],
+      "shots": [
+        {
+          "start": 0,
+          "end": 9,
+          "camera": "9:16，手机固定在柜台斜前方，镜头比纸台台面略高。折卡在画面中下部，上方给活动文字留空。",
+          "action": "素色折卡合放在柜台上。左手指尖压住底页左下角，右手从右侧提起背页。卡页撑开时，反折的纸舌被带成有顶面和正面的直角纸柜台，背页上的半身人形和底页上的访客轮廓分别出现在纸台两侧。约 2.5 秒，右手在画面右沿捏住背页，使开合角度保持约 100 度，上方同时出现两行字并留到片尾。",
+          "line": "",
+          "translation_zh": "",
+          "screen_text": "Open Desk Saturday\nSaturday, 10 AM–Noon",
+          "screen_text_zh": "周六开放日\n周六上午 10 点至中午 12 点",
+          "sfx": "纸折痕展开的轻响",
+          "implementation": "一镜到底。卡上只画两个人形。活动文字在纸台正面和顶面均清楚时叠加在上方，右手在边缘继续扶住卡页。",
+          "ai_prompt": "9:16 竖屏手机实拍质感，固定机位从略高的斜前方拍普通柜台。一双手打开一张浅色折卡，反折纸舌随开卡动作立成一个有水平顶面和竖直正面的纸柜台，台阶两侧露出简单的人形线稿。结束时折卡保持约 100 度，纸景稳定，画面上方留空供后期加字。"
+        }
+      ],
+      "evidence": [
+        {
+          "asset_id": "temporary",
+          "quote": "Event name: Open Desk Saturday."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Time: Saturday, 10 AM–12 PM."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Location: Harbor Corner welcome desk."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Visitors can meet the branch team."
+        }
+      ],
+      "target_platform": "instagram",
+      "shoot_setup": {
+        "people": 1,
+        "locations": [
+          "柜台"
+        ],
+        "props": [
+          "制作好的立体折卡 1 张",
+          "手机支架 1 个"
+        ],
+        "simpler_take": ""
+      },
+      "topic_plan": {
+        "problem": "到开放日可以见到谁？",
+        "relevance": "对社区网点感兴趣的附近居民，可以据此决定是否顺路到柜台打个招呼。",
+        "answer": "访客可以在 Harbor Corner 迎宾柜台见到网点团队。",
+        "takeaway": "周六上午 10 点到中午有机会和网点团队打招呼。",
+        "approach": "展示",
+        "refs": []
+      }
+    },
+    {
+      "title": "Walk Ins Welcome at Harbor Corner’s Open Desk Saturday",
+      "body": "Out in the neighborhood Saturday morning? Walk-ins are welcome at Harbor Corner’s Open Desk Saturday from 10 AM to noon. Drop by the welcome desk.",
+      "cover_text": "Walk-Ins Welcome",
+      "hook": "一支圆铅笔横在纸坡上，手指一松，它刚好滚过前面的小纸门。",
+      "direction": "让一支铅笔顺利过门，把直接到场的邀请拍出来。",
+      "angle": "贴近柜台斜拍，从同一画面看清坡道、纸门净空和铅笔滚过门后的落点。",
+      "role": "随到随访邀请",
+      "audience": "周六上午会在附近活动、想顺路到访的居民。",
+      "value": "知道这场开放日欢迎直接到访，以及该在哪个时段来。",
+      "cta": "Drop by the welcome desk.",
+      "script": "",
+      "translation_zh": "",
+      "concept": "第一帧，一支短圆铅笔横在纸坡高端，坡脚横跨着一座纸门。手指松开后，铅笔顺坡滚动，笔身贴着门洞掠过，在门后被一道折纸挡边接住。铅笔停稳，门上方出现 Open Desk Saturday，Saturday, 10 AM–Noon。",
+      "adaptation": "Shorts 开头同时露出铅笔和纸门，先让观众看见它要滚往哪里。标题写清欢迎直接到访。",
+      "first_second": "短圆铅笔横在纸坡顶端，右手食指挡住笔杆。纸门在它正前方，指尖抬起时铅笔开始滚动。",
+      "misread": "",
+      "clue": "",
+      "reveal": "铅笔完整滚过纸门并在门后停下，画面读到 Open Desk Saturday 和 Saturday, 10 AM–Noon。",
+      "product_role": "铅笔穿过敞开的门，表现开放日欢迎直接到访。",
+      "production_method": "把手机固定在柜台侧前方。左手略抬纸坡高端，右手松开挡笔的食指，等铅笔穿门停下再叠字。",
+      "cost_basis": "一处柜台，一人。折出站得住的纸门和带挡边的坡道，试滚确认门洞和笔杆的间距，后期叠两行字。",
+      "product_reveal": "第 1 镜约 2.5 秒，铅笔在门后停稳，活动名和时段首次可辨认。",
+      "ending_type": "动作传达信息",
+      "casting": "仅手部",
+      "reveal_shot": 1,
+      "titles": [
+        "Walk Ins Welcome at Harbor Corner’s Open Desk Saturday",
+        "Roll Through to Open Desk Saturday",
+        "Out Saturday Morning? Drop by Harbor Corner"
+      ],
+      "tags": [
+        "#OpenDeskSaturday",
+        "#HarborCorner",
+        "#WalkInsWelcome"
+      ],
+      "image_suggestions": [
+        "选笔身刚从门洞滚出来的一帧，保留完整的门框和坡道走向。"
+      ],
+      "storyboard": [
+        "0–2.5 秒，食指松开，短圆铅笔穿过纸门并停在门后的折边。2.5–9 秒，纸门和铅笔留在画面里，上方显示活动名和时段。"
+      ],
+      "shooting_list": [
+        "用一张厚纸折出倒 U 形纸门，两端各向外折一只纸脚。门洞宽比短铅笔长约 2 至 3 厘米，门高略大于笔杆直径。",
+        "用另一张纸做坡道，末端先留一小段平面并向上折出挡边。纸门跨在坡道末端的平面上，两只脚站在坡道外。试滚，确认挡边在铅笔完全穿门后才接住它。"
+      ],
+      "missing": [
+        "活动的具体日历日期未提供。"
+      ],
+      "comments": [],
+      "hooks": [
+        {
+          "visual": "从纸门侧前方同时看见笔杆和门洞，首秒抬指放笔。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "短促的滚动声"
+        },
+        {
+          "visual": "压低机位从门后拍，第一眼透过门洞看到横着的笔杆，松手后笔杆朝镜头滚来。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "滚动声逐渐靠近"
+        },
+        {
+          "visual": "画面略高，先看见铅笔两端与门框的窄间距，再看它从正中间滚过去。",
+          "line": "",
+          "translation_zh": "",
+          "sfx": "笔杆碰到折边的一声轻响"
+        }
+      ],
+      "shots": [
+        {
+          "start": 0,
+          "end": 9,
+          "camera": "9:16，手机固定在柜台侧前方低位斜拍，坡顶在画面左上，纸门和停笔位置在中下部，门上方留空。",
+          "action": "第一帧左手把纸坡高端抬高约两指，右手食指挡着一支横放的短圆铅笔。右手食指抬起，铅笔沿坡滚下，经过平放在柜台上的坡脚，穿过纸门后碰上向上折起的纸边。笔杆停稳时，左手维持坡度并留在画外，门上方叠出两行活动文字，保持到第 9 秒。",
+          "line": "",
+          "translation_zh": "",
+          "screen_text": "Open Desk Saturday\nSaturday, 10 AM–Noon",
+          "screen_text_zh": "周六开放日\n周六上午 10 点至中午 12 点",
+          "sfx": "木笔杆的滚动声和碰到折纸边的一声轻响",
+          "implementation": "一条连续实拍。把门脚摆在纸坡两边的柜台上，避免挡住铅笔。纸门和坡道都用素纸，活动文字在笔杆停稳后只叠一层。",
+          "ai_prompt": "9:16 竖屏手机实拍质感，固定低机位斜拍普通柜台。一支短圆铅笔横放在低矮纸坡上，一只手指释放它。铅笔顺着纸坡滚过坡脚的白色倒 U 形纸门，最终在纸门另一侧的折纸挡边前停稳。门和纸坡保留在画面中，门上方留空供后期加字。"
+        }
+      ],
+      "evidence": [
+        {
+          "asset_id": "temporary",
+          "quote": "Event name: Open Desk Saturday."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Time: Saturday, 10 AM–12 PM."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Location: Harbor Corner welcome desk."
+        },
+        {
+          "asset_id": "temporary",
+          "quote": "Walk-ins welcome."
+        }
+      ],
+      "target_platform": "youtube",
+      "shoot_setup": {
+        "people": 1,
+        "locations": [
+          "柜台"
+        ],
+        "props": [
+          "厚纸 2 张，分别折成纸门和带挡边的坡道",
+          "短圆铅笔 1 支",
+          "手机支架 1 个"
+        ],
+        "simpler_take": ""
+      },
+      "topic_plan": {
+        "problem": "周六临时有空，可以直接去开放日吗？",
+        "relevance": "在附近办事或散步的居民，可以据此决定是否把迎宾柜台加进当天的行程。",
+        "answer": "Open Desk Saturday 欢迎直接到场，时间是周六上午 10 点到中午 12 点。",
+        "takeaway": "在开放时段顺路到 Harbor Corner 的迎宾柜台即可。",
+        "approach": "展示",
+        "refs": []
+      }
+    }
+  ]
+}

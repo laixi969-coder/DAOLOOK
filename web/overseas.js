@@ -208,13 +208,38 @@ function shootSetupText(setup) {
   if (!setup) return "";
   return [`${setup.people} 人`, setup.locations.join("、"), setup.props.length ? "道具 · " + setup.props.join("、") : "无需额外道具"].join(" / ");
 }
+function overseasFilmingSteps(d, shots) {
+  const steps = [];
+  if (d.cost_basis) steps.push(d.cost_basis);
+  if ((d.shoot_setup || d.production_method) && Array.isArray(d.shooting_list)) steps.push(...d.shooting_list);
+  shots.forEach((shot, index) => {
+    const sound = shot.sfx ? "声音 · " + shot.sfx : "";
+    const method = [shot.implementation, sound].filter(Boolean).join("\n");
+    if (method) steps.push(`镜头 ${index + 1} · ${method}`);
+  });
+  return steps;
+}
 function overseasDetails(c) {
   const d=c.data;if(!d.overseas) return "";
   const shots=overseasShots(d);
-  return `<div class="overseas-delivery"><section class="overseas-output-section"><h4>创意</h4><p>${esc(overseasConcept(d))}</p></section>${d.production_method?`<section class="overseas-output-section"><h4>怎么拍</h4><p>${esc(d.production_method)}</p>${d.shoot_setup?`<div class="muted">${esc(shootSetupText(d.shoot_setup))} ${d.cost_basis?infoTip("制作准备", d.cost_basis):""}</div>${d.shoot_setup.simpler_take?`<p><strong>简化拍法</strong> ${esc(d.shoot_setup.simpler_take)}</p>`:""}`:d.cost_basis?`<p class="muted">${esc(d.cost_basis)}</p>`:""}</section>`:""}<section class="overseas-output-section"><h4>画面描述</h4>${shots.map((shot,i)=>`<div class="overseas-shot"><h5>镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}</h5>${shot.camera?`<p>${esc(shot.camera)}</p>`:""}<p>${esc(shot.action)}</p>${shot.line?.trim()?`<div class="overseas-video-copy"><strong>口播</strong><p>${esc(shot.line)}</p>${shot.translation_zh?`<p class="muted">${esc(shot.translation_zh)}</p>`:""}</div>`:""}${shot.screen_text?.trim()?`<div class="overseas-video-copy"><div class="pipeline-head"><strong>屏幕文案</strong>${button("复制屏幕文案","copy-overseas-screen-text","secondary small","copy",`data-id="${c.id}" data-shot="${i}"`)}</div><p>${esc(shot.screen_text)}</p>${shot.screen_text_zh?`<p class="muted">${esc(shot.screen_text_zh)}</p>`:""}</div>`:""}</div>`).join("")}</section>${d.script?.trim()?`<section class="overseas-output-section"><h4>口播文案</h4><p>${esc(d.script)}</p>${d.translation_zh?`<h5>中文翻译</h5><p>${esc(d.translation_zh)}</p>`:""}</section>`:""}<section class="overseas-output-section"><h4>AI 生成提示词</h4>${shots.map((shot,i)=>`<div class="overseas-ai-prompt"><div class="pipeline-head"><h5>镜头 ${i+1}</h5>${button("复制提示词","copy-overseas-prompt","secondary small","copy",`data-id="${c.id}" data-shot="${i}"`)}</div><pre>${esc(overseasAiPrompt(d,shot))}</pre></div>`).join("")}</section></div>`;
+  const steps = overseasFilmingSteps(d, shots);
+  const setup = d.shoot_setup;
+  const filming = d.production_method || steps.length ? `<section class="overseas-output-section"><h4>怎么拍</h4>
+    ${d.production_method ? `<p>${esc(d.production_method)}</p>` : ""}
+    ${setup ? `<div class="muted">${esc(shootSetupText(setup))}</div>` : ""}
+    ${setup?.simpler_take ? `<p><strong>简化拍法</strong> ${esc(setup.simpler_take)}</p>` : ""}
+    ${steps.length ? `<details class="transcript-box"><summary>实拍步骤</summary><ul>${steps.map(step => `<li>${esc(step)}</li>`).join("")}</ul></details>` : ""}</section>` : "";
+  return `<div class="overseas-delivery"><section class="overseas-output-section"><h4>创意</h4><p>${esc(overseasConcept(d))}</p></section>${filming}<section class="overseas-output-section"><h4>画面描述</h4>${shots.map((shot,i)=>`<div class="overseas-shot"><h5>镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}</h5>${shot.camera?`<p>${esc(shot.camera)}</p>`:""}<p>${esc(shot.action)}</p>${shot.line?.trim()?`<div class="overseas-video-copy"><strong>口播</strong><p>${esc(shot.line)}</p>${shot.translation_zh?`<p class="muted">${esc(shot.translation_zh)}</p>`:""}</div>`:""}${shot.screen_text?.trim()?`<div class="overseas-video-copy"><div class="pipeline-head"><strong>屏幕文案</strong>${button("复制屏幕文案","copy-overseas-screen-text","secondary small","copy",`data-id="${c.id}" data-shot="${i}"`)}</div><p>${esc(shot.screen_text)}</p>${shot.screen_text_zh?`<p class="muted">${esc(shot.screen_text_zh)}</p>`:""}</div>`:""}</div>`).join("")}</section>${d.script?.trim()?`<section class="overseas-output-section"><h4>口播文案</h4><p>${esc(d.script)}</p>${d.translation_zh?`<h5>中文翻译</h5><p>${esc(d.translation_zh)}</p>`:""}</section>`:""}<section class="overseas-output-section"><h4>AI 生成提示词</h4>${shots.map((shot,i)=>`<div class="overseas-ai-prompt"><div class="pipeline-head"><h5>镜头 ${i+1}</h5>${button("复制提示词","copy-overseas-prompt","secondary small","copy",`data-id="${c.id}" data-shot="${i}"`)}</div><pre>${esc(overseasAiPrompt(d,shot))}</pre></div>`).join("")}</section></div>`;
 }
 function overseasPlanText(d) {
-  return [d.title,"创意",overseasConcept(d),...(d.production_method?["怎么拍",d.production_method,shootSetupText(d.shoot_setup),d.cost_basis,...(d.shoot_setup?.simpler_take?["简化拍法",d.shoot_setup.simpler_take]:[])]:[]),"画面描述",...overseasShots(d).map((shot,i)=>`镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}\n${shot.camera||""}\n${shot.action}\n${overseasShotCopy(shot)}`),...(d.script?.trim()?["口播文案",d.script,...(d.translation_zh?["中文翻译",d.translation_zh]:[])]:[]),"AI 生成提示词",...overseasShots(d).map((shot,i)=>`镜头 ${i+1}\n${overseasAiPrompt(d,shot)}`),"标题备选",...(d.titles||[]),"发布内容 / Tags",CreationTools.publicCopy(d)].filter(Boolean).join("\n\n");
+  const shots = overseasShots(d);
+  const steps = overseasFilmingSteps(d, shots);
+  const filming = d.production_method || steps.length ? [
+    "怎么拍", d.production_method, shootSetupText(d.shoot_setup),
+    ...(d.shoot_setup?.simpler_take ? ["简化拍法", d.shoot_setup.simpler_take] : []),
+    ...(steps.length ? ["实拍步骤", ...steps] : []),
+  ] : [];
+  return [d.title,"创意",overseasConcept(d),...filming,"画面描述",...shots.map((shot,i)=>`镜头 ${i+1}${Number.isFinite(shot.start)&&Number.isFinite(shot.end)?` · ${shot.start}–${shot.end} 秒`:""}\n${shot.camera||""}\n${shot.action}\n${overseasShotCopy(shot)}`),...(d.script?.trim()?["口播文案",d.script,...(d.translation_zh?["中文翻译",d.translation_zh]:[])]:[]),"AI 生成提示词",...shots.map((shot,i)=>`镜头 ${i+1}\n${overseasAiPrompt(d,shot)}`),"标题备选",...(d.titles||[]),"发布内容 / Tags",CreationTools.publicCopy(d)].filter(Boolean).join("\n\n");
 }
 
 Object.assign(actions,{

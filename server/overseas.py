@@ -1,12 +1,35 @@
 """Viral creative production using existing model routing, queue and credits."""
 import copy
+import re
 from . import adapters, content_quality, questions
 from .overseas_library import PLATFORMS as SOCIAL_PLATFORMS
-from .overseas_prompt import VISUAL_NAME
+from .overseas_prompt import VISUAL_ACTION_EDITION, VISUAL_NAME
 
 LANGUAGES = {'en-zh':'English','es-zh':'Spanish','fr-zh':'French','de-zh':'German'}
 PLATFORMS = {'overseas':'TikTok + Reels + Shorts', **SOCIAL_PLATFORMS}
 ENDINGS = ('动作传达信息', '故事翻牌', '反转后硬广', '结果先行演示')
+CASTING = ('有人', '仅手部', '无人')
+SECONDS_UNIT = r'(?:seconds?|secs?|secondes?|segundos?|segs?|sekunden?|sek|s|秒)'
+SCREEN_INTERVAL = re.compile(
+    r'(?<![\d:])(?:00:[0-5]\d\s*[-–—~～至]\s*(?:00:[0-5]\d|01:00)|'
+    rf'\d+(?:\.\d+)?\s*{SECONDS_UNIT}?\s*[-–—~～至]\s*'
+    rf'\d+(?:\.\d+)?\s*{SECONDS_UNIT})(?![a-z\d])', re.I,
+)
+EDITING_TIMECODE = re.compile(
+    r'^\s*(?:[\[【(（]\s*)?(' + SCREEN_INTERVAL.pattern + r')(?=\s|[\]】)）：:|]|$)', re.I | re.M,
+)
+
+
+def contains_editing_cue(text, assets):
+    """A quoted duration can be valid copy in either language, even at the start of a line."""
+    cues = {tuple(re.findall(r'\d+(?:\.\d+)?', match[1])) for match in EDITING_TIMECODE.finditer(text)}
+    if not cues:
+        return False
+    for asset in assets:
+        if asset.get('kind') != '图片':
+            for match in SCREEN_INTERVAL.finditer(asset.get('content', '')):
+                cues.discard(tuple(re.findall(r'\d+(?:\.\d+)?', match[0])))
+    return bool(cues)
 
 
 def string_fields(names):
@@ -15,7 +38,9 @@ def string_fields(names):
 
 OUTPUT_SCHEMA = {
     'type':'object', 'properties':{
-        **string_fields(('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','concept','adaptation','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal')),
+        **string_fields(('title','body','cover_text','hook','direction','angle','role','audience','value','cta','script','translation_zh','concept','adaptation','first_second','misread','clue','reveal','product_role','production_method','cost_basis','product_reveal')),
+        'ending_type':{'type':'string','enum':list(ENDINGS)},
+        'casting':{'type':'string','enum':list(CASTING)},
         'reveal_shot':{'type':'integer','minimum':1,'maximum':6},
         **{k:{'type':'array','items':{'type':'string'}} for k in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments')},
         'hooks':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'object','properties':string_fields(('visual','line','translation_zh','sfx')),'required':['visual','line','translation_zh','sfx']}},
@@ -52,7 +77,7 @@ def check_shoot_setup(setup):
         raise ValueError('请补一个单场地、手边道具就能执行的简化拍法')
 
 
-def validate(result,brief,assets,previous=None,require_setup=False):
+def validate(result,brief,assets,previous=None,require_setup=False,action_edition=False):
     outputs=result.get('outputs') if isinstance(result,dict) else None
     if not isinstance(outputs,list) or len(outputs)!=3: raise ValueError('海外创作需要3个完整创意方案')
     if brief['platform']=='overseas' and {o.get('target_platform') for o in outputs if isinstance(o,dict)}!=set(SOCIAL_PLATFORMS): raise ValueError('三平台创作需要TikTok、Reels、Shorts各一个方案')
@@ -73,11 +98,14 @@ def validate(result,brief,assets,previous=None,require_setup=False):
                 raise ValueError('误判与伏笔须为文本')
             if output['ending_type'] in ('故事翻牌','反转后硬广') and not value.strip():
                 raise ValueError('反转创意需要交代误判和伏笔')
-        if output['casting'] not in ('有人','仅手部','无人'): raise ValueError('请标明有人、仅手部或无人出镜')
+        if output['casting'] not in CASTING: raise ValueError('请标明有人、仅手部或无人出镜')
         for key in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments'):
             value=output.get(key)
             if not isinstance(value,list) or len(value)>60 or any(not isinstance(v,str) or len(v)>6000 for v in value): raise ValueError('创意列表字段无效：'+key)
-        if len(output['titles'])!=3 or not output['storyboard'] or not output['shooting_list'] or not output['comments']: raise ValueError('缺少标题、分镜、拍摄清单或评论问题')
+        if len(output['titles'])!=3 or not output['storyboard'] or not output['shooting_list']:
+            raise ValueError('请提供三个备选标题、至少一段分镜及拍摄清单')
+        if not action_edition and not output['comments']:
+            raise ValueError('缺少评论问题')
         if len(output['tags'])>20: raise ValueError('话题最多20个')
         hooks=output.get('hooks')
         if not isinstance(hooks,list) or len(hooks)!=3: raise ValueError('每个方案必须有3个Hook')
@@ -95,6 +123,8 @@ def validate(result,brief,assets,previous=None,require_setup=False):
             if not isinstance(shot,dict) or any(not isinstance(shot.get(k),str) or len(shot[k])>6000 for k in ('camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt')): raise ValueError('分镜字段无效')
             if bool(shot['line'].strip()) != bool(shot['translation_zh'].strip()): raise ValueError('镜头口播须同时提供中文翻译')
             if bool(shot['screen_text'].strip()) != bool(shot['screen_text_zh'].strip()): raise ValueError('屏幕文案须同时提供中文翻译')
+            if action_edition and any(contains_editing_cue(shot[key],assets) for key in ('screen_text','screen_text_zh')):
+                raise ValueError('屏幕文案里出现了剪辑时间码。请把时间安排移到 action，只把观众要看的原文和中译留在屏幕文案')
             start,end=shot.get('start'),shot.get('end')
             if type(start) not in (int,float) or type(end) not in (int,float) or abs(start-cursor)>.01 or not start<end<=brief['duration']: raise ValueError('分镜时间必须从0秒连续覆盖目标时长')
             if not shot['camera'].strip() or not shot['action'].strip() or not shot['implementation'].strip(): raise ValueError('分镜缺少具体画面动作或实现方法')
@@ -103,8 +133,15 @@ def validate(result,brief,assets,previous=None,require_setup=False):
         if abs(cursor-brief['duration'])>.01: raise ValueError('分镜总时长与目标时长不一致')
         evidence=output.get('evidence')
         if not isinstance(evidence,list) or (evidence and not content_quality.evidence_valid(output,assets)): raise ValueError('业务事实引用未匹配所选资料')
-    for field in ('title','body','angle','first_second','reveal'):
+    for field in ('title','body','angle','first_second'):
         if len({content_quality.normalized(o[field]) for o in outputs})!=3: raise ValueError('方案不能重复：'+field)
+    # A shared invitation can land on exactly the same time and place; compare the filmed action.
+    reveals = [content_quality.normalized(o['reveal']) for o in outputs
+               if not action_edition or o['ending_type'] in ('故事翻牌','反转后硬广')]
+    if len(set(reveals)) != len(reveals): raise ValueError('方案不能重复：reveal')
+    if action_edition:
+        actions = {content_quality.normalized(' '.join(shot['action'] for shot in o['shots'])) for o in outputs}
+        if len(actions) < len(outputs): raise ValueError('方案使用了相同的分镜动作，请换一个实际拍法')
     misreads = [content_quality.normalized(o['misread']) for o in outputs if o['misread'].strip()]
     if len(set(misreads)) != len(misreads): raise ValueError('方案不能重复：misread')
     scripts=[content_quality.normalized(o['script']) for o in outputs if o['script'].strip()]
@@ -238,14 +275,23 @@ def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False
         outputs=demo_outputs(brief,assets,batch);model='demo-visual-shorts'
         validate({'outputs':outputs},brief,assets,previous,require_setup=True)
     else:
+        action_edition = VISUAL_ACTION_EDITION in prompt
+        objective = content_quality.objective(brief['goal'])
+        if action_edition and brief['goal'] == 'reach':
+            objective['instruction'] = '让目标观众记住一条值得分享的具体信息。正文只留一个贴题的下一步，活动邀请可以直接请人到场。'
         payload={'brief':brief,'language':LANGUAGES[brief['language']],'assets':assets,'reference':bench,'requirements':requirements,'previous_outputs':previous or [],'history_results':history_results or [],'batch':batch,
-                 'objective':content_quality.objective(brief['goal']), 'question_observations':observations or []}
+                 'objective':objective, 'question_observations':observations or []}
         schema=copy.deepcopy(SCHEMA)
         require_setup = VISUAL_NAME in prompt
         if require_setup:
             item_schema = schema['properties']['outputs']['items']
             item_schema['properties']['shoot_setup'] = SHOOT_SETUP
             item_schema['required'].append('shoot_setup')
+        if action_edition:
+            fields = schema['properties']['outputs']['items']['properties']
+            fields['titles'].update(minItems=3, maxItems=3)
+            fields['storyboard']['minItems'] = fields['shooting_list']['minItems'] = 1
+            fields['comments']['description'] = '可选的发布后讨论问题，没有时返回空数组。'
         schema['properties']['outputs']['items']['properties']['topic_plan']={
             'type':'object','required':['problem','relevance','answer','takeaway','approach','refs'],
             'properties':{**{key:{'type':'string','maxLength':600} for key in ('problem','relevance','answer','takeaway')},
@@ -253,7 +299,7 @@ def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False
                           'refs':{'type':'array','maxItems':3,'items':{'type':'object','required':['id','quote'],'properties':{'id':{'type':'string'},'quote':{'type':'string','maxLength':500}}}}}}
         schema['properties']['outputs']['items']['required'].append('topic_plan')
         def validator(result):
-            validate(result,brief,assets,previous,require_setup=require_setup)
+            validate(result,brief,assets,previous,require_setup=require_setup,action_edition=action_edition)
             if observations is not None:
                 questions.validate(result['outputs'],observations)
         instructions=questions.INSTRUCTION + "\n海外创作的客户问题仅作场景线索，展示、邀请和故事均可，不强制答疑。内部选题依据用中文。不同市场与平台的需求不能默认相同。history_results 保留实际 platform，只有与当前方案 target_platform 相同的效果可作比较。"

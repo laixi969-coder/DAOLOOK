@@ -173,7 +173,14 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.equal(copiedPrompt,'A scene with <sample>');
    full.data.shots[0].line='Spoken line';full.data.shots[0].translation_zh='口播中译';
    full.data.shots[0].screen_text='On-screen text';full.data.shots[0].screen_text_zh='屏幕中译';
+   full.data.shoot_setup={people:1,locations:['柜台'],props:['折卡'],simpler_take:''};
+   full.data.shooting_list=['剪两条等长短缝'];full.data.shots[0].implementation='右手扶住卡页边缘';
+   full.data.shots[0].sfx='纸折痕轻响';
    const videoCopy=overseasCard(full,1),videoTxt=overseasPlanText(full.data);
+   assert.ok(videoCopy.includes('<summary>实拍步骤</summary>'));
+   for(const step of ['剪两条等长短缝','右手扶住卡页边缘','纸折痕轻响']) {assert.ok(videoCopy.includes(step));assert.ok(videoTxt.includes(step));}
+   const oldSetup={...full.data,shoot_setup:undefined,production_method:'靠在柜台边固定手机'};
+   assert.ok(overseasPlanText(oldSetup).includes('剪两条等长短缝'));
    for(const value of ['口播文案','Spoken line','On-screen text','屏幕中译']) {assert.equal(videoCopy.includes(value),true);assert.equal(videoTxt.includes(value),true);}
    await actions['copy-overseas-screen-text']({dataset:{id:'lean-plan',shot:'0'}});
    assert.equal(copiedPrompt,'On-screen text');

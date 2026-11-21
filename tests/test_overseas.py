@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest.mock import patch
 from tests import test_original as fixture
 from tests.test_app import Client
-from server import overseas, overseas_library, adapters, app, access
+from server import overseas, overseas_library, adapters, app, access, questions
 
 
 class OverseasApiTests(unittest.TestCase):
@@ -73,6 +73,21 @@ class OverseasApiTests(unittest.TestCase):
         fixture.D.init()
         with fixture.D.db() as c:
             self.assertEqual(c.execute("SELECT prompt FROM skill_versions WHERE id=?",(active['id'],)).fetchone()[0],'edited visual prompt')
+
+    def test_action_edition_upgrades_existing_install_and_keeps_later_edits(self):
+        marker = 'skill_release_2026_11_21_overseas_visual_action'
+        with fixture.D.db() as c:
+            c.execute('DELETE FROM settings WHERE key=?',(marker,))
+            c.execute("UPDATE skill_versions SET prompt='previous active prompt' WHERE name='overseas_original' AND status='Published'")
+        fixture.D.init()
+        with fixture.D.db() as c:
+            active = c.execute("SELECT id,prompt FROM skill_versions WHERE name='overseas_original' AND status='Published'").fetchone()
+            self.assertIn(overseas.VISUAL_ACTION_EDITION, active['prompt'])
+            self.assertEqual(c.execute("SELECT status FROM skill_versions WHERE prompt='previous active prompt'").fetchone()[0],'Archived')
+            c.execute("UPDATE skill_versions SET prompt='custom after review' WHERE id=?",(active['id'],))
+        fixture.D.init()
+        with fixture.D.db() as c:
+            self.assertEqual(c.execute('SELECT prompt FROM skill_versions WHERE id=?',(active['id'],)).fetchone()[0],'custom after review')
 
     def test_archetypes_recommendation_save_and_project_isolation(self):
         status,result=self.ideas('&scope=candidates',platform='youtube')
@@ -289,6 +304,19 @@ class OverseasStructureTests(unittest.TestCase):
         self.brief={'platform':'overseas','topic':'charger','goal':'leads','market':'US','duration':24,'language':'en-zh'}
         self.outputs=overseas.demo_outputs(self.brief,[],1)
 
+    def test_recorded_live_batch_passes_with_its_original_brief(self):
+        path = Path(__file__).resolve().parents[1] / 'docs/examples/open-desk-saturday.json'
+        case = json.loads(path.read_text(encoding='utf-8'))
+        brief = case['input']
+        assets = [{'id':'temporary', 'content':brief['temporary']}]
+        overseas.validate(case,brief,assets,require_setup=True,action_edition=True)
+        questions.validate(case['outputs'],[])
+        for plan in case['outputs']:
+            self.assertEqual(plan['shoot_setup']['people'], 1)
+            self.assertEqual(len(plan['shoot_setup']['locations']), 1)
+            self.assertEqual(plan['script'], '')
+            self.assertTrue(plan['evidence'])
+
     def test_bundled_reference_videos_have_complete_primary_source_metadata(self):
         bundle=json.loads((Path(overseas_library.__file__).parent/'resources/hiccai-pop/reference-videos.json').read_text())
         self.assertEqual(len(bundle),60)
@@ -330,9 +358,46 @@ class OverseasStructureTests(unittest.TestCase):
             overseas.validate({'outputs':plans},self.brief,[],require_setup=True)
 
     def test_final_reveal_and_casting_are_checked(self):
+        fields = overseas.SCHEMA['properties']['outputs']['items']['properties']
+        self.assertEqual(fields['casting']['enum'], list(overseas.CASTING))
+        self.assertEqual(fields['ending_type']['enum'], list(overseas.ENDINGS))
         for change in ({'ending_type':'故事翻牌','misread':'以为有字','clue':'透明片已在画面里','reveal_shot':1},{'reveal_shot':True},{'casting':'不露脸'}):
             outputs=copy.deepcopy(self.outputs);outputs[1].update(change)
             with self.assertRaises(ValueError):overseas.validate({'outputs':outputs},self.brief,[])
+
+    def test_screen_copy_accepts_event_hours_and_rejects_pasted_editing_cues(self):
+        shot = self.outputs[0]['shots'][0]
+        for key in ('screen_text','screen_text_zh'):
+            for cue in ('1–9s  Open Desk Saturday','Open Desk Saturday\n6–9s  Who would you bring?', '【0至3秒】开门', '00:03–00:06 | Open'):
+                with self.subTest(field=key, cue=cue), self.assertRaisesRegex(ValueError,'剪辑时间码'):
+                    shot[key] = cue
+                    overseas.validate({'outputs':self.outputs},self.brief,[],action_edition=True)
+            shot[key] = '10:00–12:00\nSaturday 10 AM–12 PM'
+        overseas.validate({'outputs':self.outputs},self.brief,[],action_edition=True)
+        source = [{'content':'Drying time: 3–5 seconds per print.'}]
+        self.assertFalse(overseas.contains_editing_cue('3–5 seconds per print',source))
+        self.assertFalse(overseas.contains_editing_cue('3至5秒 每张晾干时间',source))
+        for unit in ('segundos','secondes','Sekunden'):
+            self.assertTrue(overseas.contains_editing_cue(f'3–5 {unit} | Open',[]))
+        self.assertTrue(overseas.contains_editing_cue('3–5s Open', [{'content':'Drying time: 35 seconds.'}]))
+
+    def test_visual_invitation_can_end_without_an_engagement_question(self):
+        for output in self.outputs:
+            output['comments'] = []
+        overseas.validate({'outputs':self.outputs},self.brief,[],require_setup=True,action_edition=True)
+        self.outputs[0]['shooting_list'] = []
+        with self.assertRaisesRegex(ValueError,'拍摄清单'):
+            overseas.validate({'outputs':self.outputs},self.brief,[],action_edition=True)
+
+    def test_shared_invitation_is_valid_but_repeated_shot_actions_are_rejected(self):
+        for output in self.outputs:
+            output['reveal'] = 'Open Desk Saturday, 10 AM–12 PM'
+        overseas.validate({'outputs':self.outputs},self.brief,[],action_edition=True)
+        for output in self.outputs:
+            shot = {**self.outputs[0]['shots'][0], 'start':0, 'end':self.brief['duration']}
+            output.update(shots=[shot],reveal_shot=1)
+        with self.assertRaisesRegex(ValueError,'相同的分镜动作'):
+            overseas.validate({'outputs':self.outputs},self.brief,[],action_edition=True)
 
     def test_different_titles_cannot_hide_the_same_creative_direction(self):
         for field in ('angle','first_second','reveal'):
