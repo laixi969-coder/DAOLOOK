@@ -994,7 +994,10 @@ svg.icon {
 .creation-picks { margin: 20px 0 30px; }
 .board-overview > summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
 .overseas-studio { width: 100%; max-width: 960px; }
-.overseas-library-tabs { display: flex; gap: 10px; margin-bottom: 18px; }
+.overseas-library-tabs { display: flex; flex-wrap: wrap; gap: 10px; }
+.overseas-library-tabs + form { margin-top: 18px; }
+.overseas-more { justify-content: center; margin-top: 20px; }
+.overseas-idea-card > .muted { font-size: 12px; margin-bottom: 8px; }
 #overseas-filter-form { display: flex; gap: 12px; flex-wrap: wrap; align-items: end; }
 #overseas-filter-form .field { flex: 1; min-width: 140px; margin-bottom: 0; }
 .overseas-library-controls { margin-bottom: 28px; }

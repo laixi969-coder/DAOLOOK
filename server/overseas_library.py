@@ -7,9 +7,12 @@ import urllib.parse
 from pathlib import Path
 from .db import db, dumps, uid, now, setting
 from .discovery import parse_count
-from . import overseas_feed, overseas_translation, overseas_visuals, resource_limits
+from . import overseas_daily, overseas_feed, overseas_translation, overseas_visuals, resource_limits
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
+PUBLIC_SOURCES = [*overseas_feed.SOURCES, *overseas_visuals.CASES.values()]
+INDUSTRIES = sorted({s['industry'] for s in PUBLIC_SOURCES if s.get('industry')})
+PUBLISHER_TYPES = sorted({s['publisher_type'] for s in PUBLIC_SOURCES if s.get('publisher_type')})
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
 REFERENCE_VIDEOS = {v['archetype_id']:v for v in json.loads((Path(__file__).parent / 'resources/hiccai-pop/reference-videos.json').read_text())}
 CATEGORIES = {a['category']: a['category_name'] for a in ARCHETYPES}
@@ -132,19 +135,31 @@ def collect(project, data):
     return store(project,value,True)
 
 
-def recommendations(project, query='', category='', saved=False, platform='all', scope='selected'):
+def recommendations(project, query='', category='', saved=False, platform='all', scope='selected',
+                    industry='', publisher_type='', edition=None):
     if category and category not in CATEGORIES: raise ValueError('品类无效')
     if platform not in (*PLATFORMS,'all'): raise ValueError('平台无效')
-    if scope not in ('selected','candidates'): raise ValueError('参考范围无效')
-    records=list_ideas(project)
+    if scope not in ('today','selected','candidates'): raise ValueError('参考范围无效')
+    if industry and industry not in INDUSTRIES:raise ValueError('行业无效')
+    if publisher_type and publisher_type not in PUBLISHER_TYPES:raise ValueError('账号类型无效')
+    if edition is None:edition=overseas_daily.edition(overseas_feed.now())
+    daily={p['url']:p for p in edition['picks']} if not saved and scope!='candidates' else {}
+    today=not saved and scope=='today'
+    if today:
+        marks=','.join('?' for _ in daily) or 'NULL'
+        with db() as c:
+            records=[view(r) for r in c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND deleted_at IS NULL AND source_key IN ('+marks+')',(project,*daily))]
+    else:records=list_ideas(project)
     by_url={r.get('url'):r for r in records if r.get('url')}
     if saved:
         items = records
     else:
         cases = []
         for case in overseas_visuals.CASES.values():
+            if today and case['url'] not in daily:continue
             cases.append({**case, 'saved':False, **by_url.get(case['url'], {})})
-        fresh = [by_url.get(item['url'], {**item, 'saved':False}) for item in overseas_feed.videos()]
+        public=overseas_feed.videos(daily) if today else overseas_feed.videos()
+        fresh = [{**overseas_visuals.with_setup(item), 'saved':False, **by_url.get(item['url'], {})} for item in public]
         items = cases + fresh + [r for r in records if not r.get('archetype_id')]
         if scope == 'candidates':
             existing = {r['archetype_id']:r for r in records if r.get('archetype_id')}
@@ -152,17 +167,21 @@ def recommendations(project, query='', category='', saved=False, platform='all',
     tokens=[t for t in re.split(r'\s+',query.lower()) if t]
     scored=[];seen=set()
     for i,item in enumerate(items):
-        link=(item.get('reference_video') or {}).get('url') or item.get('url') or item['id']
+        link=item.get('url') or (item.get('reference_video') or {}).get('url') or item['id']
         if link in seen:continue
         if saved and not item['saved']: continue
         if category and item.get('category') not in (category,''): continue
+        if industry and item.get('industry')!=industry:continue
+        if publisher_type and item.get('publisher_type')!=publisher_type:continue
         actual_platform=(item.get('reference_video') or {}).get('platform') or item.get('platform')
         if platform!='all' and actual_platform!=platform: continue
         item = overseas_visuals.with_setup(item)
         setup = item.get('filming', '')
-        if not saved and scope == 'selected' and not setup:
+        pick=daily.get(link)
+        if not saved and scope=='today' and not pick:continue
+        if not saved and scope in ('selected','today') and not setup:
             continue
-        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique','publisher','query')).lower()
+        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique','publisher','industry','publisher_type','query')).lower()
         corpus += ' ' + setup.lower()
         corpus+=' '+str((item.get('reference_video') or {}).get('title_zh','')).lower()
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
@@ -171,12 +190,15 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         seen.add(link)
         reason='匹配关键词：'+'、'.join(direct) if direct else ('同类创意：'+item.get('category_name','') if hits else ('匹配所选品类' if category else '可复用的创意结构，按资料顺序展示'))
         value={**item,'recommendation':reason}
+        if pick:value['daily_pick']={'position':pick['position'],'new_match':bool(pick['new_match'])}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
         reviewed=0 if link in overseas_visuals.BY_URL else 1 if setup else 2
         platform_rank=0 if actual_platform=='tiktok' else 1
         story_rank=0 if item.get('story_candidate') else 1
-        scored.append((-(4*len(direct)+len(hits)),reviewed,platform_rank,story_rank,kind,-published.timestamp() if published else 0,i,value))
+        priority=pick['position'] if pick else 100
+        scored.append((-(4*len(direct)+len(hits)),priority,kind if scope=='candidates' else reviewed,
+                       platform_rank,story_rank,kind,-published.timestamp() if published else 0,i,value))
     return [value for *_,value in sorted(scored)]
 
 

@@ -92,9 +92,10 @@ class OverseasApiTests(unittest.TestCase):
     def test_archetypes_recommendation_save_and_project_isolation(self):
         status,result=self.ideas('&scope=candidates',platform='youtube')
         self.assertEqual(status,200)
-        self.assertEqual(len(result['items']),60)
+        archetypes=[i for i in result['items'] if i.get('source_kind')=='archetype']
+        self.assertEqual(len(archetypes),60)
         self.assertEqual(result['skill']['reference_videos'],60)
-        self.assertTrue(all(not i['url'] and not i['metrics'] for i in result['items']))
+        self.assertTrue(all(not i['url'] and not i['metrics'] for i in archetypes))
         self.assertTrue(all(i['reference_video']['url'] and i['reference_video']['publisher'] for i in result['items']))
         self.assertFalse(result['search_available'])
         self.assertEqual(set(result['categories']),set('ABCDEFGH'))
@@ -164,7 +165,7 @@ class OverseasApiTests(unittest.TestCase):
         source = [{'id':f'feed_{i}', 'source_kind':'daily_feed', 'platform':'tiktok',
                    'url':f'https://www.tiktok.com/@example/video/{i}', 'title':'Candidate', 'summary':'', 'metrics':{}}
                   for i in range(125)]
-        with patch.object(overseas_library.overseas_feed,'videos',return_value=source):
+        with patch.object(overseas_library.overseas_feed,'videos',return_value=source),patch.object(overseas_library.overseas_visuals,'CASES',{}):
             first = self.ideas('&scope=candidates',platform='tiktok')[1]
             second = self.ideas('&scope=candidates&offset=120',platform='tiktok')[1]
         self.assertEqual((first['total'],len(first['items']),first['next_offset']),(125,120,120))

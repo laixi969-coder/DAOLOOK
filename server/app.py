@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_feed, questions
+from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_daily, overseas_feed, questions
 from .ranking import score
 from .skills import SKILL_NAMES
 from . import audit, secret_store, spending, resource_limits, workspace, access, intake, account_deletion, mfa
@@ -601,13 +601,18 @@ class Handler(BaseHTTPRequestHandler):
             saved=q.get('saved',['0'])[0]=='1'
             offset = q.get('offset',['0'])[0]
             if not re.fullmatch(r'[0-9]{1,8}',offset): raise Error('分页位置无效')
-            items = overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved, q.get('platform',['all'])[0], q.get('scope',['selected'])[0])
+            edition = overseas_daily.edition(overseas_feed.now())
+            items = overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved,
+                        q.get('platform',['all'])[0], q.get('scope',['selected'])[0], q.get('industry',[''])[0],
+                        q.get('publisher_type',[''])[0], edition)
             size = 120
             offset = min(int(offset) // size, max(0,len(items)-1) // size) * size
             return self.send({'items':items[offset:offset+size], 'total':len(items), 'offset':offset,
                               'next_offset':offset+size if offset+size<len(items) else None,
                               'previous_offset':offset-size if offset else None,
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
+                              'industries':overseas_library.INDUSTRIES, 'publisher_types':overseas_library.PUBLISHER_TYPES,
+                              'daily':{'day':edition['day'],'front_page':edition['front_page'],'count':len(edition['picks'])},
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),
                               'translation_pending':overseas_library.overseas_translation.pending(),

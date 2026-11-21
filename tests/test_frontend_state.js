@@ -86,7 +86,15 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.equal(translatedCard.includes('<h3 lang="zh-CN">世界上最笨的劫匪</h3>'),true);
    for(const text of ['完整的中文说明','The World’s Worst Robbers','A full &lt;original&gt; caption','劫匪视频','Robbers &lt;video&gt;','原文']) assert.equal(translatedCard.includes(text),true);
    assert.equal(translatedCard.includes('<details'),false);
-   assert.equal(overseasFeedStatus({state:'succeeded',added_count:5,last_checked_at:'2026-10-12T15:00:00Z'}).includes('上次新增 5 条'),true);
+   assert.equal(overseasFeedStatus({state:'succeeded',added_count:5,new_match_count:1,last_checked_at:'2026-10-12T15:00:00Z'}).includes('本次新入选 1 条，新增候选 5 条'),true);
+   S.overseasFilters={query:"",category:"",platform:"all",scope:"today"};
+   S.overseasLibrary={daily:{day:"2026-11-21",front_page:10},items:Array.from({length:13},(_,i)=>({...freshVideo,id:"daily"+i,daily_pick:{position:i+1,new_match:i===0}}))};
+   assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,10);
+   assert.ok(overseasIdeasPage().includes('再看 3 条') && overseasIdeasPage().includes('今日新入选') && overseasIdeasPage().includes('片库精选'));
+   actions['overseas-daily-more']();
+   assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,13);
+   S.overseasLibrary.daily.day="2026-11-22";
+   assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,10);
    // Public daily recommendations are collected through the verified source ID.
    S.overseasLibrary={items:[freshVideo]};
    let collected;

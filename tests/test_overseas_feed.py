@@ -3,10 +3,12 @@ import json
 import os
 import threading
 import unittest
+import urllib.parse
 from unittest.mock import patch
 from xml.sax.saxutils import escape
 from tests import test_original as fixture
 from server import overseas_feed as feed, overseas_library
+from server import overseas_daily, overseas_visuals
 
 SOURCE=feed.YOUTUBE_SOURCES[0]
 DAY='2026-10-12T15:00:00+00:00'
@@ -82,6 +84,67 @@ class DailyVideoTests(unittest.TestCase):
         self.assertFalse(result['cached'])
         self.assertEqual(result['last_checked_at'],'2026-10-13T05:00:00+00:00')
 
+    def test_daily_edition_promotes_real_new_matches_and_rotates_without_private_leakage(self):
+        self.post('/api/overseas/ideas',{'url':'https://www.instagram.com/reel/privateExample','title':'Flip the cardboard sign to reveal our offer'})
+        second_day='2026-10-13T15:00:00+00:00'
+        with patch.object(feed,'now',return_value=DAY):
+            preview=overseas_library.recommendations(self.p,scope='today')
+        self.assertGreaterEqual(len(preview),10)
+        self.assertFalse(any('privateExample' in i['url'] for i in preview))
+        with fixture.D.db() as c:self.assertEqual(c.execute('SELECT count(*) FROM overseas_daily_picks').fetchone()[0],0)
+        match=('abcdefghijk','Our store hours','2026-10-10T14:00:00Z','We wipe the glass to reveal our store hours')
+        self.assertEqual(self.sync(atom([match]))['new_match_count'],1)
+        first=overseas_daily.edition(DAY)['picks']
+        self.assertEqual((first[0]['url'],first[0]['new_match']),('https://www.youtube.com/watch?v=abcdefghijk',1))
+        fixture.D.init()
+        self.assertEqual(overseas_daily.edition(DAY)['picks'],first)
+        with patch.object(feed,'now',return_value=DAY):
+            page=self.c.req('/api/overseas/ideas?scope=today&project_id='+self.p)[1]
+            self.assertEqual([i['url'] for i in page['items']],[i['url'] for i in first])
+            self.assertEqual(page['daily']['front_page'],10)
+            self.assertTrue(page['items'][0]['daily_pick']['new_match'])
+            self.assertEqual(page['items'][0]['mechanism'],'擦镜显字')
+        second_match=('newvideoxyz','Menu lands open','2026-10-13T14:00:00Z','Flick the menu and it lands open on the table')
+        self.assertEqual(self.sync(atom([match,second_match]),second_day)['new_match_count'],1)
+        second=overseas_daily.edition(second_day)['picks']
+        self.assertEqual(second[0]['url'],'https://www.youtube.com/watch?v=newvideoxyz')
+        earlier_front={p['url'] for p in first[:10]}
+        self.assertTrue(any(p['url'] not in earlier_front for p in second[1:10]))
+        self.assertEqual(len(set(p['url'] for p in second)),len(second))
+        self.assertEqual(overseas_daily.edition(DAY)['picks'],first)
+
+    def test_publication_waits_for_recovery_and_industry_filters_work(self):
+        source=next(s for s in feed.SOURCES if s.get('handle')=='loewe')
+        failed={**source,'publisher':'Unavailable','source_id':'tiktok:missing','handle':'missing'}
+        caption='Our collection: the outline becomes a bag with a single cut.'
+        def fetch(s):
+            if s is failed:raise OSError('offline')
+            return tiktok_html(s,[tiktok_entry(s,ident='7680599033039179049',caption=caption)])
+        with patch.object(feed,'now',return_value=DAY),patch.object(feed,'SOURCES',[source,failed]),patch.object(feed,'fetch',side_effect=fetch),patch.object(feed,'fetch_page',return_value=detail_html({'url':'https://www.tiktok.com/@loewe/video/7680599033039179049'})):
+            state=feed.refresh(background=False)
+            self.assertEqual((state['state'],state['new_match_count']),('partial',1))
+            params=urllib.parse.urlencode({'scope':'today','industry':'时装配饰','publisher_type':'奢侈品牌','project_id':self.p})
+            page=self.c.req('/api/overseas/ideas?'+params)[1]['items']
+            self.assertEqual(len(page),1)
+            self.assertEqual((page[0]['publisher'],page[0]['mechanism']),('LOEWE','轮廓对位'))
+            self.assertEqual(overseas_library.recommendations(self.p,scope='today',industry='体育赛事'),[])
+
+    def test_partial_scan_without_matches_can_publish_a_later_recovery(self):
+        other={**SOURCE,'publisher':'Unavailable','channel_id':'UC'+'x'*22}
+        def partial(s):
+            if s==other:raise OSError('offline')
+            return atom([OLD],s)
+        with patch.object(feed,'SOURCES',[SOURCE,other]),patch.object(feed,'now',return_value=DAY),patch.object(feed,'fetch',side_effect=partial):
+            self.assertEqual(feed.refresh(background=False)['state'],'partial')
+        first=overseas_daily.edition(DAY)['picks']
+        self.assertEqual(len(first),10)
+        match=('freshcutxyz','Our store hours','2026-10-12T14:00:00Z','We wipe the glass to reveal our store hours')
+        with patch.object(feed,'SOURCES',[SOURCE,other]),patch.object(feed,'now',return_value='2026-10-12T16:01:00+00:00'),patch.object(feed,'fetch',side_effect=lambda s:atom([match] if s==other else [OLD],s)):
+            self.assertEqual(feed.refresh(background=False)['state'],'succeeded')
+        recovered=overseas_daily.edition(DAY)['picks']
+        self.assertEqual(recovered[:10],first)
+        self.assertIn('https://www.youtube.com/watch?v=freshcutxyz',[p['url'] for p in recovered[10:]])
+
     def test_failed_refresh_preserves_successful_cache_and_time(self):
         first=self.sync(atom([OLD]))
         with patch.object(feed,'SOURCES',[SOURCE]),patch.object(feed,'now',return_value='2026-10-13T15:00:00+00:00'),patch.object(feed,'fetch',side_effect=OSError('unavailable')):
@@ -150,16 +213,17 @@ class DailyVideoTests(unittest.TestCase):
 
     def test_source_change_keeps_platform_filtered_candidates(self):
         self.sync(atom([OLD]))
-        source=feed.SOURCES[-1]
+        source=next(s for s in feed.SOURCES if s.get('handle')=='milwaukeepubliclibrary')
         with patch.object(feed,'SOURCES',[source]),patch.object(feed,'now',return_value=DAY),patch.object(feed,'fetch',return_value=tiktok_html(source,[tiktok_entry(source)])),patch.object(feed,'fetch_page',side_effect=lambda url:detail_html({'url':url})):
             result=feed.refresh(background=False)
         self.assertFalse(result['cached'])
         self.assertEqual(result['added_count'],1)
-        public=self.c.req('/api/overseas/ideas?platform=tiktok&scope=candidates&project_id='+self.p)[1]['items']
+        public=[i for i in self.c.req('/api/overseas/ideas?platform=tiktok&scope=candidates&project_id='+self.p)[1]['items'] if i.get('feed_id')]
         self.assertEqual(len(public),1)
         self.assertTrue(all(i['reference_video']['platform']=='tiktok' for i in public))
         self.assertEqual(public[0]['duration'],33)
-        self.assertEqual(len(overseas_library.recommendations(self.p,platform='youtube',scope='candidates')),61)
+        youtube=overseas_library.recommendations(self.p,platform='youtube',scope='candidates')
+        self.assertEqual(sum(i['source_kind']!='visual_case' for i in youtube),61)
         self.assertFalse(any(i.get('feed_id')==public[0]['id'] for i in overseas_library.recommendations(self.p)))
         saved=self.post('/api/overseas/ideas',{'feed_id':public[0]['id']})[1]
         # Signed covers refresh without replacing a private collection's creative text.
@@ -192,8 +256,88 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(self.c.req('/api/bootstrap')[1]['credits'],before)
         self.assertIn('refresh',self.c.req('/api/overseas/ideas?project_id='+self.p)[1])
 
+    def test_smaller_existing_edition_expands_to_ten_preserving_order(self):
+        day=overseas_daily.day_for(DAY)
+        legacy=[i['url'] for i in list(overseas_visuals.CASES.values())[:6]]
+        with fixture.D.db() as c:
+            c.executemany('INSERT INTO overseas_daily_picks VALUES (?,?,?,0)',[(day,n,u) for n,u in enumerate(legacy,1)])
+        first=overseas_daily.edition(DAY)['picks']
+        self.assertGreaterEqual(len(first),10)
+        self.assertEqual([p['url'] for p in first[:6]],legacy)
+        self.sync(atom([]))
+        self.assertEqual(overseas_daily.edition(DAY)['picks'],first)
+        self.assertEqual(len(first),len({i['url'] for i in first}))
+
+    def test_withdrawn_public_post_is_replaced_without_losing_the_daily_minimum(self):
+        match=('abcdefghijk','A paper sign','2026-10-10T14:00:00Z','Flip a cardboard sign to reveal our opening hours')
+        self.sync(atom([match]))
+        url='https://www.youtube.com/watch?v=abcdefghijk'
+        self.assertIn(url,[p['url'] for p in overseas_daily.edition(DAY)['picks']])
+        with fixture.D.db() as c:
+            c.execute('DELETE FROM overseas_feed_videos WHERE url=?',(url,))
+            fixed=overseas_daily.select(c,DAY,persist=True)
+        self.assertGreaterEqual(len(fixed['picks']),10)
+        self.assertNotIn(url,[p['url'] for p in fixed['picks']])
+        self.assertEqual(fixed,overseas_daily.edition(DAY))
+
+    def test_two_full_front_pages_do_not_repeat_when_twenty_clips_are_available(self):
+        clips=[(f'v{i:010d}',f'Offer {i}','2026-10-10T14:00:00Z',f'We flip a paper sign to reveal offer number {i}.') for i in range(21)]
+        self.sync(atom(clips))
+        first=overseas_daily.edition(DAY)
+        tomorrow='2026-10-13T15:00:00+00:00'
+        self.sync(atom(clips),tomorrow)
+        second=overseas_daily.edition(tomorrow)
+        self.assertEqual([len(e['picks']) for e in (first,second)],[20,20])
+        self.assertTrue({p['url'] for p in first['picks'][:10]}.isdisjoint(p['url'] for p in second['picks'][:10]))
+
 
 class FeedParsingTests(unittest.TestCase):
+    def test_instagram_verifies_creator_vertical_video_and_actual_reel_duration(self):
+        source=next(s for s in feed.SOURCES if s.get('platform')=='instagram')
+        handle=source['handle']
+        post={'shortcode':'SampleMenu1','is_video':True,'owner':{'username':handle},'dimensions':{'width':720,'height':1280},
+              'taken_at_timestamp':1791817200,'edge_media_to_caption':{'edges':[{'node':{'text':'We flick the menu and it lands open'}}]}}
+        def embed(obj):return ('<script>'+json.dumps({'contextJSON':json.dumps(obj)})+'</script>').encode()
+        entries=[post,{**post,'is_video':False},{**post,'owner':{'username':'other'}},{**post,'dimensions':{'width':1000,'height':600}}]
+        profile={'context':{'username':handle,'graphql_media':[{'shortcode_media':e} for e in entries]}}
+        with patch.object(feed,'now',return_value=DAY):
+            items=feed.parse(embed(profile),source)
+        self.assertEqual(len(items),1)
+        item={**items[0],'source_id':source['source_id']}
+        def reel(**changes):
+            return embed({'context':{'shortcode':'SampleMenu1'},'gql_data':{'shortcode_media':{**post,'product_type':'clips','video_duration':8.4,**changes}}})
+        with patch.object(feed,'reference',return_value=None):
+            with patch.object(feed,'fetch_page',return_value=reel()):
+                self.assertEqual(feed.instagram_details(item)['duration'],8.4)
+            for changes in ({'video_duration':125},{'product_type':'feed'},{'owner':{'username':'another'}}):
+                with patch.object(feed,'fetch_page',return_value=reel(**changes)):self.assertIsNone(feed.instagram_details(item))
+        with self.assertRaises(ValueError):feed.parse(embed({'context':{'username':'wrong','graphql_media':[]}}),source)
+
+    def test_shorts_feed_and_series_require_native_evidence(self):
+        source=next(s for s in feed.SOURCES if s.get('shorts_only'))
+        blob=atom([OLD,NEW],source).replace(b'<title>Charger',b'<link rel="alternate" href="https://www.youtube.com/shorts/abcdefghijk"/><title>Charger')
+        with patch.object(feed,'now',return_value='2026-10-13T18:00:00+00:00'):
+            self.assertEqual([i['reference_video']['url'] for i in feed.parse(blob,source)],['https://www.youtube.com/shorts/abcdefghijk'])
+        ident='newvideoxyz'
+        shelf={'metadata':{'channelMetadataRenderer':{'externalId':source['channel_id']}},
+               'contents':{'shortsLockupViewModel':{'overlayMetadata':{'primaryText':{'content':'Church invite in paint'}},
+                           'onTap':{'innertubeCommand':{'reelWatchEndpoint':{'videoId':ident}}}}}}
+        header={'publishDate':{'simpleText':'Oct 10, 2026'},'channelNavigationEndpoint':{'browseEndpoint':{'browseId':source['channel_id']}}}
+        detail={'currentVideoEndpoint':{'watchEndpoint':{'videoId':ident}},'engagementPanels':[{'videoDescriptionHeaderRenderer':header}],
+                'contents':{'attributedDescription':{'content':'Smooth paint across the frame to reveal our invite.'}}}
+        with patch.object(feed,'now',return_value=DAY),patch.object(feed,'youtube_page_data',side_effect=[shelf,detail]):
+            result=feed.youtube_series(source,[],set())
+            self.assertEqual([i['reference_video']['url'] for i in result],['https://www.youtube.com/shorts/'+ident])
+        detail['contents']['attributedDescription']['content']='Wave at the camera. See you Sunday!'
+        with patch.object(feed,'now',return_value=DAY),patch.object(feed,'youtube_page_data',side_effect=[shelf,detail]):
+            self.assertEqual(feed.youtube_series(source,[],set()),[])
+
+    def test_creator_techniques_need_a_visible_method_and_simple_execution(self):
+        self.assertTrue(overseas_visuals.caption_setup('Shadows in everyday life. Shot on a phone, with the behind the scenes.'))
+        self.assertFalse(overseas_visuals.caption_setup('Shadows. Our collection is here.'))
+        self.assertTrue(overseas_visuals.caption_setup('No CGI: the outline turns into our bag to reveal the new collection.'))
+        self.assertFalse(overseas_visuals.caption_setup('CGI: the outline turns into our bag to reveal the new collection.'))
+
     def test_tiktok_filters_private_horizontal_and_generic_reviews(self):
         source=feed.SOURCES[0]
         valid=tiktok_entry(source,ident='7694716128580357398',caption='Adam and Eve get evicted')
@@ -224,10 +368,12 @@ class FeedParsingTests(unittest.TestCase):
             self.assertEqual(feed.tiktok_details(changed)['summary'],'New caption')
             fetch.assert_not_called()
 
-    def test_tiktok_sources_are_story_and_brand_accounts(self):
-        self.assertTrue(all(s['platform']=='tiktok' for s in feed.SOURCES))
-        self.assertEqual(len({s['handle'] for s in feed.SOURCES}),len(feed.SOURCES))
-        self.assertTrue({'adrianbliss','liquiddeath','scrubdaddy'}<={s['handle'] for s in feed.SOURCES})
+    def test_daily_sources_cover_creators_businesses_and_industries(self):
+        self.assertEqual({s['platform'] for s in feed.SOURCES},{'tiktok','instagram','youtube'})
+        self.assertEqual(len({s['source_id'] for s in feed.SOURCES}),len(feed.SOURCES))
+        tiktok=[s for s in feed.SOURCES if s['platform']=='tiktok']
+        self.assertTrue({'adrianbliss','liquiddeath','scrubdaddy','jacquemus','loewe','metmuseum'}<={s['handle'] for s in tiktok})
+        self.assertEqual({s['publisher_type'] for s in tiktok},{'独立商家','大众品牌','奢侈品牌','设计师品牌','达人创作者','机构媒体'})
 
     def test_brand_promotions_do_not_fill_the_story_recommendations(self):
         source=next(s for s in feed.SOURCES if s['handle']=='scrubdaddy')
