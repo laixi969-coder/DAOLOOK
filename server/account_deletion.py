@@ -22,7 +22,7 @@ def delete_user(user_id, actor, request_id=''):
         for project in projects:
             for table in ('assets', 'asset_trash', 'source_contents', 'creation_outputs', 'generated_images', 'tasks', 'overseas_ideas'):
                 identifiers.extend(r[0] for r in c.execute(f'SELECT id FROM {table} WHERE project_id=?', (project,)))
-            for table in ('creation_revisions', 'creation_tracking', 'creation_results'):
+            for table in ('creation_readiness', 'creation_revisions', 'creation_tracking', 'creation_results'):
                 c.execute(f'DELETE FROM {table} WHERE creation_id IN (SELECT id FROM creation_outputs WHERE project_id=?)', (project,))
             for table in ('question_observations', 'generated_images', 'asset_facts', 'asset_trash', 'overseas_ideas', 'overseas_searches'):
                 c.execute(f'DELETE FROM {table} WHERE project_id=?', (project,))

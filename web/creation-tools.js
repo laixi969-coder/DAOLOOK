@@ -29,12 +29,13 @@
       const hasPhoto = (c.data.image_asset_ids || []).some(id => workspace.assets.some(a => a.id === id && a.kind === '图片'));
       const q = c.data.quality;
       const issues = q?.issues?.length || 0;
-      const readiness = q?.status === 'checked' ? 3 : q?.status === 'review' ? 2 : q ? 0 : 1;
+      const readiness = c.ready_at ? 4 : q?.status === 'checked' ? 3 : q?.status === 'review' ? 2 : q ? 0 : 1;
       return {c, hasCover, hasPhoto, issues, readiness};
     };
     const ranked = batch.map(facts).sort((a,b) => b.readiness-a.readiness || a.issues-b.issues || Number(b.hasCover)-Number(a.hasCover) || Number(b.hasPhoto)-Number(a.hasPhoto));
     const best = ranked[0];
     const reasons = [best.c.data.quality?.status === 'checked' ? '已通过基础交付检查' : best.c.data.quality?.status === 'review' ? '已有手动编辑稿，事实仍需核对' : best.issues ? `这篇仍有 ${best.issues} 项待核对，是本批待补项较少的稿件` : '本批暂时没有足够的检查信息，先从这篇核对'];
+    if (best.c.ready_at) reasons[0] = '这版稿件已由你确认可发布';
     if (best.hasCover) reasons.push('已保存封面，可在下方下载');
     else if (best.hasPhoto) reasons.push('关联的产品或人物照片仍可用于制作封面');
     const picks = [best.c];

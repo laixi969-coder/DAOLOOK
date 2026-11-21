@@ -16,7 +16,8 @@ class FixedDateTime(datetime.datetime):
 
 class WorkspaceTimezoneTests(unittest.TestCase):
     def test_today_uses_configured_zone_instead_of_server_zone(self):
-        rows = [dict(platform='xhs', data='{}', created_at='2026-01-01T16:15:00+00:00', status=None, result=None)]
+        rows = [dict(platform='xhs', data='{}', created_at='2026-01-01T16:15:00+00:00', status=None, result=None,
+                     first_confirmed_at=None, submitted_at=None)]
         class Connection:
             def execute(self, *args):
                 return self

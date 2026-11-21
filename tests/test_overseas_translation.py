@@ -75,7 +75,7 @@ class TranslationTests(unittest.TestCase):
         with D.db() as c:
             c.execute('INSERT INTO overseas_feed_videos VALUES (?,?,?,?,?,?)',('feed_test','https://www.tiktok.com/@test/video/1234567890123456789',json.dumps({'id':'feed_test','title':'The World’s Worst Robbers','summary':'The World’s Worst Robbers','url':'https://www.tiktok.com/@test/video/1234567890123456789','platform':'tiktok','category':'','published_at':D.now(),'source_kind':'daily_feed'}),D.now(),D.now(),D.now()))
         with patch.object(overseas_library,'list_ideas',return_value=[]):
-            items=overseas_library.recommendations('unused',query='劫匪',platform='tiktok')
+            items=overseas_library.recommendations('unused',query='劫匪',platform='tiktok',scope='candidates')
         self.assertEqual(len(items),1)
         self.assertEqual(items[0]['title_zh'],'世界上最笨的劫匪')
         self.assertEqual(translation.public_items()[0]['id'],'feed_test')

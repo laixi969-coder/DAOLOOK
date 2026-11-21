@@ -1,0 +1,42 @@
+[
+  {
+    "id": "case_nika_sign",
+    "mechanism": "翻牌指路",
+    "title": "纸板缺了一口，翻过来给甜品摊指路",
+    "summary": "一个女孩在缺了一角的纸板后面咀嚼，随后露出手里的饼干。她翻过纸板，背面的箭头把视线带到甜品摊。",
+    "filming": "在摊位旁拍一个中近景。预先撕出缺口、在背面写好指路信息，让饼干从纸板后入画，翻牌后沿箭头移向摊位。",
+    "publisher": "Sweets by Nika",
+    "url": "https://www.instagram.com/reel/Ddmkp8jyuMP",
+    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal"
+  },
+  {
+    "id": "case_deli_frame",
+    "mechanism": "纸框取景",
+    "title": "用一张挖空的感谢卡，逐个介绍店员",
+    "summary": "餐厅把感谢语写在纸框上方，框里的空位由正在工作的店员补全。切换到下一位时，纸框还在画面里相同的位置。",
+    "filming": "在厚纸上剪一个取景窗。手机和纸框保持相同距离，依次对准已有的工作岗位，各拍一小段，按纸框边缘对齐剪接。",
+    "publisher": "TV’s Deli & Diner",
+    "url": "https://www.instagram.com/reel/DfC74B9CWLU",
+    "review_source": "https://kabo.sh/breakdown/paper-frame-team-reveal"
+  },
+  {
+    "id": "case_juice_cup",
+    "mechanism": "机位错觉",
+    "title": "吸管次次投进杯里，换个机位才看懂",
+    "summary": "果汁店用投中三根吸管发出试吃邀请。第一个角度让人以为每个人都投中了，侧面镜头露出镜头旁把备用吸管放进杯子的同伴。",
+    "filming": "杯子贴近手机，先拍正面的投掷动作，再侧移一步拍到杯口旁的手。两段画面在同一张桌边拍完。",
+    "publisher": "Juice Junction",
+    "url": "https://www.instagram.com/reel/DaFuCwZB0BJ",
+    "review_source": "https://kabo.sh/breakdown/juice-junction-straw-challenge"
+  },
+  {
+    "id": "case_aura_booking",
+    "mechanism": "翻牌指路",
+    "title": "一块纸板翻面，露出工作室的预约信息",
+    "summary": "戴墨镜的人拿着一块边缘参差的纸板，观众先注意到嘴边的缺口。她翻转纸板，背面写着工作室名称、价格和预约提示。",
+    "filming": "一个人正对手机，手持双面纸牌。提前写好自己的预约信息，翻面后停住，让观众有时间读完。",
+    "publisher": "Aura Studio",
+    "url": "https://www.instagram.com/reel/DdrLEgxMAa1",
+    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal"
+  }
+]

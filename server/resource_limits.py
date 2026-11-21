@@ -26,10 +26,10 @@ def validate_inputs(payload):
 def usage(c, user=None):
     total = 0
     for table, column in (('question_observations','data'),('assets','content'),('asset_trash','data'),('source_contents','data'),('creation_outputs','data'),
-                          ('generated_images','data'),('creation_revisions','data'),('overseas_ideas','data'),
+                          ('generated_images','data'),('creation_revisions','data'),('creation_readiness','confirmed_at'),('overseas_ideas','data'),
                           ('creation_results','data'),('overseas_searches','ids'),('analysis_outputs','data'),('creation_tracking','checklist')):
         where = ' JOIN projects p ON p.id=t.project_id WHERE p.user_id=?' if user else ''
-        if table == 'creation_revisions':
+        if table in ('creation_revisions','creation_readiness'):
             where = ' JOIN creation_outputs o ON o.id=t.creation_id JOIN projects p ON p.id=o.project_id WHERE p.user_id=?' if user else ''
         if table == 'analysis_outputs':
             where = ' JOIN source_contents s ON s.id=t.source_id JOIN projects p ON p.id=s.project_id WHERE p.user_id=?' if user else ''

@@ -24,6 +24,11 @@ class IntakeRuleTests(unittest.TestCase):
     def test_sales_with_purchase_path_ok(self):
         self.assertIsNone(intake.blocking_question("sales", [{"content": "扫码进小店下单"}], ""))
 
+    def test_sales_price_alone_does_not_identify_purchase_path(self):
+        q = intake.blocking_question("sales", [], "单盒 128 元，欢迎购买")
+        self.assertEqual(q["id"], "purchase_path")
+        self.assertIsNone(intake.blocking_question("sales", [], "单盒 128 元，私信预约"))
+
     def test_leads_without_contact(self):
         q = intake.blocking_question("leads", [{"content": "冷萃挂耳，每盒10包"}], "")
         self.assertEqual(q["id"], "leads_missing")

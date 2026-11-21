@@ -1,6 +1,6 @@
 import hashlib, json, queue, threading
 from .db import db, uid, now, dumps, setting, ledger
-from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access, questions
+from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access, questions, production
 
 MAX_USER_ACTIVE = 20
 MAX_GLOBAL_ACTIVE = 200
@@ -37,8 +37,11 @@ def history_results(project, platform, goal):
         output = json.loads(row["data"])
         if output.get("goal") != goal or output.get("demo"):
             continue
+        metrics = json.loads(row["results"])
+        if "windows" in metrics:
+            metrics["windows"] = production.current_windows(metrics, row["published_at"])
         result.append({"title": output.get("title"), "angle": output.get("angle"), "platform": row["platform"],
-                       "results": json.loads(row["results"]), "source": "用户手动记录，未经平台验证",
+                       "results": metrics, "source": "用户手动记录，未经平台验证",
                        "published_at": row["published_at"], "recorded_at": row["updated_at"]})
     return result[:12]
 

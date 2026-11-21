@@ -3,6 +3,7 @@ import base64
 import datetime
 import json
 import os
+import statistics
 from zoneinfo import ZoneInfo
 from .db import db
 from .ranking import score
@@ -27,9 +28,13 @@ def creation_view(c,row):
     value=dict(row);ident=value['id']
     value['data']=json.loads(value['data'])
     value['revision']=c.execute('SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?',(ident,)).fetchone()[0]
+    ready=c.execute('SELECT confirmed_at FROM creation_readiness WHERE creation_id=? AND revision=?',(ident,value['revision'])).fetchone()
+    value['ready_at']=ready[0] if ready else None
     value['tracking']=production.row_view(c.execute('SELECT * FROM creation_tracking WHERE creation_id=?',(ident,)).fetchone())
     results=c.execute('SELECT data,updated_at FROM creation_results WHERE creation_id=?',(ident,)).fetchone()
     value['results']={**json.loads(results[0]),'recorded_at':results[1]} if results else {}
+    if 'windows' in value['results']:
+        value['results']['windows'] = production.current_windows(value['results'],value['tracking'].get('published_at'))
     return value
 
 
@@ -54,10 +59,12 @@ def stats(project):
     with db() as c:
         rows = c.execute(
             "SELECT s.platform AS platform,o.data AS data,o.created_at AS created_at,"
-            "k.status AS status,f.data AS result FROM creation_outputs o "
+            "k.status AS status,k.published_at,k.account_id,f.data AS result,o.task_id,t.created_at AS submitted_at,"
+            "v.first_confirmed_at FROM creation_outputs o "
             "JOIN source_contents s ON s.id=o.source_id "
             "LEFT JOIN creation_tracking k ON k.creation_id=o.id "
             "LEFT JOIN creation_results f ON f.creation_id=o.id "
+            "LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN creation_readiness v ON v.creation_id=o.id "
             "WHERE o.project_id=? AND o.deleted_at IS NULL",
             (project,),
         ).fetchall()
@@ -69,7 +76,11 @@ def stats(project):
         "published": 0,
         "total": len(rows),
         "results": {"recorded": 0, "views": 0, "leads": 0, "orders": 0},
+        "metric_counts": {"views": 0, "leads": 0, "orders": 0},
+        "delivery": {"formal": 0, "published": 0},
+        "account_published": {},
     }
+    first_ready, groups = {}, {}
     for row in rows:
         data = json.loads(row["data"])
         try:
@@ -87,13 +98,36 @@ def stats(project):
             platform[key] = platform.get(key, 0) + 1
         if row["status"] == "published":
             value["published"] += 1
-        if not data.get("demo") and row["result"]:
+            if row['account_id']:
+                counts = value['account_published']
+                counts[row['account_id']] = counts.get(row['account_id'],0) + 1
+        if data.get("demo"):
+            continue
+        delivery = value['delivery']
+        delivery['formal'] += 1
+        confirmed = production.moment(row['first_confirmed_at'])
+        submitted = production.moment(row['submitted_at'])
+        if confirmed and submitted:
+            elapsed = (confirmed - submitted).total_seconds()
+            if elapsed >= 0:
+                task = row['task_id']
+                first_ready[task] = min(elapsed, first_ready.get(task,elapsed))
+        if row['status'] != 'published':
+            continue
+        delivery['published'] += 1
+        if row["result"]:
             result = json.loads(row["result"])
+            windows = production.current_windows(result, row['published_at'])
+            for period, snapshot in windows.items():
+                production.add_goal_window(groups, data.get('target_platform') or row['platform'], data.get('goal'), period, snapshot)
             known = [k for k in ("views", "leads", "orders") if type(result.get(k)) is int]
-            if known:
+            if known or type(result.get('spend')) in (int, float) or windows:
                 value["results"]["recorded"] += 1
                 for key in known:
+                    value["metric_counts"][key] += 1
                     value["results"][key] += result[key]
+    value['delivery'].update(confirmed_batches=len(first_ready), first_ready_seconds=statistics.median(first_ready.values()) if first_ready else None)
+    value['goal_windows'] = sorted(groups.values(), key=lambda g:(g['platform'],g['goal'],production.WINDOWS[g['window']]))
     return value
 
 

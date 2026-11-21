@@ -217,7 +217,7 @@ RELEASES = [
         {"xhs_original": XHS_ORIGINAL_V1, "douyin_original": DOUYIN_ORIGINAL_V1},
     ),
 ]
-from .overseas_prompt import PROMPT as OVERSEAS_PROMPT
+from .overseas_prompt import PROMPT as OVERSEAS_PROMPT, VISUAL_PROMPT
 RELEASES.append(("skill_release_2026_10_12_viral", {
     p + "_original": OVERSEAS_PROMPT for p in ("tiktok", "instagram", "youtube", "overseas")
 }))
@@ -291,6 +291,10 @@ def _inject_methodology(base, section):
 RELEASES.append(("skill_release_2026_10_31_methodology", {
     "xhs_creation": _inject_methodology(XHS_CREATION_V5, METHOD_XHS_V1),
     "douyin_creation": _inject_methodology(DOUYIN_CREATION_V5, METHOD_DOUYIN_V1),
+}))
+
+RELEASES.append(("skill_release_2026_11_20_overseas_visual_shorts", {
+    platform + "_original": VISUAL_PROMPT for platform in ("tiktok", "instagram", "youtube", "overseas")
 }))
 
 SKILL_NAMES = [

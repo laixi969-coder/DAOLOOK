@@ -302,5 +302,46 @@ async function test(name,code) {
     assert.equal(r.task_ids[0],'t');
     assert.equal(S.intakeSkipped['user:project:leads_missing'],true);
   `);
-  console.log('Frontend review regressions passed (25 cases).');
+  await test('result list restores the domestic shortlist and preserves every card',`
+    S.workspace={sources:[{id:"s",platform:"xhs"}],assets:[],images:[],briefs:[]};
+    const draft=(id,angle,status)=>({id,source_id:"s",task_id:"batch",data:{title:id,body:"真实正文",angle,quality:{status,issues:status==="needs_input"?["请核对价格"]:[]},shooting_list:["手机"],image_suggestions:["实物图"],comment_layout:{knowledge:["回复顾客"]}}});
+    const items=[draft("未核对稿","展示","needs_input"),draft("优先稿","对比","checked"),draft("另一种说法","解答","checked"),draft("同切角稿","对比","checked")];
+    const html=creationSelection(items);
+    assert.match(html,/draft-featured/);assert.ok(html.indexOf("<h3>优先稿")<html.indexOf("<h3>未核对稿"));
+    assert.equal((html.match(/<article /g)||[]).length,4);
+    assert.match(html,/备选稿/);assert.match(html,/拍摄清单/);assert.match(html,/可用的评论回复/);
+    assert.match(html,/发布前需核对/);assert.match(html,/复制待核对稿/);assert.match(html,/确认可发布/);
+    items[0].ready_at="2026-01-01";assert.ok(creationSelection(items).includes("这版稿件已由你确认可发布"));
+    const calls=[];api=async(path,opt)=>{calls.push([path,JSON.parse(opt.body)]);return {};};refresh=async()=>{};
+    S.workspace.creations=items;await actions["confirm-ready"]({dataset:{id:items[0].id}});
+    assert.equal(calls[0][0],"/api/creations/未核对稿/ready");assert.equal(calls[0][1].revision,0);
+  `);
+  await test('board shows an explicit zero only for a measured metric and uses matched views',`
+    S.workspace={sources:[],briefs:[],assets:[{kind:"账号",id:"acc",name:"总店"}],images:[],stats:{
+      results:{recorded:1,views:0,leads:0,orders:0},metric_counts:{views:1,leads:0,orders:0},account_published:{acc:25},
+      delivery:{formal:4,published:1,confirmed_batches:2,first_ready_seconds:120},
+      goal_windows:[{platform:"instagram",goal:"leads",window:"7d",total:8,posts:3,paired_posts:2,paired_views:400,paired_actions:2}]
+    }};
+    const html=productionBoard([{data:{},tracking:{status:"draft"}}]);
+    assert.ok(html.includes("浏览次数</p><strong>0</strong>"));assert.ok(html.includes("订单数</p><strong>—</strong>"));
+    assert.ok(html.includes("25%"));assert.ok(html.includes("2 分钟"));assert.ok(html.includes("5.0 咨询/千次浏览（2 篇）"));
+    assert.ok(html.includes("已发 25"));
+  `);
+  await test('results editor preserves unknowns, prevents accidental loss and saves the selected window',`
+    const pub="2020-01-01T12:00:00Z";const draft={id:"c",tracking:{status:"published",published_at:pub},
+      results:{views:100,note:"记录",recorded_at:"v1",windows:{"24h":{views:30,leads:0}}}};
+    S.workspace={creations:[draft]};let form, payload;modal=(title,html)=>{form=html;};close=()=>{};refresh=async()=>{};
+    actions["record-results"]({dataset:{id:"c"}});assert.match(form,/统计截至/);
+    const inputs={};for (const [k,v] of Object.entries({views:"100",leads:"",orders:"",spend:"",note:"记录"}))inputs["#result-"+k]={value:v};
+    document.querySelector=id=>inputs[id];const select={id:"result-window",value:"24h",dataset:{}};
+    const change=()=>document.handlers.change[0]({target:select});
+    await change();assert.equal(inputs["#result-leads"].value,0);assert.equal(inputs["#result-orders"].value,"");
+    for (const inp of Object.values(inputs))inp.value=String(inp.value);
+    inputs["#result-views"].value="31";select.value="7d";await change();assert.equal(select.value,"24h");
+    api=async(path,opt)=>{payload=JSON.parse(opt.body);return {};};
+    await document.handlers.submit[0]({preventDefault(){},target:{id:"results-form",querySelector:()=>({disabled:false})}});
+    assert.equal(payload.window,"24h");assert.equal(payload.results.leads,0);assert.equal(payload.results.views,31);
+    assert.equal("orders" in payload.results,false);assert.equal(payload.expected_updated_at,"v1");assert.equal(payload.expected_published_at,pub);
+  `);
+  console.log('Frontend review regressions passed (28 cases).');
 })().catch(error=>{console.error(error);process.exitCode=1;});

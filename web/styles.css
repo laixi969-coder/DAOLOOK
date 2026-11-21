@@ -2249,7 +2249,8 @@ tr:last-child td {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 18px;
 }
-.board-stats p {
+.result-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 12px; }
+.board-stats p, .board-stat-label {
   font-size: 12px;
   color: var(--ink-2);
   margin-bottom: 4px;

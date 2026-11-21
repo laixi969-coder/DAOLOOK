@@ -14,13 +14,14 @@ _CONTACT = re.compile(
     r"(微信|加微|VX|V信|wx|wechat|私信|评论区|留言|电话|手机号|联系|咨询|扫码|二维码|店铺|小店|链接|下单|购买|预约|到店)",
     re.IGNORECASE,
 )
-_PURCHASE = re.compile(r"(购买|下单|拍下|拍单|链接|店铺|小店|微店|淘宝|天猫|京东|拼多多|抖音小店|预约|到店|扫码|二维码)")
+_PURCHASE = re.compile(r"(链接|店铺|小店|微店|淘宝|天猫|京东|拼多多|到店|门店|柜台|扫码|二维码|私信|微信|电话|留言|购物车|小程序|官网|https?://)", re.I)
 
 MAX_ANSWER = 500
 
 QUESTIONS = {
     "price_conflict": "资料里出现了多个不同的价格。以哪个为准？请直接回答价格和对应的产品或规格。",
     "sales_missing": "这批内容的目标是引导下单，但所选资料里没有价格或购买方式。价格是多少、在哪里下单？",
+    "purchase_path": "价格已经有了。顾客具体在哪里下单或预约？",
     "leads_missing": "这批内容的目标是带来咨询，但所选资料里没有写用户怎么联系你。咨询方式是什么（如微信、私信或到店）？",
 }
 
@@ -47,8 +48,9 @@ def blocking_question(goal, assets, temporary=""):
             "id": "price_conflict",
             "question": QUESTIONS["price_conflict"].replace("多个不同的价格", f"多个不同的价格（{'、'.join(sorted(prices, key=float))}）"),
         }
-    if goal == "sales" and not prices and not _PURCHASE.search(corpus):
-        return {"id": "sales_missing", "question": QUESTIONS["sales_missing"]}
+    if goal == "sales" and not _PURCHASE.search(corpus):
+        key = "purchase_path" if prices else "sales_missing"
+        return {"id": key, "question": QUESTIONS[key]}
     if goal == "leads" and not _CONTACT.search(corpus):
         return {"id": "leads_missing", "question": QUESTIONS["leads_missing"]}
     return None

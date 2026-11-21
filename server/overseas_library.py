@@ -7,7 +7,7 @@ import urllib.parse
 from pathlib import Path
 from .db import db, dumps, uid, now, setting
 from .discovery import parse_count
-from . import overseas_feed, overseas_translation, resource_limits
+from . import overseas_feed, overseas_translation, overseas_visuals, resource_limits
 
 PLATFORMS = {'tiktok': 'TikTok', 'instagram': 'Instagram Reels', 'youtube': 'YouTube Shorts'}
 ARCHETYPES = json.loads((Path(__file__).parent / 'resources/viral-shorts-agent/archetypes.json').read_text())
@@ -53,7 +53,7 @@ def with_reference_video(value):
         current=overseas_feed.reference(value['feed_id'])
         if current and current.get('url')==value.get('url'):video=current.get('reference_video')
     value={**value,'reference_video':copy.deepcopy(video)} if video else value
-    return overseas_translation.enrich(value)
+    return overseas_translation.enrich(overseas_visuals.with_setup(value))
 
 
 def view(row):
@@ -66,8 +66,11 @@ def list_ideas(project):
 
 
 def reference(project, ident):
+    if ident in overseas_visuals.CASES:
+        return copy.deepcopy(overseas_visuals.CASES[ident])
     if ident.startswith('feed_'):
-        return overseas_feed.reference(ident)
+        item = overseas_feed.reference(ident)
+        return overseas_visuals.with_setup(item) if item else None
     if ident.startswith('archetype_'):
         value=next((a for a in ARCHETYPES if a['id']==ident), None)
         return with_reference_video(copy.deepcopy(value)) if value else None
@@ -80,7 +83,8 @@ def store_in(c, project, value, saved=False):
     key = value.get('archetype_id') or value['url']
     row=c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND source_key=?',(project,key)).fetchone()
     if row:
-        merged = {**json.loads(row['data']), **value}
+        original = json.loads(row['data'])
+        merged = {**value, **original} if value.get('case_id') else {**original, **value}
         c.execute('UPDATE overseas_ideas SET data=?,saved=?,deleted_at=NULL,updated_at=? WHERE id=?',(dumps(merged),int(saved or row['saved']),now(),row['id']))
         ident=row['id']
     else:
@@ -99,7 +103,13 @@ def store(project, value, saved=False):
 
 
 def collect(project, data):
-    if data.get('feed_id'):
+    if data.get('case_id'):
+        ident = text(data['case_id'], '样片编号', 80, True)
+        if ident not in overseas_visuals.CASES:
+            raise ValueError('参考短片不存在')
+        value = reference(project, ident)
+        value['case_id'] = value.pop('id')
+    elif data.get('feed_id'):
         ident=text(data['feed_id'],'推荐编号',80,True)
         value=overseas_feed.reference(ident)
         if not value:raise ValueError('推荐创意不存在')
@@ -122,14 +132,23 @@ def collect(project, data):
     return store(project,value,True)
 
 
-def recommendations(project, query='', category='', saved=False, platform='all'):
+def recommendations(project, query='', category='', saved=False, platform='all', scope='selected'):
     if category and category not in CATEGORIES: raise ValueError('品类无效')
     if platform not in (*PLATFORMS,'all'): raise ValueError('平台无效')
+    if scope not in ('selected','candidates'): raise ValueError('参考范围无效')
     records=list_ideas(project)
-    existing={r.get('archetype_id'):r for r in records if r.get('archetype_id')}
     by_url={r.get('url'):r for r in records if r.get('url')}
-    fresh=[by_url.get(item['url'],{**item,'saved':False}) for item in overseas_feed.videos()] if not saved else []
-    items=records if saved else fresh+[r for r in records if not r.get('archetype_id')] + [existing.get(a['id'],{**with_reference_video(a),'saved':False}) for a in ARCHETYPES]
+    if saved:
+        items = records
+    else:
+        cases = []
+        for case in overseas_visuals.CASES.values():
+            cases.append({**case, 'saved':False, **by_url.get(case['url'], {})})
+        fresh = [by_url.get(item['url'], {**item, 'saved':False}) for item in overseas_feed.videos()]
+        items = cases + fresh + [r for r in records if not r.get('archetype_id')]
+        if scope == 'candidates':
+            existing = {r['archetype_id']:r for r in records if r.get('archetype_id')}
+            items += [existing.get(a['id']) or {**with_reference_video(a), 'saved':False} for a in ARCHETYPES]
     tokens=[t for t in re.split(r'\s+',query.lower()) if t]
     scored=[];seen=set()
     for i,item in enumerate(items):
@@ -139,7 +158,12 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         if category and item.get('category') not in (category,''): continue
         actual_platform=(item.get('reference_video') or {}).get('platform') or item.get('platform')
         if platform!='all' and actual_platform!=platform: continue
-        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique')).lower()
+        item = overseas_visuals.with_setup(item)
+        setup = item.get('filming', '')
+        if not saved and scope == 'selected' and not setup:
+            continue
+        corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique','publisher','query')).lower()
+        corpus += ' ' + setup.lower()
         corpus+=' '+str((item.get('reference_video') or {}).get('title_zh','')).lower()
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
         hits=[t for t in tokens if t in corpus or t in ALIASES.get(item.get('category'),'') or t in direct]
@@ -149,11 +173,11 @@ def recommendations(project, query='', category='', saved=False, platform='all')
         value={**item,'recommendation':reason}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
-        reviewed=0 if item.get('case_review') else 1
+        reviewed=0 if link in overseas_visuals.BY_URL else 1 if setup else 2
         platform_rank=0 if actual_platform=='tiktok' else 1
         story_rank=0 if item.get('story_candidate') else 1
         scored.append((-(4*len(direct)+len(hits)),reviewed,platform_rank,story_rank,kind,-published.timestamp() if published else 0,i,value))
-    return [value for *_,value in sorted(scored)][:120]
+    return [value for *_,value in sorted(scored)]
 
 
 def normalize(raw,p):

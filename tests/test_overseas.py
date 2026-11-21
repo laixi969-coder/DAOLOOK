@@ -30,8 +30,8 @@ class OverseasApiTests(unittest.TestCase):
         self.assertEqual(self.run_task(result)[0]['state'],'SUCCEEDED')
         return result
 
-    def ideas(self,query=''):
-        return self.c.req('/api/overseas/ideas?project_id='+self.p+'&platform=all'+query)
+    def ideas(self,query='',platform='all'):
+        return self.c.req('/api/overseas/ideas?project_id='+self.p+'&platform='+platform+query)
 
     def test_skill_import_and_existing_config_migration_is_idempotent(self):
         with fixture.D.db() as c:
@@ -59,8 +59,23 @@ class OverseasApiTests(unittest.TestCase):
         with fixture.D.db() as c:
             self.assertEqual(c.execute("SELECT prompt FROM skill_versions WHERE name='overseas_original' AND status='Published'").fetchone()[0],'admin edited prompt')
 
+    def test_visual_prompt_upgrade_is_once_per_install(self):
+        marker = 'skill_release_2026_11_20_overseas_visual_shorts'
+        with fixture.D.db() as c:
+            c.execute('DELETE FROM settings WHERE key=?',(marker,))
+            c.execute("UPDATE skill_versions SET prompt='previous filming instructions' WHERE name='tiktok_original' AND status='Published'")
+        fixture.D.init()
+        with fixture.D.db() as c:
+            self.assertEqual(c.execute("SELECT status FROM skill_versions WHERE prompt='previous filming instructions'").fetchone()[0],'Archived')
+            active = c.execute("SELECT id,prompt FROM skill_versions WHERE name='tiktok_original' AND status='Published'").fetchone()
+            self.assertIn('动作传达信息',active['prompt'])
+            c.execute("UPDATE skill_versions SET prompt='edited visual prompt' WHERE id=?",(active['id'],))
+        fixture.D.init()
+        with fixture.D.db() as c:
+            self.assertEqual(c.execute("SELECT prompt FROM skill_versions WHERE id=?",(active['id'],)).fetchone()[0],'edited visual prompt')
+
     def test_archetypes_recommendation_save_and_project_isolation(self):
-        status,result=self.ideas()
+        status,result=self.ideas('&scope=candidates',platform='youtube')
         self.assertEqual(status,200)
         self.assertEqual(len(result['items']),60)
         self.assertEqual(result['skill']['reference_videos'],60)
@@ -68,7 +83,7 @@ class OverseasApiTests(unittest.TestCase):
         self.assertTrue(all(i['reference_video']['url'] and i['reference_video']['publisher'] for i in result['items']))
         self.assertFalse(result['search_available'])
         self.assertEqual(set(result['categories']),set('ABCDEFGH'))
-        filtered=self.ideas('&query=charger')[1]['items']
+        filtered=self.ideas('&query=charger&scope=candidates')[1]['items']
         self.assertTrue(filtered)
         self.assertEqual(filtered[0]['title'],'三合一折叠无线充')
         self.assertIn('匹配关键词',filtered[0]['recommendation'])
@@ -77,7 +92,7 @@ class OverseasApiTests(unittest.TestCase):
         self.assertTrue(item['saved'])
         self.assertEqual(item['reference_video']['url'],'https://www.youtube.com/watch?v=E8rFu6YYzsw')
         self.assertEqual(overseas_library.reference(self.p,item['id'])['reference_video'],item['reference_video'])
-        self.assertEqual(len(self.ideas()[1]['items']),60)
+        self.assertEqual(sum(i.get('source_kind')=='archetype' for i in self.ideas('&scope=candidates')[1]['items']),60)
         self.assertEqual(len(self.ideas('&saved=1')[1]['items']),1)
         # Duplicate collection updates the existing record.
         self.assertEqual(self.post('/api/overseas/ideas',{'archetype_id':'archetype_03'})[1]['id'],item['id'])
@@ -96,9 +111,51 @@ class OverseasApiTests(unittest.TestCase):
         self.assertEqual(hydrated['reference_video'],item['reference_video'])
         self.assertFalse(hydrated['saved'])
         self.assertEqual(self.ideas('&saved=1')[1]['items'],[])
-        self.assertEqual(next(i for i in self.ideas()[1]['items'] if i.get('archetype_id')=='archetype_03')['reference_video'],item['reference_video'])
+        self.assertEqual(next(i for i in self.ideas('&scope=candidates')[1]['items'] if i.get('archetype_id')=='archetype_03')['reference_video'],item['reference_video'])
         with fixture.D.db() as c:
             self.assertEqual(json.loads(c.execute('SELECT data FROM overseas_ideas WHERE id=?',(item['id'],)).fetchone()[0]),original)
+
+    def test_visual_case_is_available_offline_and_carries_into_a_short_one_take_brief(self):
+        case = next(i for i in self.ideas()[1]['items'] if i['id']=='case_deli_frame')
+        self.assertEqual(case['reference_video']['url'],case['url'])
+        self.assertTrue(case['filming'])
+        saved = self.post('/api/overseas/ideas',{'case_id':case['id']})[1]
+        self.assertEqual(self.post('/api/overseas/ideas',{'case_id':case['id']})[1]['id'],saved['id'])
+        self.assertTrue(any(i['id']==saved['id'] for i in self.ideas('&saved=1')[1]['items']))
+        self.create(duration=9,reference_id=saved['id'])
+        plans = [r['data'] for r in self.ws()['creations']]
+        self.assertTrue(any(p['angle']=='纸框取景' for p in plans))
+        self.assertTrue(any(len(p['shots'])==1 for p in plans))
+        self.assertTrue(all(p['shots'][-1]['end']==9 for p in plans))
+        self.assertTrue(all(p['cta'] in p['body'] and any(s['screen_text'] and s['screen_text_zh'] for s in p['shots']) for p in plans))
+        overseas.validate({'outputs':plans}, {'platform':'overseas','duration':9}, [])
+        snapshot = self.ws()['briefs'][0]['data']['reference_snapshot']
+        self.assertEqual(snapshot['filming'],case['filming'])
+
+    def test_selection_needs_a_visible_action_and_a_message(self):
+        for ident,caption in [('action','We flip the cardboard sign to reveal our opening hours'),
+                              ('story','When your bike ghosts you. An unexpected twist.'),
+                              ('product','Charger unboxing review. Our launch date is here.'),
+                              ('hashtags','#flip #cardboard #sign #event'),
+                              ('hobby','I open a paper plane and unfold it again.')]:
+            self.post('/api/overseas/ideas',{'url':'https://www.instagram.com/reel/'+ident,'title':caption})
+        selected = self.ideas()[1]['items']
+        self.assertEqual([r['url'] for r in selected if r.get('source_kind')=='manual'],
+                         ['https://www.instagram.com/reel/action'])
+        self.assertEqual(next(r for r in selected if r.get('source_kind')=='manual')['filming_basis'],'按内容说明匹配')
+        self.assertEqual(len([r for r in self.ideas('&scope=candidates')[1]['items'] if r.get('source_kind')=='manual']),5)
+
+    def test_candidate_pages_are_reachable_and_keep_their_original_identifiers(self):
+        source = [{'id':f'feed_{i}', 'source_kind':'daily_feed', 'platform':'tiktok',
+                   'url':f'https://www.tiktok.com/@example/video/{i}', 'title':'Candidate', 'summary':'', 'metrics':{}}
+                  for i in range(125)]
+        with patch.object(overseas_library.overseas_feed,'videos',return_value=source):
+            first = self.ideas('&scope=candidates',platform='tiktok')[1]
+            second = self.ideas('&scope=candidates&offset=120',platform='tiktok')[1]
+        self.assertEqual((first['total'],len(first['items']),first['next_offset']),(125,120,120))
+        self.assertEqual((second['previous_offset'],second['next_offset']),(0,None))
+        self.assertEqual([r['id'] for r in first['items']+second['items']],[r['id'] for r in source])
+        self.assertEqual(self.ideas('&offset=-1')[0],400)
 
     def test_manual_collection_canonical_links_and_no_fabricated_metrics(self):
         status,item=self.post('/api/overseas/ideas',{'url':'https://youtu.be/abcdefghijk?utm_source=test','title':'Example','summary':'Before/after contrast','metrics':{'views':9999},'source_kind':'data_source'})
@@ -121,7 +178,7 @@ class OverseasApiTests(unittest.TestCase):
         self.assertTrue(all(len(o['data']['hooks'])==3 for o in outs))
         self.assertEqual(len({o['data']['first_second'] for o in outs}),3)
         self.assertEqual(len({o['data']['reveal'] for o in outs}),3)
-        self.assertTrue(all(o['data']['shots'][-1]['end']==24 for o in outs))
+        self.assertTrue(all(o['data']['shots'][-1]['end']==12 for o in outs))
         self.assertEqual(self.c.req('/api/bootstrap')[1]['credits']['balance'],before-15)
         status,again=self.post('/api/overseas/create',{'brief_id':result['brief_id']})
         self.assertEqual(status,202,again)
@@ -247,7 +304,7 @@ class OverseasStructureTests(unittest.TestCase):
 
     def test_coverage_hooks_bilingual_and_originality_are_checked(self):
         overseas.validate({'outputs':self.outputs},self.brief,[])
-        for mutate in (lambda o:o[0]['shots'][1].update(start=2),lambda o:o[0].update(translation_zh=''),lambda o:o[0]['hooks'].pop(),lambda o:o[0].update(script=o[1]['script']),lambda o:o[0].update(target_platform='youtube'),lambda o:o[0].update(evidence=[{'asset_id':'other','quote':'not provided'}]),lambda o:o[0].update(clue=''),lambda o:o[0]['shots'][0].update(implementation=''),lambda o:o[0].update(ending_type='悬念'),lambda o:o[0].update(concept=''),lambda o:o[0]['shots'][0].update(ai_prompt='')):
+        for mutate in (lambda o:o[0]['shots'][0].update(start=2),lambda o:o[0].update(translation_zh='缺少外语原文'),lambda o:o[0]['hooks'].pop(),lambda o:[x.update(script='Same.', translation_zh='相同。') for x in o[:2]],lambda o:o[0].update(target_platform='youtube'),lambda o:o[0].update(evidence=[{'asset_id':'other','quote':'not provided'}]),lambda o:o[0].update(ending_type='故事翻牌',clue=''),lambda o:o[0]['shots'][0].update(implementation=''),lambda o:o[0].update(ending_type='悬念'),lambda o:o[0].update(concept=''),lambda o:o[0]['shots'][0].update(ai_prompt='')):
             outputs=copy.deepcopy(self.outputs);mutate(outputs)
             with self.assertRaises(ValueError):overseas.validate({'outputs':outputs},self.brief,[])
 
@@ -258,13 +315,27 @@ class OverseasStructureTests(unittest.TestCase):
         self.assertEqual(youtube[0]['title'],'Coffee shorts')
         self.assertEqual(youtube[0]['metrics'],{})
 
+    def test_larger_filming_setup_requires_a_practical_alternative(self):
+        plans = copy.deepcopy(self.outputs)
+        setup = plans[0]['shoot_setup']
+        self.assertEqual(setup['people'],1)
+        for key, value in [('people',4),('locations',['柜台','街口']),('props',['手机架','纸板','盒子','桌牌'])]:
+            expensive = {**setup, key:value}
+            with self.assertRaisesRegex(ValueError,'简化拍法'):
+                overseas.check_shoot_setup(expensive)
+            overseas.check_shoot_setup({**expensive,'simpler_take':'手机固定在柜台，只用一张双面纸卡翻面显字。'})
+        plans[0].pop('shoot_setup')
+        overseas.validate({'outputs':plans},self.brief,[])
+        with self.assertRaisesRegex(ValueError,'总人数'):
+            overseas.validate({'outputs':plans},self.brief,[],require_setup=True)
+
     def test_final_reveal_and_casting_are_checked(self):
-        for change in ({'reveal_shot':1},{'reveal_shot':True},{'casting':'不露脸'}):
-            outputs=copy.deepcopy(self.outputs);outputs[0].update(change)
+        for change in ({'ending_type':'故事翻牌','misread':'以为有字','clue':'透明片已在画面里','reveal_shot':1},{'reveal_shot':True},{'casting':'不露脸'}):
+            outputs=copy.deepcopy(self.outputs);outputs[1].update(change)
             with self.assertRaises(ValueError):overseas.validate({'outputs':outputs},self.brief,[])
 
     def test_different_titles_cannot_hide_the_same_creative_direction(self):
-        for field in ('angle','first_second','misread','reveal'):
+        for field in ('angle','first_second','reveal'):
             outputs=copy.deepcopy(self.outputs)
             outputs[1][field]=outputs[0][field]
             with self.assertRaisesRegex(ValueError,'方案不能重复'):

@@ -58,7 +58,7 @@ class DailyVideoTests(unittest.TestCase):
             fetch.assert_not_called()
         second=self.sync(atom([OLD,NEW]),'2026-10-13T15:00:00+00:00')
         self.assertEqual((second['added_count'],second['changed_count'],second['pool_size']),(1,0,2))
-        items=overseas_library.recommendations(self.p)
+        items=overseas_library.recommendations(self.p,platform='youtube',scope='candidates')
         self.assertEqual([i['title'] for i in items[:2]],[NEW[1],OLD[1]])
         self.assertEqual(items[0]['reference_video']['publisher'],'Real publisher')
         self.assertEqual(items[0]['reference_video']['relation'],'来源视频')
@@ -138,7 +138,7 @@ class DailyVideoTests(unittest.TestCase):
         self.assertTrue(saved['saved'])
         p2=self.c.req('/api/projects','POST',{'name':'Other project'})[1]['id']
         self.assertEqual(self.c.req('/api/overseas/ideas?project_id='+p2+'&saved=1')[1]['items'],[])
-        self.assertEqual(overseas_library.recommendations(p2)[0]['feed_id'],idea['id'])
+        self.assertEqual(overseas_library.recommendations(p2,platform='youtube',scope='candidates')[0]['feed_id'],idea['id'])
         self.assertIsNone(overseas_library.reference(p2,saved['id']))
         self.assertEqual(self.post('/api/overseas/ideas',{'feed_id':'feed_missing'})[0],400)
         task=self.post('/api/overseas/create',{'platform':'tiktok','topic':'Charger','reference_id':idea['id']})[1]
@@ -148,19 +148,19 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(snapshot['reference_video'],idea['reference_video'])
         self.assertEqual(len({(i.get('reference_video') or {}).get('url') or i['url'] for i in overseas_library.recommendations(self.p)}),len(overseas_library.recommendations(self.p)))
 
-    def test_tiktok_defaults_and_source_change_keep_optional_youtube_references(self):
+    def test_source_change_keeps_platform_filtered_candidates(self):
         self.sync(atom([OLD]))
         source=feed.SOURCES[-1]
         with patch.object(feed,'SOURCES',[source]),patch.object(feed,'now',return_value=DAY),patch.object(feed,'fetch',return_value=tiktok_html(source,[tiktok_entry(source)])),patch.object(feed,'fetch_page',side_effect=lambda url:detail_html({'url':url})):
             result=feed.refresh(background=False)
         self.assertFalse(result['cached'])
         self.assertEqual(result['added_count'],1)
-        public=self.c.req('/api/overseas/ideas?project_id='+self.p)[1]['items']
+        public=self.c.req('/api/overseas/ideas?platform=tiktok&scope=candidates&project_id='+self.p)[1]['items']
         self.assertEqual(len(public),1)
         self.assertTrue(all(i['reference_video']['platform']=='tiktok' for i in public))
         self.assertEqual(public[0]['duration'],33)
-        self.assertEqual(len(overseas_library.recommendations(self.p,platform='youtube')),61)
-        self.assertEqual(overseas_library.recommendations(self.p)[0]['platform'],'tiktok')
+        self.assertEqual(len(overseas_library.recommendations(self.p,platform='youtube',scope='candidates')),61)
+        self.assertFalse(any(i.get('feed_id')==public[0]['id'] for i in overseas_library.recommendations(self.p)))
         saved=self.post('/api/overseas/ideas',{'feed_id':public[0]['id']})[1]
         # Signed covers refresh without replacing a private collection's creative text.
         with fixture.D.db() as c:

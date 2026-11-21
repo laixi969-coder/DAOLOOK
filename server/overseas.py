@@ -2,10 +2,11 @@
 import copy
 from . import adapters, content_quality, questions
 from .overseas_library import PLATFORMS as SOCIAL_PLATFORMS
+from .overseas_prompt import VISUAL_NAME
 
 LANGUAGES = {'en-zh':'English','es-zh':'Spanish','fr-zh':'French','de-zh':'German'}
 PLATFORMS = {'overseas':'TikTok + Reels + Shorts', **SOCIAL_PLATFORMS}
-ENDINGS = ('故事翻牌', '反转后硬广', '结果先行演示')
+ENDINGS = ('动作传达信息', '故事翻牌', '反转后硬广', '结果先行演示')
 
 
 def string_fields(names):
@@ -18,7 +19,7 @@ OUTPUT_SCHEMA = {
         'reveal_shot':{'type':'integer','minimum':1,'maximum':6},
         **{k:{'type':'array','items':{'type':'string'}} for k in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments')},
         'hooks':{'type':'array','minItems':3,'maxItems':3,'items':{'type':'object','properties':string_fields(('visual','line','translation_zh','sfx')),'required':['visual','line','translation_zh','sfx']}},
-        'shots':{'type':'array','items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt']}},
+        'shots':{'type':'array','minItems':1,'maxItems':6,'items':{'type':'object','properties':{**string_fields(('camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt')),'start':{'type':'number'},'end':{'type':'number'}},'required':['start','end','camera','action','line','translation_zh','screen_text','screen_text_zh','sfx','implementation','ai_prompt']}},
         'evidence':{'type':'array','items':{'type':'object','properties':string_fields(('asset_id','quote')),'required':['asset_id','quote']}},
         'target_platform':{'type':'string','enum':list(SOCIAL_PLATFORMS)},
     },
@@ -26,20 +27,52 @@ OUTPUT_SCHEMA = {
 OUTPUT_SCHEMA['required']=list(OUTPUT_SCHEMA['properties'])
 SCHEMA={'type':'object','properties':{'outputs':{'type':'array','minItems':3,'maxItems':3,'items':OUTPUT_SCHEMA}},'required':['outputs']}
 
+SHOOT_SETUP = {
+    'type':'object', 'required':['people','locations','props','simpler_take'],
+    'properties':{
+        'people':{'type':'integer','minimum':1,'maximum':100},
+        'locations':{'type':'array','minItems':1,'maxItems':12,'items':{'type':'string'}},
+        'props':{'type':'array','maxItems':30,'items':{'type':'string'}},
+        'simpler_take':{'type':'string','maxLength':600},
+    },
+}
 
-def validate(result,brief,assets,previous=None):
+def check_shoot_setup(setup):
+    if not isinstance(setup,dict) or type(setup.get('people')) is not int or not 1 <= setup['people'] <= 100:
+        raise ValueError('请写明完成拍摄所需的总人数，含拍摄者')
+    for key, least, most in [('locations',1,12),('props',0,30)]:
+        values = setup.get(key)
+        if (not isinstance(values,list) or not least <= len(values) <= most
+                or any(not isinstance(v,str) or not v.strip() or len(v)>150 for v in values)):
+            raise ValueError('请列出实际拍摄地点与所需道具')
+    simple = setup.get('simpler_take')
+    if not isinstance(simple,str) or len(simple)>600:
+        raise ValueError('简化拍法格式无效')
+    if (setup['people'] > 2 or len(setup['locations']) > 1 or len(setup['props']) > 3) and not simple.strip():
+        raise ValueError('请补一个单场地、手边道具就能执行的简化拍法')
+
+
+def validate(result,brief,assets,previous=None,require_setup=False):
     outputs=result.get('outputs') if isinstance(result,dict) else None
     if not isinstance(outputs,list) or len(outputs)!=3: raise ValueError('海外创作需要3个完整创意方案')
     if brief['platform']=='overseas' and {o.get('target_platform') for o in outputs if isinstance(o,dict)}!=set(SOCIAL_PLATFORMS): raise ValueError('三平台创作需要TikTok、Reels、Shorts各一个方案')
     for output in outputs:
         if not isinstance(output,dict): raise ValueError('创意方案格式错误')
+        if require_setup or 'shoot_setup' in output:
+            check_shoot_setup(output.get('shoot_setup'))
         if output.get('target_platform') not in SOCIAL_PLATFORMS or (brief['platform']!='overseas' and output['target_platform']!=brief['platform']): raise ValueError('方案的平台与要求不一致')
-        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','concept','first_second','misread','clue','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
+        for key in ('title','body','cover_text','hook','direction','angle','role','audience','value','cta','concept','first_second','reveal','product_role','ending_type','production_method','cost_basis','casting','product_reveal'):
             if not isinstance(output.get(key),str) or not output[key].strip() or len(output[key])>30000: raise ValueError('创意缺少有效字段：'+key)
         for key in ('script','translation_zh'):
             if not isinstance(output.get(key),str) or len(output[key])>30000: raise ValueError('口播格式无效')
         if bool(output['script'].strip()) != bool(output['translation_zh'].strip()): raise ValueError('有口播时须同时提供中文翻译')
         if output['ending_type'] not in ENDINGS: raise ValueError('收尾方式无效')
+        for key in ('misread','clue'):
+            value = output.get(key)
+            if not isinstance(value, str) or len(value) > 30000:
+                raise ValueError('误判与伏笔须为文本')
+            if output['ending_type'] in ('故事翻牌','反转后硬广') and not value.strip():
+                raise ValueError('反转创意需要交代误判和伏笔')
         if output['casting'] not in ('有人','仅手部','无人'): raise ValueError('请标明有人、仅手部或无人出镜')
         for key in ('titles','tags','image_suggestions','storyboard','shooting_list','missing','comments'):
             value=output.get(key)
@@ -53,7 +86,7 @@ def validate(result,brief,assets,previous=None):
             if bool(hook['line'].strip()) != bool(hook['translation_zh'].strip()): raise ValueError('Hook口播须同时提供中文翻译')
         if len({content_quality.normalized(h['visual']+h['line']) for h in hooks})!=3: raise ValueError('3个Hook不能只是换标点')
         shots=output.get('shots')
-        if not isinstance(shots,list) or not 3<=len(shots)<=6: raise ValueError('默认拍摄方案需要3–6镜')
+        if not isinstance(shots,list) or not 1<=len(shots)<=6: raise ValueError('拍摄方案需要1–6镜')
         reveal_shot=output.get('reveal_shot')
         if type(reveal_shot) is not int or not 1<=reveal_shot<=len(shots): raise ValueError('请标明有效的产品首次揭晓镜号')
         if output['ending_type']=='故事翻牌' and reveal_shot!=len(shots): raise ValueError('故事翻牌需要在最后一镜首次揭晓产品')
@@ -70,8 +103,10 @@ def validate(result,brief,assets,previous=None):
         if abs(cursor-brief['duration'])>.01: raise ValueError('分镜总时长与目标时长不一致')
         evidence=output.get('evidence')
         if not isinstance(evidence,list) or (evidence and not content_quality.evidence_valid(output,assets)): raise ValueError('业务事实引用未匹配所选资料')
-    for field in ('title','body','angle','first_second','misread','reveal'):
+    for field in ('title','body','angle','first_second','reveal'):
         if len({content_quality.normalized(o[field]) for o in outputs})!=3: raise ValueError('方案不能重复：'+field)
+    misreads = [content_quality.normalized(o['misread']) for o in outputs if o['misread'].strip()]
+    if len(set(misreads)) != len(misreads): raise ValueError('方案不能重复：misread')
     scripts=[content_quality.normalized(o['script']) for o in outputs if o['script'].strip()]
     if len(set(scripts))!=len(scripts): raise ValueError('方案不能重复：script')
     if {content_quality.normalized(o['title']) for o in outputs} & {content_quality.normalized(o.get('title','')) for o in previous or []}: raise ValueError('请避开历史创意标题')
@@ -83,89 +118,134 @@ def benchmark(project,brief):
 
 
 def demo_outputs(brief,assets,batch):
-    """Three visibly different demo directions; product facts need live generation."""
-    ideas=[
+    """Shootable demonstration setups. Only the supplied topic becomes a public claim."""
+    topic = brief['topic']
+    ideas = [
         {
-            'name':'放大的影子','angle':'尺度误判','casting':'无人',
-            'first_second':'墙面中央一块抽象影子突然变大，观众会问有什么巨物靠近。',
-            'misread':'观众以为一个很大的物体正向桌面靠近。',
-            'clue':'固定画面右下角始终可见台灯投出的光圈，影子与光圈方向一致。',
-            'reveal':'最后同轴宽景露出靠近台灯的小产品实物；先前看似巨物接近的影子其实是近距离投影。',
-            'product_role':'产品真实轮廓是影子的来源，不演示或宣称未知性能。',
-            'line':'A big shadow. A small surprise.','translation':'一个大影子，一个小惊喜。',
-            'props':'台灯、杯子','implementation':'手机固定拍墙面近景，灯和产品在画外；操作者画外调整灯位，末镜同轴切宽景，露出真实产品与灯的位置。',
-            'actions':['墙面中央出现一块不完整的抽象影子，杯子影子停在画面左下角','墙面影子变大，仍只拍局部形状，不露可辨认的产品轮廓','右下角的灯光光圈与影子的移动方向同时可见','影子停住，保持杯子和光圈位置；切同轴宽景','最后宽景首次露出真实产品、台灯和杯子的位置关系，解释刚才被放大的影子'],
+            'angle':'屏幕接字', 'name':'一划，两块屏幕接成一句话', 'props':'两部展示手机，或两张横向字卡',
+            'caption_zh':'顺着箭头看。',
+            'caption':{'en-zh':'Follow the arrow.', 'es-zh':'Sigue la flecha.', 'fr-zh':'Suivez la flèche.', 'de-zh':'Folge dem Pfeil.'},
+            'camera':'手机固定俯拍，同框拍到上下两块横屏和两屏之间的缝。',
+            'actions':[f'上屏的箭头指向下屏。手指顺箭头划过接缝，下屏由空白切到「{topic}」，两屏停住，留出读字时间。'],
+            'shoot':'先把箭头和主题字做成相册图片。上屏停在箭头页，手指移到下屏时划到下一张图，一镜录完。手边只有一部手机时用它拍摄，把两部展示机换成可以抽拉的纸卡。',
+            'hooks':['箭头的尖端恰好停在两屏接缝处','手指从一块空白屏幕划向另一块','两块横屏先错开，再推齐让箭头接上'],
+            'sound':'指尖轻点声',
         },
         {
-            'name':'桌面上的秘密检查','angle':'目的误判','casting':'有人',
-            'first_second':'一人将桌面中央的空白纸推到一旁，用尺子严肃地比划空位，观众会问他在查什么。',
-            'misread':'观众以为人物在寻找一件丢失物品留下的痕迹。',
-            'clue':'画面右边的白色反光卡与墙上柔和光斑一直可见，提示这里可能是拍摄布景。',
-            'reveal':'最后同角度宽景首次露出真实产品和拍摄手机；前面的测量与检查原来是在为产品照片布置位置。',
-            'product_role':'产品是前序布光与定位动作的目的；具体卖点需结合用户资料完善。',
-            'line':'Every detail has a purpose.','translation':'每个细节都有它的目的。',
-            'props':'尺子、反光纸卡','implementation':'手机固定于桌沿，一名演员从画面左侧进入；产品提前放在近景画外，末镜切到同轴宽景，露出完整布景。',
-            'actions':['人物从画面左侧把白纸推开，在桌面中央用尺子比划一个空位','近景拍人物把尺子挪一格，认真观察空位，产品仍在画外','人物调整画面右侧的反光纸卡，墙上光斑移动','人物举起另一部拍摄手机，近景仅拍手机背面，随后切同轴宽景','最后宽景首次露出产品在预留位置、反光卡与拍摄手机，解释之前的测量是在布置产品照片'],
+            'angle':'擦镜显字', 'name':'擦过镜头，把字留在玻璃上', 'props':'一块干布、一张透明片',
+            'caption_zh':'擦一下，就出现了。',
+            'caption':{'en-zh':'One wipe and it’s there.', 'es-zh':'Una pasada y ahí está.', 'fr-zh':'Un geste et le voilà.', 'de-zh':'Ein Wisch und es ist da.'},
+            'camera':'手机固定在柜台前，透明片紧贴镜头前方。第二段保持同机位。',
+            'actions':['一只手拿着布从左向右擦过透明片，布在画面中央暂时挡住整个镜头。',
+                       f'在布完全遮住镜头的位置接下一段。布移开，透明片上留下「{topic}」，手退出，文字仍停在原位。'],
+            'shoot':'先拍空白透明片，布遮满时停机。在透明片贴上正向印好的主题字，从布遮满的位置接拍，一次硬切即可。',
+            'hooks':['布从边缘擦向镜头','指尖停在透明片的空白处','布贴满镜头后缓缓移开一角'],
+            'sound':'擦过透明片的声音',
         },
         {
-            'name':'缺了一块的图案','angle':'身份误判','casting':'无人',
-            'first_second':'桌面中央两张卡片分开一格，露出一段弯曲线条，观众会问这是什么路线图。',
-            'misread':'观众以为画面里是正在拼合的一张路线图。',
-            'clue':'被露出的局部线条旁始终有真实产品照片的光影渐变，而不是地图标记。',
-            'reveal':'最后两张卡片移到两边，首次完整露出用户产品照片；先前的路线其实是产品外形边缘。',
-            'product_role':'产品真实外观让图案获得新的含义；使用用户产品照片，不虚构产品效果。',
-            'line':'Not the map you expected.','translation':'这不是你想象中的地图。',
-            'props':'两张遮挡纸卡','implementation':'使用用户产品照片或实拍打印图；手机俯拍，停机后移动纸卡再拍，操作者始终在画外，末镜完整揭开照片。',
-            'actions':['俯拍桌面中央两张遮挡卡片，只露出照片的一小段非识别性线条','停机移动左卡片一格，露出另一段弯曲线条，保持同机位','再露出一小块照片的光影渐变，仍遮住品牌与可辨认部件','两张卡片停在照片中央两侧，保留同一空间线索，切相同机位稍宽景','最后移开全部遮挡，首次完整露出真实产品照片，让之前的线条被理解为产品边缘'],
+            'angle':'翻牌指路', 'name':'缺角的纸牌翻成一块路标', 'props':'一块双面纸板、写有主题的桌牌',
+            'caption_zh':'跟着牌子走。',
+            'caption':{'en-zh':'The sign points the way.', 'es-zh':'El cartel indica el camino.', 'fr-zh':'Suivez la pancarte.', 'de-zh':'Das Schild zeigt den Weg.'},
+            'camera':'固定手机正对柜台，近处的纸板挡住右后方桌牌。',
+            'actions':[f'纸板先露出一个向右的缺口，正好框住后面「{topic}」的第一个字。手腕一转，纸板背面的箭头顺势指去；把纸板移到左边，完整桌牌出现在箭头尽头。'],
+            'shoot':'在废纸板边缘撕个小缺口，背面画箭头。先对齐缺口和桌牌，锁住机位再翻牌。两件东西在同一张桌前拍完。',
+            'hooks':['缺口里只看得见一个字','纸板被推到桌前，缺角刚好对齐桌牌','一根手指沿着缺角探向画外'],
+            'sound':'纸板翻面的声音', 'visible':1,
+        },
+        {
+            'angle':'纸框取景', 'name':'同一张纸框，框出两个答案', 'props':'一张挖空的纸、主题字卡',
+            'caption_zh':'同一张框，换个视角。',
+            'caption':{'en-zh':'Same frame, different view.', 'es-zh':'El mismo marco, otra vista.', 'fr-zh':'Même cadre, autre vue.', 'de-zh':'Gleicher Rahmen, andere Aussicht.'},
+            'camera':'手机正对纸框，上边缘的手写主题保持在同一个画面位置。',
+            'actions':[f'近处纸框上写着「{topic}」，框内先是一只递出空卡的手。',
+                       '在卡片盖住窗口时切一刀，同一位置换成正在展示的实物或主题字卡，纸框边缘始终对齐。'],
+            'shoot':'在一张厚纸中间开窗，把主题写在边缘。固定纸框和手机，只换后面的实物或字卡，遮住窗口时剪接两段。',
+            'hooks':['一张有洞的纸从画面下方抬起','手从纸框中间递出卡片','空框对着桌面，实物从下沿进入'],
+            'sound':'纸张滑过的沙沙声', 'visible':1,
+        },
+        {
+            'angle':'机位错觉', 'name':'纸团怎么每次都能投中', 'props':'一只纸杯、两个小纸团、主题字卡',
+            'caption_zh':'看看杯子旁边。',
+            'caption':{'en-zh':'Look beside the cup.', 'es-zh':'Mira al lado del vaso.', 'fr-zh':'Regardez à côté du gobelet.', 'de-zh':'Schau neben den Becher.'},
+            'camera':'第一段贴近杯沿，第二段从侧面同桌宽景拍摄。',
+            'actions':[f'写着「{topic}」的纸杯靠近镜头。远处的手做出投纸团的动作，一颗纸团立即落进前景的杯里。',
+                       '切到侧面，同一动作再来一次。这次看到另一只手从杯口正上方松开备用纸团，杯上的主题留在画面中央。'],
+            'shoot':'把杯贴近手机，近处的手从取景框上沿放纸团。第二条素材把手机挪到杯侧，拍到两只手的位置。一个人可以双手分工。',
+            'hooks':['杯口占据画面下半部，纸团恰好落进来','纸团从画外落入写着主题的杯中','手在远处比出投篮动作，杯口就在镜头旁'],
+            'sound':'纸团落杯声', 'visible':1, 'misread':'纸团看起来是远处投进杯里的。', 'clue':'第一段只看得到杯口，投出与落入之间有一小段画外空间。',
+        },
+        {
+            'angle':'纸飞机送信', 'name':'飞到柜台上的一张邀请', 'props':'一张折成飞机的纸',
+            'caption_zh':'展开看看。',
+            'caption':{'en-zh':'Unfold the message.', 'es-zh':'Despliega el mensaje.', 'fr-zh':'Dépliez le message.', 'de-zh':'Falte die Nachricht auf.'},
+            'camera':'固定手机侧拍桌面，把落点留在画面中央。',
+            'actions':[f'一架纸飞机从画外滑落桌面。手在原处接住它，沿折痕展开，纸内侧的「{topic}」朝向镜头。'],
+            'shoot':'把主题写在纸内侧再折叠。手机靠杯子固定，一只手从画外送入纸飞机，另一只手在桌面展开，简单动作可直接连拍。',
+            'hooks':['机头从柜台边缘滑进画面','一只手恰好接住落下的纸飞机','纸飞机的折缝里先露出一小段文字'],
+            'sound':'纸飞机落桌和展开的声音',
         },
     ]
-    outputs=[]
-    duration=brief['duration']
-    times=[0,1,round(duration*.25,2),round(duration*.55,2),round(duration*.8,2),duration]
-    for index,idea in enumerate(ideas):
-        target=list(SOCIAL_PLATFORMS)[index] if brief['platform']=='overseas' else brief['platform']
-        shots=[{'start':start,'end':end,'camera':'手机固定，保持主体居中与同轴空间关系','action':idea['actions'][i],
-                'line':idea['line'] if i==4 else '', 'translation_zh':idea['translation'] if i==4 else '',
-                'screen_text':idea['line'] if i==4 else '', 'screen_text_zh':idea['translation'] if i==4 else '',
-                'sfx':'现场环境音', 'implementation':idea['implementation'],
-                'ai_prompt':f"9:16竖屏，真实摄影质感，固定桌面场景与自然光。主体居中，手机固定机位。{idea['actions'][i]}。单个连续镜头，保持前后空间关系。{'画面中没有人物、手部或人物倒影。' if idea['casting']=='无人' else '沿用同一人物外观和服装。'}{'采用用户产品参考图，外观、材质与比例保持一致。' if i==4 else '不出现可辨认产品、品牌、包装或产品倒影。'}不生成字幕与标识，文字在后期添加。"}
-               for i,(start,end) in enumerate(zip(times,times[1:]))]
-        outputs.append({
-            'target_platform':target,'title':f"{brief['topic'][:40]} · {idea['name']} {batch}",
-            'body':idea['line']+f" Explore {brief['topic'][:60]}.",'cover_text':idea['name'],
-            'hook':idea['first_second'],'direction':'原创创意建议','angle':idea['angle'],
-            'role':'提供一个独立可选的拍摄方向','audience':brief['market']+'的潜在客户',
-            'value':'以'+idea['angle']+'引起对产品的注意','cta':'Look closer.',
-            'script':idea['line']+' Look closer.','translation_zh':idea['translation']+'再看仔细一点。',
-            'concept':idea['first_second']+' '+idea['reveal'],
-            'first_second':idea['first_second'],'misread':idea['misread'],'clue':idea['clue'],
-            'reveal':idea['reveal'],'product_role':idea['product_role'],'ending_type':'故事翻牌',
-            'casting':idea['casting'],'reveal_shot':5,'product_reveal':'最后第5镜首次揭晓产品。'+idea['reveal'],
-            'production_method':idea['implementation'],
-            'cost_basis':f"{1 if idea['casting']=='有人' else 0}人出镜、1人幕后操作，1处桌面，5镜；道具：{idea['props']}。利用固定机位和现有道具省去额外设备。",
-            'adaptation':PLATFORMS[target]+'竖屏，字幕避开界面遮挡。',
-            'titles':[idea['line'],idea['name'],'Look closer.'],'tags':['product','creative'],
-            'image_suggestions':['使用用户真实产品照片或实物，不改动其外观'],
-            'storyboard':[f"{shot['start']}–{shot['end']}s | {shot['action']}" for shot in shots],
-            'shooting_list':['手机、产品实物或真实产品照片',idea['props'],idea['implementation']],
-            'missing':['演示结构模板，未调用AI或实际翻译；正式创意须用真实资料完善产品因果和卖点。'],
-            'comments':['Which detail did you notice?' if index==0 else 'Did you guess the purpose?' if index==1 else 'What did the lines look like to you?'],
-            'hooks':[{'visual':visual,'line':idea['line'],'translation_zh':idea['translation'],'sfx':'现场环境音'}
-                     for visual in (idea['first_second'],'第一帧从另一侧机位拍摄：'+idea['actions'][0],'第一帧从近景切入：'+idea['actions'][2])],
-            'shots':shots,'evidence':[],'demo':True,
-        })
-    for output in outputs:
-        output['topic_plan']={**questions.example(), 'problem':output['concept'], 'approach':'故事'}
+    offset = ((batch - 1) * 3) % len(ideas)
+    available = ideas[offset:] + ideas[:offset]
+    mechanism = (brief.get('reference_snapshot') or {}).get('mechanism')
+    available.sort(key=lambda idea: idea['angle'] != mechanism)
+    calls_to_action = {
+        'reach':{'en-zh':'Share this with a friend.', 'de-zh':'Teile das mit Freunden.', 'es-zh':'Compártelo con alguien.', 'fr-zh':'Partagez avec vos amis.'},
+        'leads':{'en-zh':'What would you like to know?', 'de-zh':'Was möchtest du wissen?', 'es-zh':'¿Qué te gustaría saber?', 'fr-zh':'Que voulez-vous savoir ?'},
+        'sales':{'en-zh':'Ask us how to order.', 'de-zh':'Frag uns, wie du bestellen kannst.', 'es-zh':'Pregúntanos cómo hacer un pedido.', 'fr-zh':'Demandez-nous comment commander.'},
+    }
+    tagline = calls_to_action[brief.get('goal','leads')][brief['language']]
+    outputs = []
+    for index, idea in enumerate(available[:3]):
+        target = list(SOCIAL_PLATFORMS)[index] if brief['platform'] == 'overseas' else brief['platform']
+        actions = idea['actions']
+        caption = idea['caption'][brief['language']]
+        shots = []
+        for i, action in enumerate(actions):
+            shots.append({
+                'start':round(brief['duration'] * i / len(actions), 2),
+                'end':round(brief['duration'] * (i+1) / len(actions), 2),
+                'camera':idea['camera'], 'action':action, 'sfx':idea['sound'],
+                'implementation':idea['shoot'], 'line':'', 'translation_zh':'',
+                'screen_text':caption if i == 0 else '', 'screen_text_zh':idea['caption_zh'] if i == 0 else '',
+                'ai_prompt':f"9:16 竖屏。{idea['camera']}{action} 沿用同一柜台、道具和自然光，按参考素材保持外观一致。保留写字位置，文字后期叠加。",
+            })
+        visible = idea.get('visible', len(shots))
+        title = f"{topic[:40]} · {idea['name']} {batch}"
+        output = {
+            'target_platform':target, 'title':title, 'body':topic+' · '+caption+' '+tagline,
+            'cover_text':idea['name'], 'hook':idea['hooks'][0], 'direction':'实拍短片',
+            'angle':idea['angle'], 'role':'用一个画面动作传达主题', 'audience':brief['market']+'的潜在客户',
+            'value':'通过'+idea['angle']+'看清主题', 'cta':tagline, 'script':'', 'translation_zh':'',
+            'concept':' '.join(actions), 'first_second':idea['hooks'][0], 'misread':idea.get('misread',''), 'clue':idea.get('clue',''),
+            'reveal':actions[-1], 'product_role':'主题文字直接出现在道具上。', 'ending_type':'动作传达信息',
+            'casting':'仅手部', 'reveal_shot':visible, 'product_reveal':f'第{visible}镜可辨认主题。'+actions[visible-1],
+            'production_method':idea['shoot'], 'cost_basis':f"一个人、一个柜台、{len(shots)}镜。准备{idea['props']}。",
+            'shoot_setup':{'people':1, 'locations':['柜台旁'], 'props':idea['props'].split('、'), 'simpler_take':''},
+            'adaptation':PLATFORMS[target]+'竖屏；文字避开界面遮挡。', 'titles':[idea['name'], topic, tagline],
+            'tags':['creative'], 'image_suggestions':['使用项目的实物或主题字卡'], 'storyboard':actions,
+            'shooting_list':['拍摄手机',idea['props']], 'missing':['演示拍法，实际对外信息请按项目资料核对。'],
+            'comments':[tagline], 'hooks':[{'visual':h,'line':'','translation_zh':'','sfx':idea['sound']} for h in idea['hooks']],
+            'shots':shots, 'evidence':[], 'demo':True,
+        }
+        output['topic_plan'] = {**questions.example(), 'problem':output['concept'], 'approach':'展示'}
+        outputs.append(output)
     return outputs
 
 
 def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False,history_results=None,observations=None):
     if demo:
-        outputs=demo_outputs(brief,assets,batch);model='demo-hiccai-pop'
+        outputs=demo_outputs(brief,assets,batch);model='demo-visual-shorts'
+        validate({'outputs':outputs},brief,assets,previous,require_setup=True)
     else:
         payload={'brief':brief,'language':LANGUAGES[brief['language']],'assets':assets,'reference':bench,'requirements':requirements,'previous_outputs':previous or [],'history_results':history_results or [],'batch':batch,
                  'objective':content_quality.objective(brief['goal']), 'question_observations':observations or []}
         schema=copy.deepcopy(SCHEMA)
+        require_setup = VISUAL_NAME in prompt
+        if require_setup:
+            item_schema = schema['properties']['outputs']['items']
+            item_schema['properties']['shoot_setup'] = SHOOT_SETUP
+            item_schema['required'].append('shoot_setup')
         schema['properties']['outputs']['items']['properties']['topic_plan']={
             'type':'object','required':['problem','relevance','answer','takeaway','approach','refs'],
             'properties':{**{key:{'type':'string','maxLength':600} for key in ('problem','relevance','answer','takeaway')},
@@ -173,19 +253,20 @@ def create(brief,bench,assets,requirements,prompt,batch,previous=None,demo=False
                           'refs':{'type':'array','maxItems':3,'items':{'type':'object','required':['id','quote'],'properties':{'id':{'type':'string'},'quote':{'type':'string','maxLength':500}}}}}}
         schema['properties']['outputs']['items']['required'].append('topic_plan')
         def validator(result):
-            validate(result,brief,assets,previous)
+            validate(result,brief,assets,previous,require_setup=require_setup)
             if observations is not None:
                 questions.validate(result['outputs'],observations)
-        instructions=questions.INSTRUCTION + "\n海外创作保持原有故事与展示结构。问题仅作为相关场景线索，不强制答疑；没有相关记录就保留探索创意。内部选题依据用中文。不同市场与平台的需求不能默认相同。history_results 保留实际 platform，只有与当前方案 target_platform 相同的效果可作比较。"
+        instructions=questions.INSTRUCTION + "\n海外创作的客户问题仅作场景线索，展示、邀请和故事均可，不强制答疑。内部选题依据用中文。不同市场与平台的需求不能默认相同。history_results 保留实际 platform，只有与当前方案 target_platform 相同的效果可作比较。"
         result,model=adapters.model_json(payload,schema,prompt+'\n'+instructions,kind='create',validator=validator)
         outputs=result['outputs']
         for output in outputs:
             output.pop('demo',None)
     if observations is not None or demo:
         questions.attach(outputs,observations or [],demo=demo)
+    method = VISUAL_NAME if demo or VISUAL_NAME in prompt else ('hiccai-pop v2.2.0' if 'hiccai-pop v2.2' in prompt else '海外创作')
     for output in outputs:
         output['storyboard']=[f"{s['start']}–{s['end']}s | {s['camera']} | {s['action']} | {s['line']} / {s['translation_zh']} | {s['screen_text']} | {s['sfx']} | {s['implementation']}" for s in output['shots']]
-        output['overseas']={'platform':output['target_platform'],'market':brief['market'],'language':brief['language'],'duration':brief['duration'],'skill':'hiccai-pop v2.2.0'}
+        output['overseas']={'platform':output['target_platform'],'market':brief['market'],'language':brief['language'],'duration':brief['duration'],'skill':method}
         output['goal']=brief['goal']
         output['quality']=content_quality.assess(output,assets,brief['platform'])
     return outputs,model

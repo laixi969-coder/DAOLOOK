@@ -184,7 +184,7 @@ async function refresh() {
     S.original = { goal: "leads", platform: "xhs", topic: "", keyword: "", assets: [], requirements: "", temporary: "", ...(drafts.read(key) || {}) };
     S.selectedAssets = [];
     S.observation = {};
-    S.questionLibrary = S.questionEdit = null;
+    S.questionLibrary = S.questionEdit = S.resultsSession = null;
     S.requirements = S.temporary = S.entryText = S.transcript = "";
     S.creationSource = null;
     S.focusCreation = null;
@@ -198,7 +198,7 @@ async function refresh() {
     S.overseasForm = {...overseasDefaults(), ...(drafts.read(key+":overseas")||{})};
     S.overseasReferenceTitle = "";
     S.overseasLibrary = null;
-    S.overseasFilters = {query:"",category:"",platform:"tiktok",saved:false};
+    S.overseasFilters = {query:"",category:"",platform:"all",scope:"selected",saved:false};
     S.overseasMessage = ""; S.overseasSearching = false; S.overseasRefreshing = null; S.overseasLoadToken = 0;
   }
   S.workspaceKey = key;
@@ -510,7 +510,7 @@ function creations() {
   return (
     heading(
       overseasView ? "海外创意建议" : "我的创作",
-      overseasView ? "" : "",
+      "",
       `<div class="actions">${button("Excel 导出", "export-xlsx", "secondary", "download")}${button("CSV 导出", "export-csv", "secondary", "download")}${button("开始新创作", overseasView ? "overseas" : "discover", "primary", "plus")}</div>`,
     ) +
     (briefOf(S.creationSource)
@@ -518,16 +518,29 @@ function creations() {
       : sourceOf(S.creationSource)
         ? sourcePanel(sourceOf(S.creationSource))
         : "") +
-    (overseasView ? "" : productionBoard(scoped)) +
+    (overseasView && S.creationSource ? "" : productionBoard(scoped)) +
     `<div class="section-head"><h2>${S.onlyFavorites ? "收藏稿件" : overseasView ? "全部建议" : "全部稿件"} <span>${items.length} 条</span></h2><button class="chip ${S.onlyFavorites ? "active" : ""}" data-action="filter-favorites">${S.onlyFavorites ? "查看全部" : "仅看收藏"}</button>${S.creationSource ? button("查看全部稿件", "all-creations", "secondary small") : ""}</div>${items.length ? creationSelection(items) : empty("从你的业务资料开始", "选一个目标，粘贴或上传产品与服务资料，就能开始创作。", button("开始创作", "discover", "primary", "spark"))}`
   );
 }
 function creationSelection(items) {
-  return `<div class="creation-grid">${items.map((c,index) => draftCard(c,false,index+1)).join("")}</div>`;
+  const domestic = items.filter(c => !c.data.overseas);
+  const pick = CreationTools.shortlist(domestic, S.workspace);
+  const ranked = pick ? [pick.main, ...pick.alternatives, ...pick.rest] : domestic;
+  const numbers = new Map();
+  let nextDomestic = 0;
+  return `<div class="creation-grid">${items.map(item => {
+    if (item.data.overseas) {
+      const batch = item.task_id || item.source_id;
+      numbers.set(batch, (numbers.get(batch) || 0) + 1);
+      return overseasCard(item, numbers.get(batch));
+    }
+    const c = ranked[nextDomestic++];
+    return draftCard(c, c === pick?.main ? pick.reasons : null, pick?.alternatives.includes(c));
+  }).join("")}</div>`;
 }
-function draftCard(c, featured = false, suggestionNumber = 0) {
+function draftCard(c, reasons = null, alternative = false) {
   const d = c.data;
-  if (d.overseas) return overseasCard(c, suggestionNumber);
+  if (d.overseas) return overseasCard(c);
   const source =
     S.workspace.sources.find((s) => s.id === c.source_id) ||
     briefOf(c.source_id);
@@ -537,7 +550,11 @@ function draftCard(c, featured = false, suggestionNumber = 0) {
   const textBlock = (label, value) => typeof value === "string" && value.trim()
     ? `<section class="draft-output-section"><h4>${label}</h4><p>${esc(value)}</p></section>` : "";
   const supplementary = `<div class="draft-output-grid">${textBlock("创意", d.concept || d.angle)}${lineList("画面描述", d.storyboard)}${textBlock("脚本", d.script || d.hook)}${textBlock("中文翻译", d.translation_zh)}${lineList("标题备选", d.titles)}</div>${d.quality?.hints?.length ? `<details class="methodology-hints"><summary>方法论自检 · ${d.quality.hints.length} 条建议</summary><ul>${d.quality.hints.map(h => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}`;
-  return `<article class="draft ${featured ? "draft-featured" : ""}"><div class="draft-top"><span>${platformLabel(source?.platform)}${d.demo?" · 演示":""}</span><span>${date(c.created_at)}</span></div><h3>${esc(d.title)}</h3>${supplementary}${topicBasis(d)}<section class="draft-output-section"><h4>发布内容 / Tags</h4><div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}</section>${images.map(coverCard).join("")}<details class="transcript-box"><summary>发布与反馈${c.tracking?.status === "published" ? " · 已发布" : ""}</summary>${pipeline(c,source)}${resultSummary(c)}</details><div class="actions">${button("编辑内容","edit-draft","secondary small","edit",`data-id="${c.id}"`)}${button("复制内容","copy","secondary small","copy",`data-id="${c.id}"`)}${button(c.saved?"已收藏":"收藏","save-creation","secondary small",c.saved?"check":"star",`data-id="${c.id}"`)}${button("封面","cover","secondary small","image",`data-id="${c.id}"`)}${button("删除","delete-creation","secondary small","trash",`data-id="${c.id}"`)}</div></article>`;
+  const issues = d.quality?.issues || [];
+  const check = issues.length ? `<details class="transcript-box"><summary>发布前需核对 · ${issues.length} 项</summary><ul>${issues.map(s => `<li>${esc(s)}</li>`).join("")}</ul>${button("补充资料重新创作","improve-draft","secondary small","edit",`data-id="${c.id}"`)}</details>` : "";
+  const materials = lineList("配图建议", d.image_suggestions) + lineList("拍摄清单", d.shooting_list) + commentLayout(d.comment_layout);
+  const role = reasons ? `<span class="direction-badge">${c.ready_at ? "已确认可发布" : "优先核对"}</span> ${infoTip("推荐依据", reasons.join("。"))}` : alternative ? '<span class="direction-badge">备选稿</span>' : "";
+  return `<article class="draft ${reasons ? "draft-featured" : ""}"><div class="draft-top"><span>${platformLabel(source?.platform)}${d.demo?" · 演示":""}</span><span>${date(c.created_at)}</span></div>${role}<h3>${esc(d.title)}</h3><section class="draft-output-section"><h4>发布内容 / Tags</h4><div class="draft-body">${esc(d.body)}</div>${d.tags?.length ? `<div class="tags">${d.tags.map(t => "#" + esc(t)).join(" ")}</div>` : ""}</section>${check}${supplementary}${topicBasis(d)}${materials ? `<details class="transcript-box"><summary>拍摄与运营资料</summary>${materials}</details>` : ""}${images.map(coverCard).join("")}<details class="transcript-box"><summary>发布与反馈${c.tracking?.status === "published" ? " · 已发布" : ""}</summary>${pipeline(c,source)}${resultSummary(c)}</details><div class="actions">${button("编辑内容","edit-draft","secondary small","edit",`data-id="${c.id}"`)}${button(issues.length && !c.ready_at ? "复制待核对稿" : "复制内容","copy","secondary small","copy",`data-id="${c.id}"`)}${button(c.saved?"已收藏":"收藏","save-creation","secondary small",c.saved?"check":"star",`data-id="${c.id}"`)}${button("封面","cover","secondary small","image",`data-id="${c.id}"`)}${button("删除","delete-creation","secondary small","trash",`data-id="${c.id}"`)}</div></article>`;
 }
 const DIRECTION_TONE = { 测评: "trust", 建立信任: "trust", 钓鱼帖: "hook", 截流: "hook" };
 function commentLines(layout) {
@@ -692,7 +709,7 @@ async function saveDraftEdit(restoreRevision) {
     if (!cached || (cached.revision === session.revision && CreationTools.fingerprint(cached.changes) === CreationTools.fingerprint(changes))) editStore.remove(session.storageKey);
     if (session.key !== workspaceKey()) return;
     const c = S.workspace.creations.find(x => x.id === session.id);
-    if (c) { c.data = result.data; c.revision = result.revision; }
+    if (c) { if (c.revision !== result.revision) c.ready_at = null; c.data = result.data; c.revision = result.revision; }
     render();
     if (S.editSession === session) await openDraftEditor(session.id);
     toast(restoreRevision === undefined ? "修改已保存，可继续复制或制作封面" : "历史版本已恢复，原有版本仍保留");
@@ -714,7 +731,7 @@ async function saveDraftEdit(restoreRevision) {
 function resultSummary(c) {
   const r = c.results || {};
   const metrics = [["views", "浏览"], ["leads", "有效咨询"], ["orders", "订单"]];
-  return `<div class="result-summary"><span>${metrics.map(([key, label]) => `${label} ${r[key] ?? "—"}`).join(" · ")}</span><button class="text-btn" data-action="record-results" data-id="${c.id}">记录效果</button></div>`;
+  return `<div class="result-summary"><span>${metrics.map(([key, label]) => `${label} ${r[key] ?? "—"}`).join(" · ")}${Object.keys(r.windows || {}).length ? ` · 已填 ${Object.keys(r.windows).map(k => RESULT_WINDOWS[k]).join("、")}` : ""}</span><button class="text-btn" data-action="record-results" data-id="${c.id}">记录效果</button></div>`;
 }
 
 function accounts() {
@@ -765,16 +782,35 @@ function directionMix(items) {
   });
   return { html: lines.join(""), warn };
 }
+const RESULT_WINDOWS = {lifetime: "截至目前", "24h": "24 小时", "7d": "7 天", "30d": "30 天"};
+const WINDOW_HOURS = {"24h":24, "7d":168, "30d":720};
+const RESULT_FIELDS = {views:"浏览次数", leads:"有效咨询人数", orders:"订单数", spend:"推广花费（元）"};
+
+function deliveryStats(d) {
+  if (!d) return "";
+  const seconds = d.first_ready_seconds;
+  const duration = seconds == null ? "—" : seconds < 60 ? Math.round(seconds) + " 秒" : seconds < 3600 ? Math.round(seconds / 60) + " 分钟" : (seconds / 3600).toFixed(1) + " 小时";
+  const rate = d.formal ? Math.round(d.published / d.formal * 100) + "%" : "—";
+  return `<div><p>正式稿发布率</p><strong>${rate}<small> · ${d.published} / ${d.formal} 篇</small></strong></div><div><div class="board-stat-label">首篇确认耗时中位数 ${infoTip("耗时口径","从提交生成到本批首次人工确认可发布。只统计有确认记录的正式批次。")}</div><strong>${duration}<small> · ${d.confirmed_batches} 批</small></strong></div>`;
+}
+function goalWindowTable(rows) {
+  if (!rows?.length) return "";
+  const metrics = {reach:"浏览",leads:"咨询",sales:"订单"};
+  const rate = row => row.goal === "reach" ? `${(row.total / row.posts).toFixed(1)} 浏览/篇` :
+    row.paired_views ? `${(row.paired_actions * 1000 / row.paired_views).toFixed(1)} ${metrics[row.goal]}/千次浏览（${row.paired_posts} 篇）` : "—";
+  return `<div class="section-head"><h3>同观察期效果</h3>${infoTip("比较口径","按平台、创作目标和发布后经过的时间分组。每千次浏览只使用同时填了目标数和正浏览量的稿件。")}</div><div class="table-wrap"><table><thead><tr><th>平台 / 目标</th><th>发布后</th><th>已填篇数</th><th>目标合计</th><th>平均表现</th></tr></thead><tbody>${rows.map(r => `<tr><td>${esc(platformLabel(r.platform))} · ${esc(GOAL_LABELS[r.goal])}</td><td>${RESULT_WINDOWS[r.window]}</td><td>${r.posts}</td><td>${r.total} ${metrics[r.goal]}</td><td>${rate(r)}</td></tr>`).join("")}</tbody></table></div>`;
+}
 function productionBoard(items) {
   if (!items.length) return "";
   const stats = S.workspace?.stats || {};
   const count = (st) => items.filter((c) => stageOf(c) === st).length;
   const published = stats.published != null ? stats.published : items.length - count("draft");
-  const real = items.filter((c) => !c.data.demo);
+  const real = items.filter(c => !c.data.demo && c.tracking?.status === "published");
   const loadedRecorded = real.filter((c) => ["views", "leads", "orders"].some((key) => c.results?.[key] != null));
   const recorded = stats.results ? stats.results.recorded : loadedRecorded.length;
   const total = (key) => {
-    if (stats.results) return stats.results.recorded ? stats.results[key] : "—";
+    if (stats.metric_counts) return stats.metric_counts[key] ? stats.results[key] : "—";
+    if (stats.results?.[key] > 0) return stats.results[key];
     const known = loadedRecorded.filter((c) => c.results?.[key] != null);
     return known.length ? known.reduce((n, c) => n + c.results[key], 0) : "—";
   };
@@ -784,17 +820,17 @@ function productionBoard(items) {
   const chips = [
     ["all", "全部", items.length],
     ["draft", "待发布", count("draft")],
-    ["published", "已发布", published],
+    ["published", "已发布", items.length - count("draft")],
     ["firsthour", "第一小时进行中", count("firsthour")],
   ];
   const stage = S.stage || "all";
-  return `<section class="panel board"><details class="board-overview"><summary>发布与效果 · 已发布 ${published} 条 · ${recorded} 条已记录效果</summary><div class="board-stats"><div><p>今日产出</p><strong>${today}<small> 篇 · 节奏参考 6–8 篇/天</small></strong></div><div><p>已发布内容</p><strong>${published}<small> / ${stats.total != null ? stats.total : items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div><div><p>方向配比${mix.warn ? " · 提醒：不要整批只做一种岗位" : ""}</p><div class="mix">${mix.html}</div></div></div><p class="board-hint">今日产出与方向配比为全项目统计，不受列表分页影响；${recorded} 条正式内容已记录效果 · 手动累计数据，未记录显示 —，演示内容不计入效果。</p>${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${mine.filter((c) => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : `<p class="board-hint">在「项目资料」里添加类型为「账号」的资料，就能区分不同账号发布的内容。</p>`}</details><div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
+  return `<section class="panel board"><details class="board-overview"><summary>发布与效果 · 已发布 ${published} 条 · ${recorded} 条已记录效果</summary><div class="board-stats"><div><p>今日产出</p><strong>${today}<small> 篇 · 节奏参考 6–8 篇/天</small></strong></div><div><p>已发布内容</p><strong>${published}<small> / ${stats.total != null ? stats.total : items.length}</small></strong></div><div><p>浏览次数</p><strong>${total("views")}</strong></div><div><p>有效咨询</p><strong>${total("leads")}</strong></div><div><p>订单数</p><strong>${total("orders")}</strong></div>${deliveryStats(stats.delivery)}<div><p>方向配比${mix.warn ? " · 提醒：不要整批只做一种岗位" : ""}</p><div class="mix">${mix.html}</div></div></div>${goalWindowTable(stats.goal_windows)}${infoTip("看板口径","全项目统计，不受列表分页影响。浏览、咨询和订单取已发布正式稿的手动累计值，未填写显示 —。")}${accs.length ? `<div class="board-accounts"><span>账号矩阵</span>${accs.map((a) => { const mine = items.filter((c) => c.tracking?.account_id === a.id); return `<span class="acc">${esc(a.name)}<small>已发 ${stats.account_published?.[a.id] ?? mine.filter(c => c.tracking.status === "published").length}</small></span>`; }).join("")}</div>` : ""}</details><div class="stage-chips">${chips.map(([id, label, n]) => `<button class="chip ${stage === id ? "active" : ""}" data-action="stage" data-stage="${id}">${label} ${n}</button>`).join("")}</div></section>`;
 }
 function pipeline(c, source) {
   const t = c.tracking || { status: "draft" };
   const acc = accounts().find((a) => a.id === t.account_id);
   if (t.status !== "published")
-    return `<div class="pipeline"><div class="pipeline-head"><span class="stage-pill">待发布</span><button class="text-btn" data-action="publish" data-id="${c.id}">${icon("check")} 已在平台发布</button></div></div>`;
+    return `<div class="pipeline"><div class="pipeline-head"><span class="stage-pill">${c.ready_at ? "已确认可发布" : "待发布"}</span>${c.ready_at ? "" : button("确认可发布", "confirm-ready", "secondary small", "check", `data-id="${c.id}"`)}<button class="text-btn" data-action="publish" data-id="${c.id}">${icon("check")} 已在平台发布</button></div></div>`;
   const left = firstHourLeft(t);
   const k = t.checklist || {};
   const items = [
@@ -805,10 +841,11 @@ function pipeline(c, source) {
   return `<div class="pipeline"><div class="pipeline-head"><span class="stage-pill live">已发布${acc ? " · " + esc(acc.name) : ""} · ${date(t.published_at)}</span><span class="pipeline-actions"><button class="text-btn muted-btn" data-action="unpublish" data-id="${c.id}">撤回</button></span></div>${c.data.comment_layout ? `<div class="first-hour"><p><strong>第一小时评论</strong> ${left > 0 ? `还剩 ${left} 分钟` : "已过第一小时"}${checklistDone(t) ? " · 已完成" : ""}</p>${items.map(([key, label]) => `<label class="check-row"><input type="checkbox" data-action="check-item" data-id="${c.id}" data-key="${key}" ${k[key] ? "checked" : ""}>${label}</label>`).join("")}</div>` : ""}</div>`;
 }
 async function track(id, data) {
+  const key = workspaceKey();
   const r = await post("/api/tracking/" + id, body(data));
-  const c = S.workspace.creations.find((x) => x.id === id);
-  if (c) c.tracking = r;
-  render();
+  if (key !== workspaceKey()) return r;
+  await refresh();
+  if (key === workspaceKey()) render();
   return r;
 }
 function briefOf(id) {
@@ -1479,6 +1516,14 @@ const actions = {
     const c=await ensureCreationContext(el.dataset.id);
     if(c && key===workspaceKey()) actions["record-results"](el);
   },
+  "confirm-ready": async el => {
+    const key = workspaceKey(), c = S.workspace.creations.find(item => item.id === el.dataset.id);
+    if (!c) return;
+    await post(`/api/creations/${c.id}/ready`, body({revision:c.revision ?? 0}));
+    if (key !== workspaceKey()) return;
+    await refresh();
+    if (key === workspaceKey()) { render(); toast("当前版本已确认可发布"); }
+  },
   "edit-draft": el => openDraftEditor(el.dataset.id),
   "rewrite-draft": async () => {
     const session = S.editSession;
@@ -1559,11 +1604,15 @@ const actions = {
     }
     toast("补充真实资料后重新生成，原稿会保留");
   },
-  "record-results": (el) => {
-    const c = S.workspace.creations.find((x) => x.id === el.dataset.id);
+  "record-results": el => {
+    const c = S.workspace.creations.find(x => x.id === el.dataset.id);
+    if (!c) return;
     const r = c.results || {};
-    S.resultsId = c.id;
-    modal("这条内容带来了什么？", `<form id="results-form"><p class="subtext">填写截至目前的累计数据。不知道的留空，确实没有填 0。有效咨询指目标客户提出了具体需求。标记发布后，问题摘要会自动成为后续选题线索；效果比较限同平台、同目标。演示稿件不回流。</p>${[["views", "浏览次数"], ["leads", "有效咨询人数"], ["orders", "订单数"], ["spend", "推广花费（元）"]].map(([key, label]) => `<label class="field"><span>${label}</span><input type="number" id="result-${key}" min="0" max="1000000000" step="${key === "spend" ? "0.01" : "1"}" value="${r[key] ?? ""}" placeholder="未记录"></label>`).join("")}<label class="field"><span>客户问了什么？（可选，不填写联系方式）</span><textarea id="result-note" maxlength="1000" rows="2" placeholder="尽量记录客户原话和场景；观察与推测分开写。清空后，后续创作不再使用这条追问。">${esc(r.note || "")}</textarea></label><button type="submit" class="btn primary full">保存效果</button></form>`);
+    S.resultsSession = {id:c.id, key:workspaceKey(), period:"lifetime", published:c.tracking?.published_at ?? null, expected:r.recorded_at ?? null, snapshots:{...r.windows, lifetime:r}};
+    const age = c.tracking?.status === "published" ? (Date.now() - Date.parse(c.tracking.published_at)) / 3600000 : -1;
+    const periods = Object.entries(RESULT_WINDOWS).map(([key,label]) =>
+      `<option value="${key}" ${key !== "lifetime" && !(age >= WINDOW_HOURS[key]) ? "disabled" : ""}>${key === "lifetime" ? label : "发布后 " + label}</option>`).join("");
+    modal("记录发布效果", `<form id="results-form"><label class="field"><span>统计截至</span><select id="result-window">${periods}</select></label>${infoTip("如何填写观察期","按所选时点填写当时的累计值。发布满相应时长后可填固定观察期。未知留空，确实没有填 0。有效咨询指目标客户提出具体需求。")}<div class="result-fields">${Object.entries(RESULT_FIELDS).map(([key,label]) => `<label class="field"><span>${label}</span><input type="number" id="result-${key}" min="0" max="1000000000" step="${key === "spend" ? "0.01" : "1"}" value="${r[key] ?? ""}" placeholder="未记录"></label>`).join("")}</div><label class="field"><span>客户追问（这篇共用，可选）</span><textarea id="result-note" maxlength="1000" rows="2" placeholder="记录客户原话和场景，隐去联系方式。">${esc(r.note || "")}</textarea></label><button type="submit" class="btn primary full">保存本次记录</button></form>`);
   },
   "user-ledger": async (el) => {
     const rows = await api("/api/admin/ledger?user_id=" + el.dataset.id);
@@ -2106,12 +2155,16 @@ document.addEventListener("submit", async (e) => {
         break;
       }
       case "results-form": {
+        const session = S.resultsSession;
+        if (!session || session.key !== workspaceKey()) break;
         const results = { note: $("#result-note").value };
-        for (const key of ["views", "leads", "orders", "spend"]) {
+        for (const key of Object.keys(RESULT_FIELDS)) {
           const value = $(`#result-${key}`).value;
           if (value !== "") results[key] = Number(value);
         }
-        await post("/api/results/" + S.resultsId, body({ results }));
+        await post("/api/results/" + session.id, body({results, window:session.period, expected_updated_at:session.expected, expected_published_at:session.published}));
+        if (session.key !== workspaceKey() || S.resultsSession !== session) break;
+        S.resultsSession = null;
         close();
         await refresh();
         render();
@@ -2441,6 +2494,20 @@ async function uploadProjectPhotos(input) {
 }
 document.addEventListener("change", async (e) => {
   try {
+    if (e.target.id === "result-window") {
+      const session = S.resultsSession;
+      if (!session || session.key !== workspaceKey()) return;
+      const current = session.snapshots[session.period] || {};
+      const keys = Object.keys(RESULT_FIELDS);
+      if (keys.some(k => String(current[k] ?? "") !== $(`#result-${k}`).value)) {
+        e.target.value = session.period;
+        return toast("先保存已修改的数据，再切换观察期");
+      }
+      session.period = e.target.value;
+      const snapshot = session.snapshots[session.period] || {};
+      keys.forEach(k => { $(`#result-${k}`).value = snapshot[k] ?? ""; });
+      return;
+    }
     if (e.target.dataset.action === "check-item")
       return await actions["check-item"](e.target);
     if (["creation-photo-file", "cover-photo-file", "original-photo-file"].includes(e.target.id))

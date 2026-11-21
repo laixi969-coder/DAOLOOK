@@ -27,6 +27,26 @@ def revision(c, ident):
     return c.execute("SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?", (ident,)).fetchone()[0]
 
 
+def confirm_ready(ident, project, expected):
+    """Confirm the version the editor read. Keep the first confirmation for batch timing."""
+    with db() as c:
+        c.execute("BEGIN IMMEDIATE")
+        creation(c, ident, project)
+        if type(expected) is not int or expected != revision(c, ident):
+            raise EditError("稿件版本已变化，请打开最新稿核对", 409)
+        current = c.execute("SELECT revision,confirmed_at FROM creation_readiness WHERE creation_id=?", (ident,)).fetchone()
+        if current and current["revision"] == expected:
+            return dict(current)
+        if c.execute("SELECT 1 FROM creation_tracking WHERE creation_id=? AND status='published'", (ident,)).fetchone():
+            raise EditError("稿件已经发布，无法补记发布前核对时间", 409)
+        stamp = now()
+        c.execute("INSERT INTO creation_readiness VALUES (?,?,?,?) ON CONFLICT(creation_id) DO UPDATE "
+                  "SET revision=excluded.revision,confirmed_at=excluded.confirmed_at", (ident, expected, stamp, stamp))
+        owner = c.execute("SELECT user_id FROM projects WHERE id=?", (project,)).fetchone()[0]
+        resource_limits.check_storage(c, owner)
+        return {"revision": expected, "confirmed_at": stamp}
+
+
 def history(ident, project):
     with db() as c:
         row = creation(c, ident, project)

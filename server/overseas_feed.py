@@ -13,7 +13,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from .db import db, dumps, now, uid
 from .adapters import NoCredentialRedirect, read_bounded
-from . import overseas_translation
+from . import overseas_translation, overseas_visuals
 
 RESOURCE = Path(__file__).parent / 'resources/hiccai-pop'
 YOUTUBE_SOURCES = json.loads((RESOURCE / 'daily-sources.json').read_text())
@@ -21,7 +21,7 @@ SOURCES = json.loads((RESOURCE / 'tiktok-sources.json').read_text())
 CASES = json.loads((RESOURCE / 'tiktok-cases.json').read_text())
 NS = {'a':'http://www.w3.org/2005/Atom', 'y':'http://www.youtube.com/xml/schemas/2015', 'm':'http://search.yahoo.com/mrss/'}
 MAX_AGE_DAYS = 180
-SELECTION_VERSION = 2
+SELECTION_VERSION = 3
 STORY_CUES = r'\b(robbers?|robbery|waiter|evicted|exposed|uploading grandpa|not an egg|paging|date a daddy|plot twist|unexpected|turns out|what could go wrong|when|monsters?)\b'
 CATEGORY_WORDS = {
     'A':('charger','charging','usb','iphone','phone','microphone','car mount'),
@@ -137,11 +137,13 @@ def parse_tiktok(blob, source):
         if str(entry.get('authorUniqueId','')).lower()!=source['handle'].lower():continue
         height,width=entry.get('height'),entry.get('width')
         if not isinstance(height,(int,float)) or not isinstance(width,(int,float)) or width<=0 or height/width<1.3:continue
-        if re.search(r'\b(unboxing|review|tutorial|giveaway|tickets|tour dates|in theaters|in cinemas|interview|episode drops|keep your eyes peeled)\b',caption,re.I):continue
+        if re.search(r'\b(unboxing|review|tutorial|giveaway|interview|episode drops)\b',caption,re.I):continue
         if re.search(r'\b(no purchase necessary|official rules|sweepstakes|pre-order)\b',caption,re.I):continue
         story=bool(re.search(STORY_CUES,caption,re.I))
         brand=source['handle'] in ('scrubdaddy','liquiddeath')
-        if brand and not story and ident not in CASES:continue
+        setup = overseas_visuals.caption_setup(caption)
+        if not setup and re.search(r'\b(tickets|tour dates|in theaters|in cinemas|keep your eyes peeled)\b',caption,re.I):continue
+        if brand and not story and not setup and ident not in CASES:continue
         seen.add(ident)
         url='https://www.tiktok.com/@'+source['handle']+'/video/'+ident
         key='feed_'+hashlib.sha256(url.encode()).hexdigest()[:32]

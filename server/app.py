@@ -599,12 +599,19 @@ class Handler(BaseHTTPRequestHandler):
             query = q.get('query', [''])[0]
             if len(query)>100: raise Error('搜索词最多100字')
             saved=q.get('saved',['0'])[0]=='1'
-            return self.send({'items':overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved, q.get('platform',['all' if saved else 'tiktok'])[0]),
+            offset = q.get('offset',['0'])[0]
+            if not re.fullmatch(r'[0-9]{1,8}',offset): raise Error('分页位置无效')
+            items = overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved, q.get('platform',['all'])[0], q.get('scope',['selected'])[0])
+            size = 120
+            offset = min(int(offset) // size, max(0,len(items)-1) // size) * size
+            return self.send({'items':items[offset:offset+size], 'total':len(items), 'offset':offset,
+                              'next_offset':offset+size if offset+size<len(items) else None,
+                              'previous_offset':offset-size if offset else None,
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),
                               'translation_pending':overseas_library.overseas_translation.pending(),
-                              'skill':{'name':'hiccai-pop','version':'2.2.0','legacy_archetypes':60,'reference_videos':len(overseas_library.REFERENCE_VIDEOS)}})
+                              'skill':{'name':overseas.VISUAL_NAME,'version':'2026-11-20','legacy_archetypes':60,'reference_videos':len(overseas_library.REFERENCE_VIDEOS)}})
         if path == '/api/overseas/ideas' and method == 'POST':
             return self.send(overseas_library.collect(project_id,data))
         if path == '/api/overseas/refresh' and method == 'POST':
@@ -932,9 +939,9 @@ class Handler(BaseHTTPRequestHandler):
             if brief['platform'] in overseas.PLATFORMS:
                 brief['language']=data.get('language',brief.get('language','en-zh'))
                 brief['market']=overseas_library.text(data.get('market',brief.get('market','United States')),'目标市场',60,True)
-                brief['duration']=data.get('duration',brief.get('duration',24))
+                brief['duration']=data.get('duration',brief.get('duration',12))
                 if brief['language'] not in overseas.LANGUAGES: raise Error('请选择支持的台词语言')
-                if type(brief['duration']) is not int or not 12<=brief['duration']<=60: raise Error('目标时长须为12–60秒的整数')
+                if type(brief['duration']) is not int or not 5<=brief['duration']<=60: raise Error('目标时长须为5–60秒的整数')
                 if data.get('reference_id') is not None:
                     ident=overseas_library.text(data['reference_id'],'参考创意ID',80)
                     brief['reference_snapshot']=overseas_library.reference(project_id,ident) if ident else None
@@ -1148,6 +1155,9 @@ class Handler(BaseHTTPRequestHandler):
                 },
                 202,
             )
+        match = re.fullmatch(r"/api/creations/([a-f0-9]+)/ready", path)
+        if match and method == "POST":
+            return self.send(editing.confirm_ready(match.group(1), project_id, data.get("revision")))
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/(revisions|edit|restore)", path)
         if match:
             ident, operation = match.groups()
@@ -1242,9 +1252,22 @@ class Handler(BaseHTTPRequestHandler):
             results = content_quality.clean_results(data.get("results"))
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
-                if not c.execute("SELECT 1 FROM creation_outputs WHERE id=? AND project_id=? AND deleted_at IS NULL", (ident, project_id)).fetchone():
+                row = c.execute("SELECT f.data,f.updated_at,k.status,k.published_at FROM creation_outputs o "
+                                "LEFT JOIN creation_results f ON f.creation_id=o.id LEFT JOIN creation_tracking k ON k.creation_id=o.id "
+                                "WHERE o.id=? AND o.project_id=? AND o.deleted_at IS NULL", (ident, project_id)).fetchone()
+                if not row:
                     raise Error("稿件不存在", 404)
-                c.execute("INSERT OR REPLACE INTO creation_results VALUES (?,?,?,?)", (ident, project_id, dumps(results), now()))
+                if 'expected_updated_at' in data and data['expected_updated_at'] != row['updated_at']:
+                    raise Error("效果记录已更新，请重新打开后填写", 409)
+                if 'expected_published_at' in data and data['expected_published_at'] != row['published_at']:
+                    raise Error("发布时间已变化，请重新打开后填写", 409)
+                stamp = now()
+                previous = json.loads(row['data'] or '{}')
+                if 'note' not in data['results'] and data.get('window','lifetime') != 'lifetime':
+                    results['note'] = previous.get('note','')
+                results = production.merge_result(previous, results, data.get('window','lifetime'),
+                                                  row['published_at'] if row['status']=='published' else None, stamp)
+                c.execute("INSERT OR REPLACE INTO creation_results VALUES (?,?,?,?)", (ident, project_id, dumps(results), stamp))
                 resource_limits.check_storage(c,u["id"])
             return self.send({"ok": True})
         match = re.fullmatch(r"/api/tracking/([a-f0-9]+)", path)
@@ -1356,20 +1379,32 @@ class Handler(BaseHTTPRequestHandler):
                 "第一秒画面", "观众误判", "公平伏笔", "结尾反转", "产品角色", "收尾方式", "出镜方式", "产品揭晓镜号", "产品揭晓", "制作路径", "成本依据",
                 "创意", "AI镜头提示词", "视频屏幕文案", "屏幕文案中文翻译",
                 "选题状态", "选题依据", "问题出处", "回答依据",
+                "当前稿确认可发布时间",
+                *(period + metric for period in ("24小时", "7天", "30天")
+                  for metric in ("浏览次数", "有效咨询", "订单数", "推广花费")),
+                "拍摄人数", "拍摄地点", "所需道具", "简化拍法",
             ]
         ]
         with db() as c:
             for r in c.execute(
-                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,k.status AS track_status,k.published_at,a.name AS account_name,f.data AS result_data,f.updated_at AS result_time FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN assets a ON a.id=k.account_id LEFT JOIN creation_results f ON f.creation_id=o.id WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
+                "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,"
+                "k.status AS track_status,k.published_at,a.name AS account_name,f.data AS result_data,f.updated_at AS result_time,cr.confirmed_at "
+                "FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id "
+                "LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id "
+                "LEFT JOIN assets a ON a.id=k.account_id LEFT JOIN creation_results f ON f.creation_id=o.id "
+                "LEFT JOIN creation_readiness cr ON cr.creation_id=o.id AND cr.revision=(SELECT COALESCE(MAX(revision),0) "
+                "FROM creation_revisions WHERE creation_id=o.id) WHERE o.project_id=? AND o.deleted_at IS NULL ORDER BY o.created_at",
                 (project,),
             ):
                 d = json.loads(r["data"])
                 src = json.loads(r["source_data"] or "{}")
                 effect = json.loads(r["result_data"] or "{}")
+                windows = production.current_windows(effect, r["published_at"])
+                shoot = d.get("shoot_setup", {})
                 rows.append(
                     [
                         r["id"],
-                        r["platform"],
+                        d.get("target_platform") or r["platform"],
                         "自主创作：" + src.get("topic", "")
                         if src.get("kind") == "brief"
                         else r["url"],
@@ -1412,7 +1447,10 @@ class Handler(BaseHTTPRequestHandler):
                          {"demo":"演示", "hypothesis":"待验证", "clue":"资料/市场线索，待验证", "sourced":"有来源记录，适用性待核对"}.get(d.get("topic_basis",{}).get("status"), "")),
                         dumps(d["topic_plan"]) if d.get("topic_plan") else "",
                         dumps(d["topic_basis"].get("sources",[])) if d.get("topic_basis") else "",
-                        dumps(d["topic_basis"].get("answer_sources",[])) if d.get("topic_basis") else ""]
+                        dumps(d["topic_basis"].get("answer_sources",[])) if d.get("topic_basis") else "",
+                        r["confirmed_at"] or "",
+                        *(windows.get(period, {}).get(metric, "") for period in production.WINDOWS for metric in production.METRICS),
+                        shoot.get("people",""), "、".join(shoot.get("locations",[])), "、".join(shoot.get("props",[])), shoot.get("simpler_take","")]
                 )
         if fmt == "xlsx":
             out = io.BytesIO()
@@ -1441,7 +1479,7 @@ class Handler(BaseHTTPRequestHandler):
                             '<c t="inlineStr"><is><t xml:space="preserve">'
                             + html.escape(
                                 re.sub(
-                                    r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(v or "")
+                                    r"[\x00-\x08\x0b\x0c\x0e-\x1f]", "", str(v if v is not None else "")
                                 )
                             )
                             + "</t></is></c>"
