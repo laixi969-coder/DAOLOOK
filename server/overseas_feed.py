@@ -214,7 +214,7 @@ def youtube_series(source, existing, errors):
         title=short.get('overlayMetadata',{}).get('primaryText',{}).get('content','')
         url='https://www.youtube.com/watch?v='+ident
         if (url in seen or not re.fullmatch(r'[A-Za-z0-9_-]{11}',ident)
-                or not re.search(r'\binvit\w*|\breel idea\b|\bsticky notes?\b',title,re.I)):continue
+                or not re.search(r'\binvit\w*|\breel idea\b|\bsticky notes?\b|\b(?:bookface|paper frame|optical illusion|forced perspective|infinity card|paint.wipe)\b',title,re.I)):continue
         seen.add(url)
         candidates.append((ident,title,url))
         if len(candidates)==10:break
@@ -264,12 +264,12 @@ def parse_tiktok(blob, source):
         if str(entry.get('authorUniqueId','')).lower()!=source['handle'].lower():continue
         height,width=entry.get('height'),entry.get('width')
         if not isinstance(height,(int,float)) or not isinstance(width,(int,float)) or width<=0 or height/width<1.3:continue
-        if re.search(r'\b(unboxing|review|tutorial|giveaway|interview|episode drops)\b',caption,re.I):continue
+        if re.search(r'\b(unboxing|review|giveaway|interview|episode drops)\b',caption,re.I):continue
         if re.search(r'\b(no purchase necessary|official rules|sweepstakes|pre-order)\b',caption,re.I):continue
         story=bool(re.search(STORY_CUES,caption,re.I))
         brand=source['handle'] in ('scrubdaddy','liquiddeath')
         setup = overseas_visuals.caption_setup(caption)
-        if not setup and re.search(r'\b(tickets|tour dates|in theaters|in cinemas|keep your eyes peeled)\b',caption,re.I):continue
+        if not setup and re.search(r'\b(tutorial|tickets|tour dates|in theaters|in cinemas|keep your eyes peeled)\b',caption,re.I):continue
         if brand and not story and not setup and ident not in CASES:continue
         seen.add(ident)
         url='https://www.tiktok.com/@'+source['handle']+'/video/'+ident
@@ -308,7 +308,7 @@ def tiktok_details(item):
 
 
 def sources_revision():
-    config=[SELECTION_VERSION,SOURCES,overseas_daily.FRONT_PAGE,overseas_daily.EDITION_SIZE,sorted(overseas_visuals.CASES)]
+    config=[SELECTION_VERSION,SOURCES,overseas_daily.FRONT_PAGE,overseas_daily.EDITION_SIZE,sorted((c['id'],c.get('visual_payoff','')) for c in overseas_visuals.CASES.values())]
     return hashlib.sha256(json.dumps(config,sort_keys=True).encode()).hexdigest()[:16]
 
 
@@ -377,7 +377,7 @@ def source_items(source):
     if source.get('platform')=='tiktok':
         # Include every caption match plus a few recent clips for the wider candidate library.
         recent=sorted(items,key=lambda i:i['url'].rsplit('/',1)[1],reverse=True)[:4]
-        items=[i for i in items if i in recent or i.get('case_review') or overseas_visuals.with_setup(i).get('filming')]
+        items=[i for i in items if i in recent or i.get('case_review') or overseas_visuals.with_setup(i).get('visual_payoff')]
     for item in items:
         item.update({k:source[k] for k in ('industry','publisher_type','source_id') if k in source})
     return items,errors
@@ -426,9 +426,9 @@ def _sync(token):
             previous=json.loads(current['data']) if current else {}
             if previous.get('first_matched_at'):
                 item['first_matched_at']=previous['first_matched_at']
-            if item['url'] not in overseas_visuals.BY_URL and overseas_visuals.with_setup(item).get('filming'):
+            if item['url'] not in overseas_visuals.BY_URL and overseas_visuals.with_setup(item).get('visual_payoff'):
                 first=previous.get('first_matched_at')
-                if not first and current and overseas_visuals.with_setup(previous).get('filming'):first=current['created_at']
+                if not first and current and overseas_visuals.with_setup(previous).get('visual_payoff'):first=current['created_at']
                 item['first_matched_at']=first or stamp
                 new_matches+=int(not first)
             if previous==item:

@@ -30,10 +30,13 @@ def select(connection, stamp, persist, limit=EDITION_SIZE):
         marks = ','.join('?' for _ in picks)
         rows = connection.execute('SELECT url,data FROM overseas_feed_videos WHERE url IN ('+marks+')',
                                   [pick['url'] for pick in picks])
-        available = set(overseas_visuals.BY_URL)
-        available.update(row['url'] for row in rows if overseas_visuals.with_setup(json.loads(row['data'])).get('filming'))
+        available = {url for url,case in overseas_visuals.BY_URL.items() if case.get('visual_payoff')}
+        available.update(row['url'] for row in rows if overseas_visuals.with_setup(json.loads(row['data'])).get('visual_payoff'))
         retained = [pick for pick in picks if pick['url'] in available]
         if len(retained) != len(picks):
+            if any(p['position'] <= FRONT_PAGE and p['url'] not in available for p in picks):
+                # Fill vacated front-page slots by ranking all eligible alternatives.
+                retained = [p for p in retained if p['position'] <= FRONT_PAGE]
             picks = [dict(pick, position=position) for position,pick in enumerate(retained,1)]
             if persist:
                 connection.execute('DELETE FROM overseas_daily_picks WHERE day=?', (day,))
@@ -44,10 +47,10 @@ def select(connection, stamp, persist, limit=EDITION_SIZE):
         yesterday = (datetime.date.fromisoformat(day) - datetime.timedelta(days=1)).isoformat()
         history = dict(connection.execute('SELECT url,max(day) FROM overseas_daily_picks WHERE day<? GROUP BY url', (day,)))
         first_page = dict(connection.execute('SELECT url,max(day) FROM overseas_daily_picks WHERE day<? AND position<=? GROUP BY url', (day,FRONT_PAGE)))
-        pool = {case['url']: case for case in overseas_visuals.CASES.values()}
+        pool = {case['url']: case for case in overseas_visuals.CASES.values() if case.get('visual_payoff')}
         for row in connection.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600'):
             item = overseas_visuals.with_setup(json.loads(row['data']))
-            if item.get('filming') and item['url'] not in pool:
+            if item.get('visual_payoff') and overseas_visuals.review_key(item['url']) not in overseas_visuals.REVIEWED:
                 pool[item['url']] = item
         used = {key:set() for key in ('mechanism','publisher','industry','publisher_type')}
         def remember(item):

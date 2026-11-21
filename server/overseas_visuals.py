@@ -1,6 +1,7 @@
 """Public source references and conservative caption matches for shootable shorts."""
 import json
 import re
+from urllib.parse import urlsplit
 from pathlib import Path
 
 
@@ -27,6 +28,20 @@ def _load_cases():
 CASES = _load_cases()
 BY_URL = {case['url']: case for case in CASES.values()}
 
+def review_key(url):
+    parts = urlsplit(url)
+    host = parts.hostname or ''
+    path = parts.path.strip('/').split('/')
+    if host in ('www.instagram.com','instagram.com') and len(path)==2 and path[0] in ('p','reel','reels'):
+        return ('instagram',path[1])
+    if host in ('www.tiktok.com','tiktok.com') and len(path)==3 and path[1]=='video':
+        return ('tiktok',path[2])
+    return url
+
+
+REVIEWED = {review_key(url):case for url,case in BY_URL.items()}
+
+
 # The post must describe both a practical action and the message it delivers.
 # The suggested setup is ours. A match is not a claim about the original crew or budget.
 MESSAGE = re.compile(
@@ -40,6 +55,14 @@ MESSAGE = re.compile(
 EXCLUDE = re.compile(r'\b(?:unbox\w*|reviews?|giveaway|sweepstakes|stunts?|explosions?|pyrotechnics|blockbuster|CGI|3D render\w*|crane shots?|aerial rig|behind the scenes of a movie)\b|开箱|测评|抽奖|爆破|高空特技|大型特效', re.I)
 PHONE_SHADOW = re.compile(r'\bshadows?\b.{0,180}\b(?:shot|filmed) (?:on|with) (?:a |my )?phone\b', re.I | re.S)
 METHODS = (
+    ('借位悬浮', r'(?:cup|bottle|product).{0,40}(?:float|hover)\w*|(?:float|hover)\w*.{0,32}(?:cup|bottle)|(?:杯|瓶).{0,12}(?:悬空|漂浮)',
+     '手机固定，把杯子放在画框边缘的隐蔽支点上。拍人物伸手取杯，补一个侧面镜头交代支点或借位。'),
+    ('折纸透视', r'(?:paper|cardstock).{0,40}(?:ladder|staircase)|(?:ladder|staircase).{0,40}(?:paper|cardstock)|纸.{0,12}(?:阶梯|梯子)',
+     '沿折痕画出互相接续的梯档，先从线条接齐的位置拍，然后改变视角露出折痕。'),
+    ('封面借位接脸', r'(?:book ?cover|bookface).{0,65}(?:align|match|line.?up|complet)\w*.{0,40}(?:face|chin|body)|书封.{0,18}(?:对齐|接上).{0,10}(?:脸|下巴|身体)',
+     '手机固定，前后移动封面，直到印刷轮廓和真人接齐。拍合体效果，再放下书露出借位。'),
+    ('纸卡循环', r'(?:infinity|never.ending|endless) (?:folding )?card|(?:无限|循环)翻折卡',
+     '俯拍连续翻卡，每一面写一段消息，最后翻回第一面。'),
     ('遮镜换物', r'(?:cover|block|palm)\w*.{0,30}(?:lens|camera).{0,72}(?:switch|reveal|chang\w*)|(?:手掌|手指).{0,8}遮镜.{0,15}(?:换色|换装|露出)',
      '固定机位，手掌遮满镜头时换上第二件物品或换一个颜色。用两段全黑画面对剪，手移开后停在新造型。'),
     ('轮廓对位', r'(?:sketch|drawing|outline|silhouette).{0,55}(?:becomes?|turns? into|match.cut|align\w* with).{0,40}(?:bag|shoe|bottle|jersey|product|outfit)|(?:线稿|剪影|轮廓).{0,18}(?:变成|接到|对齐).{0,10}(?:实物|球衣|鞋|瓶|包)',
@@ -52,8 +75,6 @@ METHODS = (
      '拍菜单从手里甩出画面，再拍它沿相同方向落到桌上。对齐运动方向剪接，最后让观众看清菜单。'),
     ('机位错觉', r'(?:throw\w*|toss\w*|drop\w*).{0,22}straws?.{0,55}(?:cup|glass)|吸管.{0,15}(?:投进|落入|扔进).{0,6}杯',
      '将杯子靠近手机，一人在远处投，一人在镜头旁放入备用吸管。补拍一个侧面镜头揭开错觉。'),
-    ('投中揭晓', r'(?:basketball|hoop).{0,22}(?:shot|shoot|toss)|(?:shoot|sink|mak\w*).{0,20}(?:basket|hoop)|投篮.{0,12}(?:命中|邀请)',
-     '把投篮动作和篮筐拍在同一镜头。起手时给出条件，球落进篮筐时亮出活动邀请。'),
     ('屏幕接字', r'(?:swip\w*|tap\w*|stack\w*|light up).{0,45}(?:phones?|screens?)|(?:phones?|screens?).{0,45}(?:swip\w*|in turn|one by one|light up)|(?:手机|屏幕).{0,16}(?:依次|逐个|接力|拼字)',
      '固定手机机位，把一句信息分在几块屏幕上，按顺序切换画面，最后留出读字时间。'),
     ('剪绳落字', r'(?:cut|snip|pull|clip).{0,35}(?:strings?|ribbons?)|(?:翻|剪|抽|拉).{0,12}(?:线绳|绳子|细绳|细线|字卡|纸条)',
@@ -74,30 +95,87 @@ METHODS = (
 METHODS = tuple((name, re.compile(pattern, re.I), note) for name, pattern, note in METHODS)
 
 
-def caption_match(text):
+# A technique needs an observable payoff in the source itself. These cues also
+# explain what a viewer could point out to another person or watch again to spot.
+PAYOFF_CUES = {
+    '借位悬浮': (r'(?:grab|take|reach|drink|sip)\w* (?:for |from )?(?:it|the cup|the drink)|(?:side|reverse) angle|伸手取|拿起|反打', '先看见悬空的杯子，再看人伸手接住它或换角度揭晓支点。'),
+    '折纸透视': (r'anamorphic|changes? (?:the )?angle|fold.{0,25}illusion|透视|换.{0,5}角度', '纸上的线条从特定机位才连成立体梯子，换角度就能揭晓。'),
+    '遮镜换物': (r'(?:same|matching) (?:outline|silhouette)|轮廓.{0,8}(?:重合|接齐)', '手遮住的瞬间，两件轮廓吻合的实物在同一位置交接。'),
+    '桌面定格': (r'(?:spell out|fold into|form the (?:logo|word))|拼成.{0,8}(?:字|标志)', '散开的道具逐帧移到位，最后拼出一个完整符号。'),
+    '叠盒亮标': (r'(?:block|hide|cover).{0,30}(?:face|person)|(?:遮住|挡住).{0,8}(?:脸|人)', '空盒堆到遮住人的脸，品牌信息随这摞盒子一起移动。'),
+    '拨开关切景': (r'(?:turns into|transforms into|switches to).{0,30}(?:poster|scene)|变成.{0,8}(?:海报|场景)', '现实中的手碰到开关，整个画面马上变成海报或新场景。'),
+    '动作拟音': (r'(?:sounds? like|mimics?).{0,35}(?:waves|ocean|rain|summer)|听起来像.{0,6}(?:海浪|雨声)', '一个日常动作发出让人想到另一个场景的声音，可以猜声源。'),
+    '封面借位接脸': (r'face|chin|body|下巴|脸|身体', '封面和真人共用一条轮廓，可以找出两者在哪里接上。'),
+    '纸卡循环': (r'back to (?:the )?(?:start|first)|loops? back|回到(?:起点|第一面)', '纸卡翻了一圈，结尾又接回开头。'),
+    '轮廓对位': (r'becomes?|turns? into|align|match.cut|变成|对齐|接到', '平面的轮廓和实物对在一起，可以倒回去找接点。'),
+    '刷痕显字': (r'reveal|underneath|显字|露出', '消息沿着刷痕出现，手的动作决定读字顺序。'),
+    '甩物接镜': (r'lands? open|flips? open|落.{0,4}摊开', '道具飞出镜头，落地时打开成了菜单。'),
+    '机位错觉': (r'(?:reverse|other|second|side) angle|hidden hand|spare straws|反打|另一.{0,4}机位|备用吸管', '换到另一机位，才看懂连续命中的秘密。'),
+    '屏幕接字': (r'spell|piece together|one word|one by one.{0,40}(?:word|message)|拼字|拼成|接成', '几块屏幕各显示一部分，接在一起才读出完整信息。'),
+    '剪绳落字': (r'(?:reveal|drop|uncover).{0,40}(?:next|word|card|time|date)|露出.{0,12}(?:下一|日期|时间)', '剪开一根绳就露出下一行，观众会等到信息完整。'),
+    '翻牌指路': (r'(?:reveal|uncover|points? to).{0,50}(?:hours|offer|booking|stall|address|invite|menu|price|team)|(?:露出|指向).{0,14}(?:营业|摊位|预约|菜单|价格|团队)', '牌面翻转前后给出两层信息，观众会等着看另一面。'),
+    '擦镜显字': (r'(?:reveal|uncover|appear).{0,50}(?:hours|sale|discount|offer|invite|message)|(?:显出|露出).{0,12}(?:折扣|营业|邀请)', '擦过的地方留下可读的信息，手势和揭晓发生在同一处。'),
+    '纸飞机送信': (r'unfold.{0,50}(?:message|invite|date)|展开.{0,16}(?:邀请|时间|消息)', '飞进画面的道具展开后成了一封邀请。'),
+}
+PAYOFF_CUES = {name:(re.compile(pattern,re.I),reason) for name,(pattern,reason) in PAYOFF_CUES.items()}
+
+# A recognizable prop can occur inside an otherwise predictable format.
+ROUTINE_FORMAT = re.compile(
+    r"what(?:['’]s| is) in my bag|bag dump|unpack my bag|client (?:calls?|face)|"
+    r"customer.service (?:face|smile)|swipe to (?:make|cook|build|assemble)|"
+    r"(?:bake|baking|oven).{0,65}(?:handbag|tote|purse)|(?:handbag|tote|purse).{0,65}(?:oven|baking)|"
+    r"翻包|包里有什么|职业假笑|客户来电|滑动.{0,8}(?:做早餐|拼装)|烤出.{0,8}(?:手袋|托特包)", re.I)
+
+
+# Leave room for a new trick when the post itself describes a specific
+# misreading and the physical action that resolves it in the same scene.
+PROP = re.compile(r'\b(?:paper|sticker|label|book|poster|receipt|cup|bottle|card|mirror|photo|box|bag|menu|envelope|pencil|frame)\b|纸|书|杯|瓶|卡片|镜子|盒|信封|菜单', re.I)
+MISREAD = re.compile(
+    r"(?:looks? (?:like|as if)|appears? to be)\s+[^.!?\n]{3,80}?[, ]+(?:until|but then)\s+"
+    r"[^.!?\n]{0,35}?(?:peel|unfold|rotate|tilt|turn|slide|lift|pull back)\w*\b[^.!?\n]{0,80}?"
+    r"(?:reveal|show|expos)\w*\s+[^.!?\n]{3,75}"
+    r"|(?:看似|看起来像|以为)[^。！？\n]{2,32}?(?:撕开|揭开|转动|拉远|移开|展开|掀开)[^。！？\n]{0,20}?"
+    r"(?:才发现|原来|露出)[^。！？\n]{2,35}", re.I)
+
+
+def caption_review(text):
     text = re.sub(r'[#＃][\w-]+', '', text or '')
     text = re.sub(r'\b(?:no|without) (?:CGI|3D rendering|stunts?)\b','',text,flags=re.I)
-    if not text or EXCLUDE.search(text):
-        return '', ''
+    if not text or EXCLUDE.search(text) or ROUTINE_FORMAT.search(text):
+        return '', '', ''
     if PHONE_SHADOW.search(text) and re.search(r'behind the scenes|how (?:I|we) (?:shot|made)|how to',text,re.I):
-        return '借影构图', '找一件轮廓清楚的日用品，用窗光或台灯将影子投到纸上。先拍影子让人猜，再移开物件，露出它和光源的位置。'
-    if not MESSAGE.search(text):return '', ''
-    return next(((name, note) for name, pattern, note in METHODS if pattern.search(text)), ('',''))
+        return '借影构图', '找一件轮廓清楚的日用品，用窗光或台灯将影子投到纸上。先拍影子让人猜，再移开物件，露出它和光源的位置。', '先看影子构图，再看幕后摆法，可以让朋友猜它怎么拍出来。'
+    if not MESSAGE.search(text):
+        return '', '', ''
+    for name, pattern, note in METHODS:
+        cue, _ = PAYOFF_CUES[name]
+        if match := pattern.search(text):
+            context = text[max(0,match.start()-50):match.end()+100]
+            if cue.search(context):
+                return name, note, PAYOFF_CUES[name][1]
+    reveal = MISREAD.search(text)
+    if reveal and PROP.search(reveal.group()):
+        return ('实物错觉揭晓', '先按原帖中的错觉摆好实物，锁定手机拍第一眼。再拍清楚揭晓的那个动作，在同一构图里留出读信息的时间。',
+                '原帖描述的误会和揭晓：' + reveal.group().strip())
+    return '', '', ''
 
 
 def caption_setup(text):
-    return caption_match(text)[1]
+    return caption_review(text)[1]
 
 
 def with_setup(item):
-    case = BY_URL.get(item.get('url'))
+    case = REVIEWED.get(review_key(item.get('url') or ''))
     if case:
         return {**case, **item, 'filming': case['filming'], 'mechanism': case['mechanism'],
-                'filming_basis': case.get('filming_basis', '画面参考')}
+                'visual_payoff': case.get('visual_payoff', ''), 'filming_basis': case.get('filming_basis', '画面参考')}
+    item = {**item, 'visual_payoff': ''}
     if item.get('source_kind') in ('daily_feed', 'data_source', 'manual'):
         # Only the source description is evidence; never use search terms or suggested translations.
         caption = ' '.join(dict.fromkeys(str(item.get(k) or '') for k in ('title','summary')))
-        mechanism,setup = caption_match(caption)
+        if item.get('case_review'):
+            caption = (item.get('reference_video') or {}).get('title','')
+        mechanism,setup,reason = caption_review(caption)
         if setup:
-            return {**item, 'mechanism':item.get('mechanism') or mechanism, 'filming': setup, 'filming_basis': '按内容说明匹配'}
+            return {**item, 'mechanism':mechanism, 'visual_payoff':reason, 'filming': setup, 'filming_basis': '按内容说明匹配'}
     return item

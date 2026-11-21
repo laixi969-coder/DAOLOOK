@@ -256,9 +256,25 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(self.c.req('/api/bootstrap')[1]['credits'],before)
         self.assertIn('refresh',self.c.req('/api/overseas/ideas?project_id='+self.p)[1])
 
+    def test_rejected_formats_leave_published_page_and_stay_out_on_refresh(self):
+        ids = ('case_marc_tote','case_lawyer_call','case_swipe_breakfast','case_planner_bag')
+        rejected = [overseas_visuals.CASES[i]['url'] for i in ids]
+        day = overseas_daily.day_for(DAY)
+        with fixture.D.db() as c:
+            c.executemany('INSERT INTO overseas_daily_picks VALUES (?,?,?,0)',
+                          [(day,n,url) for n,url in enumerate(rejected,1)])
+        for persist in (False, True, False):
+            with fixture.D.db() as c:
+                picks = overseas_daily.select(c, DAY, persist)['picks']
+            self.assertGreaterEqual(len(picks), 10)
+            self.assertTrue(set(rejected).isdisjoint(p['url'] for p in picks))
+        for scope in ('selected', 'today'):
+            self.assertTrue(set(rejected).isdisjoint(i['url'] for i in overseas_library.recommendations(self.p,scope=scope)))
+        self.assertTrue(set(rejected).issubset({i.get('url') for i in overseas_library.recommendations(self.p,scope='candidates')}))
+
     def test_smaller_existing_edition_expands_to_ten_preserving_order(self):
         day=overseas_daily.day_for(DAY)
-        legacy=[i['url'] for i in list(overseas_visuals.CASES.values())[:6]]
+        legacy=[i['url'] for i in [case for case in overseas_visuals.CASES.values() if case.get('visual_payoff')][:6]]
         with fixture.D.db() as c:
             c.executemany('INSERT INTO overseas_daily_picks VALUES (?,?,?,0)',[(day,n,u) for n,u in enumerate(legacy,1)])
         first=overseas_daily.edition(DAY)['picks']
@@ -292,6 +308,19 @@ class DailyVideoTests(unittest.TestCase):
 
 
 class FeedParsingTests(unittest.TestCase):
+    def test_source_must_explain_the_visual_payoff(self):
+        for caption in ('Swipe to make breakfast. Flip our menu to reveal the offer.',
+                        'What’s in my bag? We flip a cardboard sign to reveal the price.',
+                        'Customer service smile. Wipe the glass to reveal our opening hours.',
+                        'Bake a tote in the oven. Flip the sign to reveal our offer.',
+                        'Toss three straws in a cup at our event.', 'Stack our branded boxes for the launch.'):
+            self.assertFalse(overseas_visuals.caption_setup(caption),caption)
+        for caption in ('Our invitation looks like a locked door until we peel the paper back to reveal a tiny map.',
+                        'Toss three straws in a cup. The reverse angle reveals spare straws. Come to our store.',
+                        'Our team lines up the book cover to align with a face.',
+                        'Our event invite: an infinity card that loops back to the first panel.'):
+            self.assertTrue(overseas_visuals.caption_setup(caption),caption)
+
     def test_instagram_verifies_creator_vertical_video_and_actual_reel_duration(self):
         source=next(s for s in feed.SOURCES if s.get('platform')=='instagram')
         handle=source['handle']

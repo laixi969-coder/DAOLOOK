@@ -9,7 +9,8 @@
     "filming": "在摊位旁拍一个中近景。预先撕出缺口、在背面写好指路信息，让饼干从纸板后入画，翻牌后沿箭头移向摊位。",
     "publisher": "Sweets by Nika",
     "url": "https://www.instagram.com/reel/Ddmkp8jyuMP",
-    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal"
+    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal",
+    "visual_payoff": "纸板缺口让人误以为女孩在吃纸；饼干入画解开误会，翻牌又给真正的甜品摊指路。"
   },
   {
     "id": "case_deli_frame",
@@ -19,7 +20,8 @@
     "filming": "在厚纸上剪一个取景窗。手机和纸框保持相同距离，依次对准已有的工作岗位，各拍一小段，按纸框边缘对齐剪接。",
     "publisher": "TV’s Deli & Diner",
     "url": "https://www.instagram.com/reel/DfC74B9CWLU",
-    "review_source": "https://kabo.sh/breakdown/paper-frame-team-reveal"
+    "review_source": "https://kabo.sh/breakdown/paper-frame-team-reveal",
+    "visual_payoff": "感谢语故意空着最后一格，纸窗每框住一个正在工作的人，那个人就补完一次句子。"
   },
   {
     "id": "case_juice_cup",
@@ -29,7 +31,8 @@
     "filming": "杯子贴近手机，先拍正面的投掷动作，再侧移一步拍到杯口旁的手。两段画面在同一张桌边拍完。",
     "publisher": "Juice Junction",
     "url": "https://www.instagram.com/reel/DaFuCwZB0BJ",
-    "review_source": "https://kabo.sh/breakdown/juice-junction-straw-challenge"
+    "review_source": "https://kabo.sh/breakdown/juice-junction-straw-challenge",
+    "visual_payoff": "远处三根吸管为什么全中？反打露出镜头旁偷偷投吸管的手，观众能回头找破绽。"
   },
   {
     "id": "case_aura_booking",
@@ -41,7 +44,8 @@
     "filming": "一个人正对手机，手持双面纸牌。提前写好自己的预约信息，翻面后停住，让观众有时间读完。",
     "publisher": "Aura Studio",
     "url": "https://www.instagram.com/reel/DdrLEgxMAa1",
-    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal"
+    "review_source": "https://kabo.sh/breakdown/cardboard-sign-reveal",
+    "visual_payoff": "嘴边缺口像被咬过，翻过这块看似食物的纸板，它却是一张能读到价格的预约牌。"
   },
   {
     "id": "case_duna_menu",
@@ -52,7 +56,8 @@
     "filming_basis": "按公开分镜整理",
     "publisher": "Duna Restobar",
     "url": "https://www.instagram.com/reel/DZiJFKzo4l-",
-    "review_source": "https://www.sfom.ai/blog/restaurant-instagram-reels-reveal-trend-2026"
+    "review_source": "https://www.sfom.ai/blog/restaurant-instagram-reels-reveal-trend-2026",
+    "visual_payoff": "刚给菜反光的菜单被甩出画面，同方向落回桌面揭开菜单，拍摄道具变成点餐入口。"
   },
   {
     "id": "case_sermon_tissue",
@@ -97,7 +102,8 @@
     "industry": "餐饮食品",
     "publisher_type": "独立商家",
     "url": "https://www.instagram.com/p/DdQtR1it9gI",
-    "review_source": "https://kabo.sh/breakdown/floating-drink"
+    "review_source": "https://kabo.sh/breakdown/floating-drink",
+    "visual_payoff": "杯子悬空等人靠近，跑过的人停下伸手喝到了它，可以让朋友猜杯子是怎么架起来的。"
   },
   {
     "id": "case_sermon_basket",
@@ -156,7 +162,8 @@
     "filming_basis": "按创作者说明与图书馆案例整理",
     "publisher": "Evergreen Park Public Library",
     "url": "https://www.instagram.com/reel/CfedPE9AEbG",
-    "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html"
+    "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html",
+    "visual_payoff": "封面上的半张脸与真人无缝接上，拿开书就看懂错觉，也会想找自己的书试一遍。"
   },
   {
     "id": "case_library_eyes",
@@ -170,7 +177,8 @@
     "filming_basis": "按图书馆案例整理",
     "publisher": "Glen Ellyn Public Library",
     "url": "https://www.youtube.com/watch?v=rdtb38_A4Kg",
-    "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html"
+    "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html",
+    "visual_payoff": "正经书封上多出一双会动的眼睛，每换一本书，同一双眼睛就让另一张脸改了表情。"
   },
   {
     "id": "case_library_then_now",
@@ -220,5 +228,33 @@
     "publisher": "Dayton Metro Library",
     "url": "https://www.instagram.com/reel/CnzuKa_jK8v",
     "review_source": "https://www.webjunction.org/news/webjunction/libraries-get-reel.html"
+  },
+  {
+    "id": "case_fold_ladder",
+    "publisher": "Jon Harris",
+    "platform": "youtube",
+    "url": "https://www.youtube.com/watch?v=UyLS3UUTzkw",
+    "title": "纸面上的梯子立起来了",
+    "summary": "作者在卡纸上画出折纸梯子的透视错觉。",
+    "industry": "摄影与设计",
+    "publisher_type": "达人创作者",
+    "mechanism": "折纸透视",
+    "filming": "对折卡纸，在折线两边画相接的梯档。先从梯档接齐的角度拍，再转动纸露出折痕。可以把店名或指路箭头画在梯子尽头。",
+    "filming_basis": "按作者作品说明整理",
+    "visual_payoff": "同一张纸从一个角度看有一把立体梯子，换个角度才看出平面线条，适合让观众猜观察点。"
+  },
+  {
+    "id": "case_infinity_card",
+    "publisher": "Crafter Aditi",
+    "platform": "youtube",
+    "url": "https://www.youtube.com/watch?v=8Fo5u8x7ucg",
+    "title": "翻不完的纸卡又回到第一面",
+    "summary": "创作者用 BTS 主题做了一张可以循环翻折的纸卡。",
+    "industry": "摄影与设计",
+    "publisher_type": "达人创作者",
+    "mechanism": "纸卡循环",
+    "filming": "用一张无限翻折卡，把活动名、时间、地点写在不同面。固定手机俯拍双手，连续翻回片头图案。",
+    "filming_basis": "按作者作品说明整理",
+    "visual_payoff": "卡片每次像要翻到底，却又打开一层，连续翻回起点让人想重看折法。"
   }
 ]

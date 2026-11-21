@@ -179,7 +179,7 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         setup = item.get('filming', '')
         pick=daily.get(link)
         if not saved and scope=='today' and not pick:continue
-        if not saved and scope in ('selected','today') and not setup:
+        if not saved and scope in ('selected','today') and not item.get('visual_payoff'):
             continue
         corpus=' '.join(str(item.get(k,'')) for k in ('title','summary','title_zh','summary_zh','category_name','mechanism','reflex','technique','publisher','industry','publisher_type','query')).lower()
         corpus += ' ' + setup.lower()
@@ -189,7 +189,7 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         if tokens and not hits: continue
         seen.add(link)
         reason='匹配关键词：'+'、'.join(direct) if direct else ('同类创意：'+item.get('category_name','') if hits else ('匹配所选品类' if category else '可复用的创意结构，按资料顺序展示'))
-        value={**item,'recommendation':reason}
+        value={**item,'recommendation':item.get('visual_payoff') or reason}
         if pick:value['daily_pick']={'position':pick['position'],'new_match':bool(pick['new_match'])}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
