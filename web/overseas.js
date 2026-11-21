@@ -162,7 +162,7 @@ function overseasDailyCard(item) {
   const original=link?`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(label)}，在原平台观看">在原平台观看 ↗</a>`:"";
   const notes=[["钩子",hook],["创意",idea]].filter(([,value])=>value)
     .map(([label,value])=>`<p><strong>${label}</strong>${esc(value)}</p>`).join("");
-  return `<article class="overseas-idea-card">${media}${original}<div class="daily-notes" lang="zh-CN">${notes}</div></article>`;
+  return `<article class="overseas-idea-card"><h3 class="daily-title" lang="zh-CN">${esc(title)}</h3>${media}${original}<div class="daily-notes" lang="zh-CN">${notes}</div></article>`;
 }
 
 function overseasIdeaCard(item) {

@@ -92,6 +92,7 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,10);
    const dailyPage=overseasIdeasPage();
    assert.ok(dailyPage.includes('再看 3 条') && dailyPage.includes('在原平台观看'));
+   assert.equal((dailyPage.match(/class="daily-title"/g)||[]).length,10);
    assert.equal((dailyPage.match(/class="daily-poster"/g)||[]).length,10);
    assert.ok(!dailyPage.includes('<iframe'));
    const noCover={...freshVideo,reference_video:{...freshVideo.reference_video,thumbnail:''}};
@@ -99,6 +100,9 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.ok(overseasDailyCard({...noCover,daily_poster:'/art/overseas/youtube-E8rFu6YYzsw.webp'}).includes('src="/art/overseas/youtube-E8rFu6YYzsw.webp"'));
    for(const label of ['今日新入选','片库精选','原文','参考拍法','检查新片','用这个创意创作','save-overseas-idea']) assert.ok(!dailyPage.includes(label));
    const dailyCard=overseasDailyCard({...translated,hook_zh:'她手里的纸板怎么少了一角？'});
+   const headline='<h3 class="daily-title" lang="zh-CN">世界上最笨的劫匪</h3>';
+   assert.ok(dailyCard.includes(headline) && dailyCard.indexOf(headline)<dailyCard.indexOf('class="daily-poster"'));
+   assert.ok(overseasDailyCard({...translated,title_zh:'',mechanism:'借位悬浮'}).includes('lang="zh-CN">借位悬浮</h3>'));
    assert.ok(dailyCard.includes('<strong>钩子</strong>她手里的纸板怎么少了一角？') && dailyCard.includes('<strong>创意</strong>完整的中文说明'));
    assert.ok(dailyCard.includes('完整的中文说明') && !dailyCard.includes('original') && !dailyCard.includes('Robbers'));
    assert.equal(overseasPlayerUrl(translated.reference_video.url),'https://www.tiktok.com/player/v1/7694716128580357398?autoplay=0&description=0&music_info=0');
