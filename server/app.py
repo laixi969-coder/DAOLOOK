@@ -329,7 +329,7 @@ class Handler(BaseHTTPRequestHandler):
                 headers={
                     "Cache-Control": "public, no-cache",
                     "ETag": etag,
-                    "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.instagram.com https://www.tiktok.com; frame-ancestors 'none'"
+                    "Content-Security-Policy": "default-src 'self'; img-src 'self' data: https:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-src https://www.youtube-nocookie.com https://www.instagram.com https://www.tiktok.com https://v.qq.com; frame-ancestors 'none'"
                 },
             )
         except (Error, Rejected) as e:
@@ -602,9 +602,11 @@ class Handler(BaseHTTPRequestHandler):
             saved=q.get('saved',['0'])[0]=='1'
             offset = q.get('offset',['0'])[0]
             if not re.fullmatch(r'[0-9]{1,8}',offset): raise Error('分页位置无效')
-            edition = overseas_daily.edition(overseas_feed.now())
+            scope = q.get('scope',['selected'])[0]
+            archive = scope == 'archive' and not saved
+            edition = overseas_daily.edition(overseas_feed.now(), q.get('edition',[''])[0] if archive else None)
             items = overseas_library.recommendations(project_id, query, q.get('category',[''])[0], saved,
-                        q.get('platform',['all'])[0], q.get('scope',['selected'])[0], q.get('industry',[''])[0],
+                        q.get('platform',['all'])[0], 'today' if archive else scope, q.get('industry',[''])[0],
                         q.get('publisher_type',[''])[0], edition)
             size = 120
             offset = min(int(offset) // size, max(0,len(items)-1) // size) * size
@@ -613,7 +615,8 @@ class Handler(BaseHTTPRequestHandler):
                               'previous_offset':offset-size if offset else None,
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'industries':overseas_library.INDUSTRIES, 'publisher_types':overseas_library.PUBLISHER_TYPES,
-                              'daily':{'day':edition['day'],'front_page':edition['front_page'],'count':len(edition['picks'])},
+                              'daily':{**{k:edition[k] for k in ('day','front_page','key','archive') if k in edition},
+                                       'count':len(edition['picks'])},
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),
                               'translation_pending':overseas_library.overseas_translation.pending(),

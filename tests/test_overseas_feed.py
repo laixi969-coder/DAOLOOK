@@ -51,6 +51,33 @@ class DailyVideoTests(unittest.TestCase):
         with patch.object(feed,'SOURCES',[SOURCE]),patch.object(feed,'now',return_value=day),patch.object(feed,'fetch',return_value=blob):
             return feed.refresh(force=force,background=False)
 
+    def test_published_playlist_and_previous_issue_are_separate_and_durable(self):
+        stamp = '2026-11-22T15:00:00+00:00'
+        with fixture.D.db() as c:
+            old = [case['url'] for case in overseas_visuals.CASES.values()][:12]
+            c.executemany('INSERT INTO overseas_daily_picks VALUES (?,?,?,0)',
+                          [('2026-11-22', n, url) for n, url in enumerate(old, 1)])
+        fixture.D.init()  # Upgrade a database containing the original day's positions.
+        with patch.object(feed, 'now', return_value=stamp):
+            def page(scope):
+                status, result = self.c.req('/api/overseas/ideas?project_id='+self.p+'&scope='+scope)
+                self.assertEqual(status, 200)
+                return result
+            new = page('today')['items']
+            self.assertEqual(len(new), 10)
+            self.assertEqual([v['daily_pick']['position'] for v in new], list(range(1,11)))
+            self.assertEqual(new[1]['url'], 'https://v.qq.com/txp/iframe/player.html?vid=h3375cu9wjv')
+            archived = page('archive')
+            self.assertEqual([v['url'] for v in archived['items']], old)
+            self.assertEqual(archived['daily']['key'], '2026-11-22.0')
+            self.sync(atom([]), stamp)
+            fixture.D.init()
+            self.assertEqual(page('today')['items'], new)
+            self.assertEqual(page('archive')['items'], archived['items'])
+        with patch.object(feed, 'now', return_value='2026-11-23T15:00:00+00:00'):
+            self.assertEqual(page('archive')['items'], new)
+            self.assertEqual(page('archive&edition=2026-11-22.0')['items'], archived['items'])
+
     def test_daily_sync_adds_real_new_entries_and_orders_by_publication(self):
         first=self.sync(atom([OLD]))
         self.assertEqual((first['state'],first['added_count'],first['pool_size']),('succeeded',1,1))

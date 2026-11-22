@@ -75,6 +75,7 @@ def init():
         CREATE TABLE IF NOT EXISTS overseas_translations(key TEXT PRIMARY KEY,translated TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS overseas_feed_state(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS overseas_daily_picks(day TEXT NOT NULL,position INTEGER NOT NULL,url TEXT NOT NULL,new_match INTEGER NOT NULL,PRIMARY KEY(day,position),UNIQUE(day,url));
+        CREATE TABLE IF NOT EXISTS overseas_editions(day TEXT NOT NULL,issue INTEGER NOT NULL,items TEXT NOT NULL,PRIMARY KEY(day,issue));
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE TABLE IF NOT EXISTS audit_events(id TEXT PRIMARY KEY,actor_id TEXT,action TEXT NOT NULL,target TEXT,details TEXT NOT NULL,request_id TEXT,created_at TEXT NOT NULL);
         CREATE INDEX IF NOT EXISTS idx_audit_time ON audit_events(created_at,id);
@@ -246,6 +247,8 @@ def init():
                     (uid(), name, version, prompt, "Published", now()),
                 )
             c.execute("INSERT INTO settings VALUES (?,'1')", (release_key,))
+        from . import overseas_editions
+        overseas_editions.install(c)
         c.execute('PRAGMA user_version=1')
 
 

@@ -82,22 +82,28 @@ function overseasPage() {
 function overseasIdeasPage() {
   const lib=S.overseasLibrary, filters=S.overseasFilters||{query:"",platform:"all"};
   const scope=filters.saved?"saved":(filters.scope||"today");
-  const tabs={today:"今日推荐",selected:"易拍片库",candidates:"全部候选",saved:"我的收藏"};
+  const today=scope==="today";
+  const archive=scope==="archive", playlist=today||archive;
+  const tabs={today:"今日推荐",archive:"往期推荐",selected:"易拍片库",candidates:"全部候选",saved:"我的收藏"};
   const updating=S.overseasRefreshing===workspaceKey() || lib?.refresh?.state==="running";
   const navigation=Object.entries(tabs).map(([id,label])=>`<button class="chip ${scope===id?"active":""}" aria-pressed="${scope===id}" data-action="overseas-tab" data-scope="${id}">${label}</button>`).join("");
   const actions=`<div class="actions"><button class="btn secondary" data-action="refresh-overseas-ideas" ${updating?"disabled":""}>${icon("refresh")}${updating?"正在检查…":"检查新片"}</button>${button("收集链接","collect-overseas","secondary","plus")}${button("开始海外创作","overseas","primary","spark")}</div>`;
-  const controls=`<section class="panel overseas-library-controls"><div class="overseas-library-tabs">${navigation}</div>${scope==="today"?"":overseasLibraryFilters(filters,lib)}${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`;
-  const header=heading("海外灵感","",scope==="today"?"":actions)+controls;
+  const controls=`<section class="${playlist?"overseas-daily-controls":"panel overseas-library-controls"}"><div class="overseas-library-tabs">${navigation}</div>${playlist?"":overseasLibraryFilters(filters,lib)}${S.overseasMessage?`<p class="notice" role="status">${esc(S.overseasMessage)}</p>`:""}</section>`;
+  const day=today && lib?.daily?.day;
+  const dateLabel=day?`<time class="daily-date" datetime="${esc(day)}">${esc(day)}</time>`:"";
+  const issues=lib?.daily?.archive||[];
+  const picker=archive && issues.length?`<select class="daily-archive-picker" id="overseas-edition" aria-label="选择往期片单">${issues.map(({key,day})=>`<option value="${esc(key)}" ${key===lib.daily.key?"selected":""}>${esc(day)}${key.endsWith(".0")?"":" · 更新 "+esc(key.split(".")[1])}</option>`).join("")}</select>`:"";
+  const header=heading("海外灵感","",playlist?picker||dateLabel:actions)+controls;
   if(!lib) return header+'<div class="loading-line">正在读取海外创意库…</div>';
-  const today=scope==="today", limit=lib.daily?.front_page||10;
+  const limit=lib.daily?.front_page||10;
   const expanded=filters.expandedDay && filters.expandedDay===lib.daily?.day;
   const visible=today&&!expanded?lib.items.slice(0,limit):lib.items;
   const status=scope==="candidates"?overseasFeedStatus(lib.refresh):"";
-  const label=today?lib.daily?.day||"":`${lib.total ?? lib.items.length} 条`;
-  let body=visible.length?`<div class="overseas-idea-grid">${visible.map(today?overseasDailyCard:overseasIdeaCard).join("")}</div>`:empty("暂时没有匹配的创意","可以去易拍片库查看其他拍法。",button("浏览易拍片库","overseas-tab","secondary","grid",'data-scope="selected"'));
+  const sectionHead=playlist?"":`<div class="section-head"><h2>${tabs[scope]} <span>${esc(String(lib.total ?? lib.items.length))} 条</span></h2></div>`;
+  let body=visible.length?`<div class="${playlist?"overseas-daily-grid":"overseas-idea-grid"}">${visible.map(playlist?overseasDailyCard:overseasIdeaCard).join("")}</div>`:archive?empty("暂无往期推荐","",button("回到今日推荐","overseas-tab","secondary","grid",'data-scope="today"')):empty("暂时没有匹配的创意","可以去易拍片库查看其他拍法。",button("浏览易拍片库","overseas-tab","secondary","grid",'data-scope="selected"'));
   if(today && !expanded && lib.items.length>limit) body+=`<div class="actions overseas-more">${button("再看 "+(lib.items.length-limit)+" 条","overseas-daily-more","secondary","arrow")}</div>`;
   if(lib.previous_offset!=null || lib.next_offset!=null) body+=`<div class="actions">${lib.previous_offset!=null?button("上一页","overseas-idea-page","secondary small","back",`data-offset="${lib.previous_offset}"`):""}${lib.next_offset!=null?button("下一页","overseas-idea-page","secondary small","arrow",`data-offset="${lib.next_offset}"`):""}</div>`;
-  return header+`<div class="section-head"><h2>${tabs[scope]} <span>${esc(String(label))}</span></h2></div>`+status+body;
+  return header+sectionHead+status+body;
 }
 function overseasLibraryFilters(f,lib) {
   const select=(id,label,all,values,selected)=>`<label class="field"><span>${label}</span><select id="${id}"><option value="">${all}</option>${Object.entries(values).map(([v,name])=>`<option value="${esc(v)}" ${selected===v?"selected":""}>${esc(name)}</option>`).join("")}</select></label>`;
@@ -123,6 +129,10 @@ function overseasPlayerUrl(link) {
   try { url=new URL(link); } catch { return ""; }
   if(url.protocol!=="https:" || url.username || url.password || url.port) return "";
   const host=url.hostname.replace(/^www\./,"");
+  if(url.hostname==="v.qq.com" && url.pathname==="/txp/iframe/player.html") {
+    const id=url.searchParams.get("vid")||"";
+    return /^[a-zA-Z0-9]{11}$/.test(id)?`https://v.qq.com/txp/iframe/player.html?vid=${id}`:"";
+  }
   if(host==="youtube.com" || host==="youtu.be") {
     const id=host==="youtu.be"?url.pathname.slice(1):url.pathname==="/watch"?url.searchParams.get("v"):url.pathname.match(/^\/shorts\/([^/]+)\/?$/)?.[1];
     return /^[\w-]{11}$/.test(id||"")?`https://www.youtube-nocookie.com/embed/${id}`:"";
@@ -138,13 +148,17 @@ function overseasPlayerUrl(link) {
   return "";
 }
 
-function overseasFrame(player,label) {
-  return `<iframe class="daily-player" src="${esc(player)}" title="${esc(label)}" loading="lazy" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+function overseasFrame(player,label,landscape=false) {
+  return `<iframe class="daily-player${landscape?" landscape-player":""}" src="${esc(player)}" title="${esc(label)}" loading="lazy" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>`;
+}
+
+function dailyVideoLink(item) {
+  return [item?.reference_video?.url,item?.url].find(link=>overseasPlayerUrl(link)) ||
+    [item?.reference_video?.url,item?.url].find(link=>/^https:\/\/(?:(?:(?:www|m)\.)?(?:youtube\.com|instagram\.com|tiktok\.com)|youtu\.be|(?:vm|vt)\.tiktok\.com)\//i.test(link||""));
 }
 
 function overseasDailyCard(item) {
-  const trusted=link=>/^https:\/\/(?:(?:(?:www|m)\.)?(?:youtube\.com|instagram\.com|tiktok\.com)|youtu\.be|(?:vm|vt)\.tiktok\.com)\//i.test(link||"");
-  const link=[item.reference_video?.url,item.url].find(trusted);
+  const link=dailyVideoLink(item);
   const player=link && overseasPlayerUrl(link);
   const chinese=text=>typeof text==="string" && /[\u3400-\u9fff]/.test(text);
   const payoff=item.mechanism==="实物错觉揭晓" ? "" : (item.idea_zh || item.visual_payoff);
@@ -155,14 +169,13 @@ function overseasDailyCard(item) {
   const label=position?`第 ${position} 条原片 · ${title}`:title;
   const image=item.daily_poster || item.reference_video?.thumbnail || "";
   const poster=/^\/art\/overseas\/[\w-]+\.webp$/.test(image) ? image : safeImage(image);
-  let media=player ? overseasFrame(player,label) : "";
-  if(poster && player) {
-    media=`<button type="button" class="daily-poster" data-action="play-overseas-video" data-id="${esc(item.id)}" aria-label="播放：${esc(label)}"><img src="${esc(poster)}" alt="${esc(title)}" loading="${position<=3?"eager":"lazy"}" referrerpolicy="no-referrer"><span aria-hidden="true">▶</span></button>`;
-  }
+  const source={tiktok:"TikTok",instagram:"Instagram",youtube:"YouTube",tencent:"腾讯视频"}[item.platform]||"原片";
+  const cover=poster?`<img src="${esc(poster)}" alt="" loading="${position<=3?"eager":"lazy"}" referrerpolicy="no-referrer">`:"";
+  const media=player?`<button type="button" class="daily-poster" data-action="play-overseas-video" data-id="${esc(item.id)}" aria-label="播放：${esc(label)}"><small aria-hidden="true">${source}</small>${cover}<span aria-hidden="true">▶</span></button>`:"";
   const original=link?`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(label)}，在原平台观看">在原平台观看 ↗</a>`:"";
   const notes=[["钩子",hook],["创意",idea]].filter(([,value])=>value)
     .map(([label,value])=>`<p><strong>${label}</strong>${esc(value)}</p>`).join("");
-  return `<article class="overseas-idea-card"><h3 class="daily-title" lang="zh-CN">${esc(title)}</h3>${media}${original}<div class="daily-notes" lang="zh-CN">${notes}</div></article>`;
+  return `<article class="overseas-idea-card"><h2 class="daily-title" lang="zh-CN">${esc(title)}</h2>${media}<div class="daily-notes" lang="zh-CN">${notes}</div>${original}</article>`;
 }
 
 function overseasIdeaCard(item) {
@@ -183,10 +196,12 @@ async function loadOverseasIdeas(background=false) {
   clearTimeout(overseasRefreshTimer);
   const key=workspaceKey(); const request=++S.overseasLoadToken;
   const f=S.overseasFilters;
-  const today=!f.saved && (f.scope||"today")==="today";
-  const params=new URLSearchParams({project_id:S.project,query:today?"":f.query,category:today?"":f.category,
-    platform:today?"all":f.platform,scope:f.saved?"selected":f.scope||"today",saved:f.saved?"1":"0",offset:String(today?0:f.offset||0),
-    industry:today?"":f.industry||"",publisher_type:today?"":f.publisher_type||""});
+  const today=!f.saved && (f.scope||"today")==="today", archive=!f.saved && f.scope==="archive";
+  const playlist=today||archive;
+  const params=new URLSearchParams({project_id:S.project,query:playlist?"":f.query,category:playlist?"":f.category,
+    platform:playlist?"all":f.platform,scope:f.saved?"selected":f.scope||"today",saved:f.saved?"1":"0",offset:String(playlist?0:f.offset||0),
+    industry:playlist?"":f.industry||"",publisher_type:playlist?"":f.publisher_type||""});
+  if(archive && f.edition) params.set("edition",f.edition);
   let keepPlayers=false;
   try {
     const library=await api("/api/overseas/ideas?"+params);
@@ -194,7 +209,7 @@ async function loadOverseasIdeas(background=false) {
     const previous=background && today && S.page==="overseas-ideas" && S.overseasLibrary ? overseasIdeasPage() : "";
     S.overseasLibrary=library;
     keepPlayers=Boolean(previous) && previous===overseasIdeasPage();
-    if(library.refresh?.daily && S.page==="overseas-ideas") {
+    if(!archive && library.refresh?.daily && S.page==="overseas-ideas") {
       overseasRefreshTimer=setTimeout(()=>{
         if(key===workspaceKey() && request===S.overseasLoadToken && S.page==="overseas-ideas") loadOverseasIdeas(true);
       },library.refresh.state==="running"||library.translation_pending?10000:600000);
@@ -328,12 +343,13 @@ Object.assign(actions,{
   overseas:()=>navigate("overseas"),"overseas-ideas":()=>navigate("overseas-ideas"),
   "play-overseas-video":el=>{
     const item=S.overseasLibrary?.items.find(i=>i.id===el.dataset.id);
-    const link=item?.reference_video?.url || item?.url;
+    const link=dailyVideoLink(item);
     const player=link && overseasPlayerUrl(link);
     if(!player)return;
     const src=new URL(player);
     if(src.hostname!=="www.instagram.com")src.searchParams.set("autoplay","1");
-    modal("观看原片",overseasFrame(src.href,"原片播放器")+`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在原平台观看 ↗</a>`);
+    const brand=/^https:\/\/weibo\.com\/\d+\/[a-zA-Z0-9]+$/.test(item.brand_post||"")?`<a class="video-watch" href="${esc(item.brand_post)}" target="_blank" rel="noopener noreferrer">品牌微博 ↗</a>`:"";
+    modal("观看原片",overseasFrame(src.href,item.title_zh||item.title||"原片播放器",item.landscape)+`<div class="actions"><a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在原平台观看 ↗</a>${brand}</div>`,item.landscape);
   },
   "refresh-overseas-ideas":refreshOverseasIdeas,
   "collect-overseas":collectOverseasModal,"search-overseas":searchOverseas,
@@ -365,6 +381,11 @@ Object.assign(actions,{
 document.addEventListener("input",e=>{if(e.target.closest?.("#overseas-form"))saveOverseasDraft();});
 document.addEventListener("change",e=>{if(e.target.closest?.("#overseas-form"))saveOverseasDraft();});
 document.addEventListener("change",async e=>{
+  if(e.target.id==="overseas-edition") {
+    S.overseasFilters.edition=e.target.value;
+    await loadOverseasIdeas();
+    return;
+  }
   if(e.target.id!=="overseas-material-files") return;
   try {await uploadOverseasMaterials(e.target);} catch(error) {e.target.value="";toast(error.message);}
 });
@@ -373,7 +394,5 @@ document.addEventListener("change",async e=>{
 document.addEventListener("error",event=>{
   const button=event.target.closest?.("button.daily-poster");
   if(!button || event.target.tagName!=="IMG")return;
-  const item=S.overseasLibrary?.items.find(i=>i.id===button.dataset.id);
-  const player=overseasPlayerUrl(item?.reference_video?.url || item?.url);
-  if(player)button.outerHTML=overseasFrame(player,button.getAttribute("aria-label"));
+  event.target.remove();
 },true);

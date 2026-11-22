@@ -5,7 +5,7 @@ import json
 import os
 from zoneinfo import ZoneInfo
 
-from . import overseas_visuals
+from . import overseas_editions, overseas_visuals
 from .db import db
 
 FRONT_PAGE = 10
@@ -24,6 +24,10 @@ def _stored(connection, day):
 
 def select(connection, stamp, persist, limit=EDITION_SIZE):
     day = day_for(stamp)
+    published = connection.execute('SELECT items FROM overseas_editions WHERE day=? AND issue>0 '
+                                   'ORDER BY issue DESC LIMIT 1', (day,)).fetchone()
+    if published:
+        return overseas_editions.unpack(day, published['items'], FRONT_PAGE)
     picks = _stored(connection, day)
     if picks:
         # A source can retract a post or change its description between checks.
@@ -81,11 +85,15 @@ def select(connection, stamp, persist, limit=EDITION_SIZE):
                                    [(day, p['position'], p['url'], p['new_match']) for p in picks[original_count:]])
             cutoff = (datetime.date.fromisoformat(day) - datetime.timedelta(days=180)).isoformat()
             connection.execute('DELETE FROM overseas_daily_picks WHERE day<?', (cutoff,))
+    if persist:
+        overseas_editions.save_automatic(connection, day, picks)
     return {'day':day, 'front_page':FRONT_PAGE, 'picks':picks}
 
 
-def edition(stamp):
+def edition(stamp, archive_key=None):
     # Before the scheduler finishes, show a preview from the last good pool. Opening
     # the page early must not lock yesterday's cache into today's permanent edition.
     with db() as connection:
+        if archive_key is not None:
+            return overseas_editions.archive(connection, day_for(stamp), archive_key, FRONT_PAGE)
         return select(connection, stamp, persist=False)

@@ -1005,15 +1005,38 @@ svg.icon {
 .overseas-feed-status { color: var(--ink-2); font-size: 13px; margin: 0 0 16px; }
 .overseas-idea-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; }
 .overseas-idea-card { border: 1px solid var(--line); border-radius: 13px; background: var(--panel); padding: 24px; min-width: 0; display: flex; flex-direction: column; }
-.daily-notes { line-height: 1.65; font-size: 14px; overflow-wrap: anywhere; }
-.daily-notes p { margin: 8px 0 0; }
+.heading:has(+ .overseas-daily-controls) { align-items: center; margin-bottom: 12px; }
+.daily-date { font-size: 13px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.daily-archive-picker { padding: 6px 10px; font-size: 13px; }
+.overseas-daily-controls { padding-bottom: 10px; margin-bottom: 14px; border-bottom: 1px solid var(--line); }
+.overseas-daily-controls .overseas-library-tabs { gap: 4px; }
+.overseas-daily-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 340px), 1fr));
+  gap: 12px;
+}
+.overseas-daily-grid > article { padding: 12px; gap: 8px; }
+.overseas-daily-grid > article:has(> .daily-poster) {
+  display: grid;
+  grid-template-columns: clamp(76px, 28%, 104px) minmax(0, 1fr);
+  grid-template-rows: auto 1fr auto;
+  column-gap: 12px;
+}
+.daily-title { margin: 0; font-size: 17px; line-height: 1.4; overflow-wrap: anywhere; }
+.overseas-daily-grid .daily-title, .daily-notes, .overseas-daily-grid .video-watch { grid-column: 2; }
+.daily-notes { line-height: 1.5; font-size: 14px; overflow-wrap: anywhere; }
+.daily-notes p { margin: 0; }
+.daily-notes p + p { margin-top: 5px; }
 .daily-notes strong { margin-right: .65em; color: var(--ink); }
-.daily-poster { position: relative; width: 100%; padding: 0; border: 0; border-radius: 8px; overflow: hidden; background: #111; cursor: pointer; }
-.daily-poster img { display: block; width: 100%; aspect-ratio: 3 / 4; object-fit: contain; }
-.daily-poster span { position: absolute; bottom: 10px; left: 10px; display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: #000b; color: white; }
+.daily-poster { grid-column: 1; grid-row: 1 / 4; align-self: start; position: relative; width: 100%; aspect-ratio: 9 / 16; padding: 0; border: 0; border-radius: 7px; overflow: hidden; background: #111; cursor: pointer; }
+.daily-poster small { position: absolute; inset: 0; display: grid; place-items: center; color: #f4f6e9; background: #314537; font-size: 13px; }
+.daily-poster img { position: absolute; inset: 0; display: block; width: 100%; height: 100%; object-fit: contain; background: #111; }
+.daily-poster span { position: absolute; bottom: 6px; left: 6px; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 50%; background: #000b; color: white; font-size: 12px; }
+.overseas-daily-grid .video-watch { justify-self: start; align-self: start; margin: 0; }
 .daily-player { width: 100%; max-width: 420px; height: min(550px, 65vh); border: 0; border-radius: 8px; align-self: center; }
+.dialog .daily-player { display: block; margin-inline: auto; }
+.dialog .landscape-player { max-width: none; height: auto; aspect-ratio: 16 / 9; }
 .overseas-idea-card h3 { margin: 0 0 12px; font-size: 18px; line-height: 1.5; overflow-wrap: anywhere; }
-.overseas-idea-card .daily-title { font-size: clamp(20px, 2vw, 23px); font-weight: 700; line-height: 1.3; text-wrap: balance; }
 .idea-summary { white-space: pre-wrap; line-height: 1.8; font-size: 14px; color: var(--ink-2); overflow-wrap: anywhere; }
 .idea-original, .video-original { white-space: pre-wrap; line-height: 1.7; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 .idea-original { margin: 8px 0 0; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -1045,7 +1068,9 @@ svg.icon {
 .overseas-shots table { min-width: 660px; }
 .overseas-shots td { white-space: pre-wrap; min-width: 140px; vertical-align: top; }
 @media (max-width: 1050px) { .overseas-idea-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
-@media (width > 760px) { .overseas-idea-card .daily-title { min-height: 2.6em; } }
+@media (max-width: 640px) {
+  .overseas-daily-controls .chip { padding-inline: 6px; flex: 1; }
+}
 @media (max-width: 760px) {
   .overseas-idea-grid { grid-template-columns: minmax(0, 1fr); }
   #overseas-filter-form .field { flex-basis: 100%; }

@@ -1,0 +1,78 @@
+{
+  "day": "2026-11-22",
+  "issue": 1,
+  "items": [
+    {
+      "id": "pick_cafe_seat", "platform": "tiktok", "publisher": "@leehoustonx",
+      "title": "咖啡馆里，哪个才是座位？",
+      "hook_zh": "男生已经坐下，邻座却把咖啡放在同款金属台上。",
+      "idea_zh": "他看了看邻座，又看了看自己，悄悄挪到台阶上。第二位客人的一个动作揭开了误会。",
+      "url": "https://www.tiktok.com/@leehoustonx/video/7703227788160961806"
+    },
+    {
+      "id": "pick_barbour_boots", "platform": "tencent", "publisher": "Barbour × Aardman", "landscape": true,
+      "title": "Barbour ×《超级无敌掌门狗》：穿雨靴的扶手椅",
+      "hook_zh": "华莱士坐着扶手椅出门，椅子下面装了一圈雨靴。",
+      "idea_zh": "轮子一转，整排雨靴真的迈开步子。品牌的产品成了这台散步机最有趣的零件。",
+      "url": "https://v.qq.com/txp/iframe/player.html?vid=h3375cu9wjv",
+      "daily_poster": "/art/overseas/tencent-h3375cu9wjv.webp",
+      "brand_post": "https://weibo.com/7587084373/RrFNeF0dT"
+    },
+    {
+      "id": "pick_balloon_bag", "platform": "tiktok", "publisher": "@inflatemyegoltd",
+      "title": "气球店老板的万圣节糖袋",
+      "hook_zh": "有人上门讨糖，老板的手又伸进袋子里放了一样东西。",
+      "idea_zh": "糖果里多了一张气球店名片。一个小动作就让人看懂了这位老板的生意经。",
+      "url": "https://www.tiktok.com/@inflatemyegoltd/video/7702365438461758742"
+    },
+    {
+      "id": "pick_trueclassic_robot", "platform": "instagram", "publisher": "True Classic",
+      "title": "True Classic：AI 接了我的班",
+      "hook_zh": "女员工走进办公室，看到接班的人，停在门口。",
+      "idea_zh": "镜头切到工位：机器人已经把脚架上桌，正在刷手机。它连摸鱼也学会了。",
+      "url": "https://www.instagram.com/reel/DfVxC3NPm6m/"
+    },
+    {
+      "id": "pick_book_return", "platform": "youtube", "publisher": "Vancouver Public Library", "landscape": true,
+      "title": "温哥华公共图书馆：跟一本书去还书",
+      "hook_zh": "相机绑在书上，跟着它一起滑进还书口。",
+      "idea_zh": "读者从书的视角穿过自动分拣线，看到平时被一面墙挡住的那段旅程。",
+      "url": "https://www.youtube.com/watch?v=V0MQyxgA1gA"
+    },
+    {
+      "id": "pick_villain_chair", "platform": "tiktok", "publisher": "@mattfletcher14",
+      "title": "反派出场，椅背却倒得太远",
+      "hook_zh": "他慢慢转过椅子，准备说出反派台词。",
+      "idea_zh": "椅背比预想中多仰了一截。刚摆好的威风，被一个小失误打断。",
+      "url": "https://www.tiktok.com/@mattfletcher14/video/7706318596535799054"
+    },
+    {
+      "id": "pick_clinic_counter", "platform": "tiktok", "publisher": "@rgvorthodontics",
+      "title": "正畸诊所：顾客说要一次付清",
+      "hook_zh": "钱刚滑过柜台，前台已经挥起了写字板。",
+      "idea_zh": "第三个同事从画外冲进来，几个人先后庆祝，把前台的小心思全演了出来。",
+      "url": "https://www.tiktok.com/@rgvorthodontics/video/7709232808635452702"
+    },
+    {
+      "id": "pick_office_door", "platform": "tiktok", "publisher": "@3cubedcoworking",
+      "title": "老板特地把你叫进办公室，有什么大事？",
+      "hook_zh": "员工走到老板面前，等着听任务。",
+      "idea_zh": "老板只想让人关上那扇门。刚刚走过的那几步，就是整条片子的笑点。",
+      "url": "https://www.tiktok.com/@3cubedcoworking/video/7701023988788579598"
+    },
+    {
+      "id": "pick_billboard_coffee", "platform": "youtube", "publisher": "Zach King × 雀巢",
+      "title": "Zach King × 雀巢：从广告牌里端出冰咖啡",
+      "hook_zh": "Zach 站在广告屏里，伸手去旁边几块屏幕借原料。",
+      "idea_zh": "最后一递，调好的冰咖啡从画面里到了街上。杯子经过屏幕边缘的瞬间最值得看。",
+      "url": "https://www.youtube.com/watch?v=hjIMl7blxao"
+    },
+    {
+      "id": "pick_gloria_pickles", "platform": "youtube", "publisher": "John Lewis", "landscape": true,
+      "title": "John Lewis：奶奶给了孩子一个空信封",
+      "hook_zh": "奶奶本想把现金塞进贺卡，孩子拆开时里面却是空的。",
+      "idea_zh": "她这才亮出一把钥匙，带孩子打开房门，看到专门为他们准备的圣诞惊喜。",
+      "url": "https://www.youtube.com/watch?v=CbdvIoLx_BQ"
+    }
+  ]
+}
