@@ -3,6 +3,7 @@ WORKDIR /app
 COPY server ./server
 COPY web ./web
 COPY scripts ./scripts
+COPY docs/examples/open-desk-saturday.json ./docs/examples/open-desk-saturday.json
 RUN useradd -m daolook && mkdir -m 700 data && chown daolook:daolook data
 USER daolook
 ENV HOST=0.0.0.0 PORT=8000 DAOLOOK_DB=/app/data/daolook.db

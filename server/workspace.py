@@ -5,9 +5,10 @@ import json
 import os
 import statistics
 from zoneinfo import ZoneInfo
+from . import result_imports
 from .db import db
 from .ranking import score
-from . import catalog, production
+from . import catalog, delivery_metrics, draft_sources, editing, production
 
 COLLECTIONS={'sources':'source_contents','creations':'creation_outputs','assets':'assets','images':'generated_images'}
 
@@ -24,17 +25,23 @@ def source_view(c,row):
     return value
 
 
-def creation_view(c,row):
+def creation_view(c,row,review_facts=False,source_versions=None):
     value=dict(row);ident=value['id']
     value['data']=json.loads(value['data'])
     value['revision']=c.execute('SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?',(ident,)).fetchone()[0]
-    ready=c.execute('SELECT confirmed_at FROM creation_readiness WHERE creation_id=? AND revision=?',(ident,value['revision'])).fetchone()
-    value['ready_at']=ready[0] if ready else None
-    value['tracking']=production.row_view(c.execute('SELECT * FROM creation_tracking WHERE creation_id=?',(ident,)).fetchone())
+    value['source_digest'] = draft_sources.signature(c, ident, row['project_id'], row['task_id'], source_versions)
+    ready=c.execute('SELECT confirmed_at,source_digest FROM creation_readiness WHERE creation_id=? AND revision=?',(ident,value['revision'])).fetchone()
+    value['readiness_stale'] = bool(ready and ready['source_digest'] != value['source_digest'])
+    value['ready_at']=ready['confirmed_at'] if ready and not value['readiness_stale'] else None
+    value['tracking']=production.row_view(c.execute('SELECT * FROM creation_tracking WHERE creation_id=?',(ident,)).fetchone(), result_imports.binding(c,ident))
     results=c.execute('SELECT data,updated_at FROM creation_results WHERE creation_id=?',(ident,)).fetchone()
     value['results']={**json.loads(results[0]),'recorded_at':results[1]} if results else {}
     if 'windows' in value['results']:
         value['results']['windows'] = production.current_windows(value['results'],value['tracking'].get('published_at'))
+    if value['readiness_stale'] or (review_facts and value['tracking']['status'] != 'published' and not results):
+        platform = c.execute('SELECT platform FROM source_contents WHERE id=?', (row['source_id'],)).fetchone()
+        if platform:
+            value['data'] = editing.with_current_facts(c, ident, row['project_id'], value['data'], platform[0], value['revision'])
     return value
 
 
@@ -57,17 +64,21 @@ def stats(project):
     （演示稿不进入效果数字，与看板原口径一致）。
     """
     with db() as c:
+        c.execute('BEGIN')
         rows = c.execute(
             "SELECT s.platform AS platform,o.data AS data,o.created_at AS created_at,"
             "k.status AS status,k.published_at,k.account_id,f.data AS result,o.task_id,t.created_at AS submitted_at,"
-            "v.first_confirmed_at FROM creation_outputs o "
+            "v.first_confirmed_at,b.traffic_type,a.name AS account_name FROM creation_outputs o "
             "JOIN source_contents s ON s.id=o.source_id "
             "LEFT JOIN creation_tracking k ON k.creation_id=o.id "
+            "LEFT JOIN publication_bindings b ON b.creation_id=o.id AND b.account_id=k.account_id "
+            "LEFT JOIN assets a ON a.id=k.account_id AND a.project_id=o.project_id AND a.kind='账号' "
             "LEFT JOIN creation_results f ON f.creation_id=o.id "
             "LEFT JOIN tasks t ON t.id=o.task_id LEFT JOIN creation_readiness v ON v.creation_id=o.id "
             "WHERE o.project_id=? AND o.deleted_at IS NULL",
             (project,),
         ).fetchall()
+        cohort = delivery_metrics.project_report(c, project)
     timezone = ZoneInfo(os.environ.get('DAOLOOK_DISPLAY_TIMEZONE', 'Asia/Shanghai'))
     today = datetime.datetime.now(timezone).date()
     value = {
@@ -79,8 +90,9 @@ def stats(project):
         "metric_counts": {"views": 0, "leads": 0, "orders": 0},
         "delivery": {"formal": 0, "published": 0},
         "account_published": {},
+        "cohort": cohort,
     }
-    first_ready, groups = {}, {}
+    first_ready, groups, by_account = {}, {}, {}
     for row in rows:
         data = json.loads(row["data"])
         try:
@@ -119,7 +131,10 @@ def stats(project):
             result = json.loads(row["result"])
             windows = production.current_windows(result, row['published_at'])
             for period, snapshot in windows.items():
-                production.add_goal_window(groups, data.get('target_platform') or row['platform'], data.get('goal'), period, snapshot)
+                platform, goal = data.get('target_platform') or row['platform'], data.get('goal')
+                production.add_goal_window(groups, platform, goal, period, snapshot)
+                key = (row['account_id'], row['account_name'], row['traffic_type'] or 'unknown')
+                production.add_goal_window(by_account.setdefault(key, {}), platform, goal, period, snapshot)
             known = [k for k in ("views", "leads", "orders") if type(result.get(k)) is int]
             if known or type(result.get('spend')) in (int, float) or windows:
                 value["results"]["recorded"] += 1
@@ -128,6 +143,12 @@ def stats(project):
                     value["results"][key] += result[key]
     value['delivery'].update(confirmed_batches=len(first_ready), first_ready_seconds=statistics.median(first_ready.values()) if first_ready else None)
     value['goal_windows'] = sorted(groups.values(), key=lambda g:(g['platform'],g['goal'],production.WINDOWS[g['window']]))
+    value['account_goal_windows'] = sorted(
+        ({**group, 'account_id': account_id, 'account_name': name, 'traffic_type': traffic}
+         for (account_id, name, traffic), metrics in by_account.items() for group in metrics.values()),
+        key=lambda g: (g['account_name'] or '', g['account_id'] or '', g['traffic_type'], g['platform'],
+                       g['goal'], production.WINDOWS[g['window']]),
+    )
     return value
 
 
@@ -144,6 +165,8 @@ def page(project,raw='',limit=25):
         except Exception:raise ValueError('分页游标无效')
     result={name:[] for name in (*COLLECTIONS,'briefs')};next_cursors={};more=False
     with db() as c:
+        c.execute('BEGIN')
+        source_versions = {}
         for name,table in COLLECTIONS.items():
             previous=cursors.get(name)
             if previous is False:
@@ -167,18 +190,22 @@ def page(project,raw='',limit=25):
                     value=source_view(c,row)
                     result['briefs' if value['data'].get('kind')=='brief' else 'sources'].append(value)
                     continue
-                if name=='creations':value=creation_view(c,row)
+                if name=='creations':value=creation_view(c,row,source_versions=source_versions)
                 else:value=dict(row)
                 if name=='assets' and value['kind']=='图片':
                     value['content']=f"/api/media/assets/{value['id']}?project_id={project}"
                 if name=='images':
                     value=image_view(row,project)
                 result[name].append(value)
+        if not raw:
+            result['feedback_accounts'] = result_imports.account_summary(c, project)
         if result['assets']:
             placeholders=','.join('?'*len(result['assets']))
             by_asset={}
             for row in c.execute(
-                f"SELECT asset_id,category,fact,quote,demo,updated_at FROM asset_facts WHERE project_id=? AND asset_id IN ({placeholders})",
+                f"SELECT f.asset_id,f.category,f.fact,f.quote,f.demo,f.updated_at FROM asset_facts f "
+                f"JOIN assets a ON a.id=f.asset_id AND a.kind NOT IN ('图片','禁用词') AND instr(a.content,f.quote)>0 "
+                f"WHERE f.project_id=? AND f.asset_id IN ({placeholders})",
                 [project,*[a['id'] for a in result['assets']]],
             ):
                 by_asset.setdefault(row['asset_id'],[]).append(

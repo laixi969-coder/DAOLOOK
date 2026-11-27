@@ -4,6 +4,7 @@
 """
 
 import datetime, re, time
+from decimal import Decimal
 from . import ranking
 
 TIME_KEYS = ("create_time", "publish_time", "time", "last_update_time", "timestamp")
@@ -14,14 +15,17 @@ def parse_count(value):
     if value is None or isinstance(value, bool):
         return None
     if isinstance(value, (int, float)):
-        return int(value) if value >= 0 else None
-    text = str(value).strip().replace(",", "").replace("+", "").lower()
-    match = re.fullmatch(r"(\d+(?:\.\d+)?)\s*(万|w|亿|k|千)?", text)
+        return int(value) if 0 <= value <= 2**63 - 1 else None
+    text = str(value).strip().lower()
+    match = re.fullmatch(r"(\d{1,3}(?:,\d{3})+|\d+)(\.\d+)?\s*(万|w|亿|k|千)?\+?", text)
     if not match:
         return None
-    number = float(match.group(1))
-    unit = {"万": 1e4, "w": 1e4, "亿": 1e8, "k": 1e3, "千": 1e3}.get(match.group(2), 1)
-    return int(round(number * unit))
+    number = Decimal(match.group(1).replace(",", "") + (match.group(2) or ""))
+    unit = {"万": 10000, "w": 10000, "亿": 100000000, "k": 1000, "千": 1000}.get(match.group(3), 1)
+    if number > 2**63 - 1:
+        return None
+    scaled = number * unit
+    return round(scaled) if scaled <= 2**63 - 1 else None
 
 
 def parse_age_days(node, now=None):
@@ -147,26 +151,30 @@ def pick(items, limit, field, value):
         result = ranking.score(candidate)
         candidate["selection"] = {
             "score": result["score"],
+            "evidence_status": result["evidence_status"],
             "baseline_field": field,
             "baseline": value,
             "pool": len(items),
             "rank_source": order + 1,
         }
-        scored.append((result["score"] is None, -(result["score"] or 0), order, candidate))
-    scored.sort(key=lambda x: x[:3])
-    return [x[3] for x in scored[:limit]]
+        key = (result["evidence_status"] == "needs_metrics", result["score"] is None, -(result["score"] or 0), order)
+        scored.append((key, candidate))
+    scored.sort(key=lambda pair: pair[0])
+    return [candidate for _, candidate in scored[:limit]]
 
 
 def benchmark_from(items, keyword, provider, limit=5):
     """自主创作的赛道参考：基线 + 按相对表现取前 N 条样本（只留标题与公开指标）。"""
     base = baseline(items)
     chosen = pick(items, limit, "category_median", base)
+    measured = [c for c in chosen if c["selection"]["evidence_status"] == "measured"]
     keep = ("title", "likes", "saves", "comments", "followers", "age_days", "url")
     return {
         "keyword": keyword,
         "provider": provider,
         "pool": len(items),
         "baseline": base,
-        "examples": [{k: c.get(k) for k in keep} for c in chosen],
-        "note": "",
+        "examples": [{k: c.get(k) for k in keep} for c in measured],
+        "unverified_count": sum(ranking.engagement(i) is None for i in items),
+        "note": "部分候选缺少公开互动，未作为表现依据。" if len(measured) < min(limit, len(items)) else "",
     }

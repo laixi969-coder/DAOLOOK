@@ -138,6 +138,30 @@ class AccessBudgetReviewTests(unittest.TestCase):
                 adapters.request_json('https://example.com/api', billing='tikhub')
             opener.assert_not_called()
 
+    def test_model_estimates_retain_original_prices_and_count_retry_once(self):
+        admin = self.account(role="admin")
+        task = database.uid()
+        operation = "model:test/a"
+        with database.db() as c:
+            c.execute("INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                      (task,admin,None,"original","GENERATING",'{}',None,None,0,None,None,database.now(),database.now()))
+            c.execute("INSERT INTO task_model_metrics(task_id,mode,metered) VALUES (?,'live',1)",(task,))
+        prices = {operation:{"input_per_million":1000000,"output_per_million":2000000,"per_call":3}}
+        with patch.dict(os.environ,{"DAOLOOK_EXTERNAL_PRICES":json.dumps(prices),
+                                   "DAOLOOK_DAILY_BUDGET_MICROUSD":"50000","DAOLOOK_USER_DAILY_BUDGET_MICROUSD":"50000"}), spending.scope(admin,task,paid=True):
+            req={"messages":[{"role":"user","content":"hello"}],"max_tokens":100}
+            first=spending.reserve(operation,req)
+            spending.finish(first,failed=True)
+            with spending.model_attempt(True):
+                second=spending.reserve(operation,req)
+        for _ in range(2):
+            spending.finish(second,{"usage":{"prompt_tokens":4,"completion_tokens":7}})
+        with database.db() as c:
+            row=c.execute("SELECT * FROM task_model_metrics WHERE task_id=?",(task,)).fetchone()
+            self.assertEqual((row["calls"],row["retries"],row["usage_calls"],row["estimated"]),(2,1,1,21))
+            self.assertEqual((row["input_tokens"],row["output_tokens"]),(4,7))
+            self.assertGreater(row["reserved"], row["estimated"])
+
     def test_demo_task_scope_refuses_real_transport_even_for_admin(self):
         admin = self.account(role='admin')
         with spending.scope(admin, paid=False), patch.object(adapters, 'public_opener') as opener:

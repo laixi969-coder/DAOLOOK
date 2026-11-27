@@ -76,6 +76,8 @@ def evidence(content, ranking):
             "creator": "来自指定博主的近期作品，按相对表现精选。",
             "keyword": "来自关键词搜索结果，按相对表现精选。",
         }[entry]
+        if selection.get("evidence_status") == "needs_metrics":
+            lines[0] = "待核实候选：原列表缺少公开互动，按来源原序补位。"
         pool = selection.get("pool")
         base = selection.get("baseline")
         basis = "账号近期互动中位数" if entry == "creator" else "同批搜索结果互动中位数"
@@ -99,6 +101,8 @@ def evidence(content, ranking):
         if used
         else "互动等数据不足，暂不能计算相对表现。"
     )
+    if ranking.get("evidence_status") == "needs_metrics" and not selection:
+        lines.append("缺少公开互动，列为待核实候选。")
     missing = [
         label
         for key, label in (

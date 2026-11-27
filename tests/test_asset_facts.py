@@ -143,6 +143,44 @@ class AssetFactsTests(unittest.TestCase):
                 c.execute("SELECT count(*) FROM asset_facts WHERE asset_id=?", (asset["id"],)).fetchone()[0], 0
             )
 
+    def test_changed_asset_cannot_reuse_pending_or_inflight_facts(self):
+        _, asset = self.post("/api/assets", {"name": "产品", "kind": "产品信息", "content": PRODUCT})
+        jobs.run(self.latest_facts_task())
+        _, resp = self.post(f"/api/assets/{asset['id']}/facts", {})
+        old_job = resp["task_ids"][0]
+        old_text = {"id":asset["id"], "name":"产品", "kind":"产品信息", "content":PRODUCT}
+        new_text = {**old_text, "content": "山野咖啡，两盒新包装，售价89元。"}
+        original_extract = adapters.extract_facts
+
+        def replace_during_extraction(loaded, version, demo):
+            status, _ = self.c.req(f"/api/assets/{asset['id']}", "PATCH", {**new_text, "project_id": self.p})
+            self.assertEqual(status, 200)
+            self.assertEqual(next(a["facts"] for a in self.ws()["assets"] if a["id"] == asset["id"]), [])
+            # The new text gets its own task and can finish first.
+            new_job = self.latest_facts_task()
+            self.assertNotEqual(old_job, new_job)
+            with patch.object(adapters, "extract_facts", side_effect=original_extract):
+                jobs.run(new_job)
+            return original_extract(loaded, version, demo)
+
+        with patch.object(adapters, "extract_facts", side_effect=replace_during_extraction):
+            with self.assertRaisesRegex(ValueError, "版本已变化"):
+                jobs.run(old_job)
+        with D.db() as c:
+            self.assertEqual(jobs.selected_facts(c, [old_text]), [])
+            facts = jobs.selected_facts(c, [new_text])
+            self.assertTrue(facts)
+            self.assertTrue(all(f["quote"] in new_text["content"] for f in facts))
+
+        _, resp = self.post(f"/api/assets/{asset['id']}/facts", {})
+        status, _ = self.c.req(f"/api/assets/{asset['id']}", "PATCH", {**new_text, "kind":"禁用词", "project_id":self.p})
+        self.assertEqual(status, 200)
+        with patch.object(adapters, "extract_facts") as extract:
+            with self.assertRaisesRegex(ValueError, "不再适合"):
+                jobs.run(resp["task_ids"][0])
+            extract.assert_not_called()
+        self.assertEqual(next(a["facts"] for a in self.ws()["assets"] if a["id"] == asset["id"]), [])
+
     def formal_account(self):
         user = app.new_user("formal@facts.test", "test-password-123")
         self.c.req("/api/auth/login", "POST", {"email": "formal@facts.test", "password": "test-password-123"})

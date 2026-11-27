@@ -1,9 +1,9 @@
-import json, os, urllib.request, urllib.parse, urllib.error, html, base64, re, copy
+import json, os, urllib.request, urllib.parse, urllib.error, html, base64, re
 import http.client, ipaddress, socket, time
 import contextvars
 from contextlib import contextmanager
 from .db import setting, db
-from . import discovery, spending, secret_store, resource_limits, questions
+from . import discovery, spending, secret_store, resource_limits, questions, editing
 
 # 单次创作的批量是 6 到 8 篇，不是每日上限。
 CREATION_MIN = 6
@@ -638,7 +638,7 @@ def candidates(kind):
 
 
 def model_json(prompt, schema, version, kind="analyze", validator=None):
-    options = candidates(kind)
+    options = candidates("create" if kind == "rewrite" else kind)
     if not options:
         raise ValueError("请管理员配置并启用对应任务的模型")
     prompt = json.loads(json.dumps(prompt))
@@ -670,17 +670,18 @@ def model_json(prompt, schema, version, kind="analyze", validator=None):
         for attempt in range(min(3, setting("limits").get("retries", 1) + 1)):
             ensure_task_active()
             try:
-                result = request_json(
-                    cfg["base_url"].rstrip("/") + "/chat/completions",
-                    cfg["api_key"],
-                    {
-                        "model": model,
-                        "messages": messages,
-                        "response_format": {"type": "json_object"},
-                        "max_tokens": resource_limits.MAX_OUTPUT_TOKENS,
-                    },
-                    setting("limits")["timeout"], billing="model:"+pid+"/"+model,
-                )
+                with spending.model_attempt(bool(errors)):
+                    result = request_json(
+                        cfg["base_url"].rstrip("/") + "/chat/completions",
+                        cfg["api_key"],
+                        {
+                            "model": model,
+                            "messages": messages,
+                            "response_format": {"type": "json_object"},
+                            "max_tokens": resource_limits.MAX_OUTPUT_TOKENS,
+                        },
+                        setting("limits")["timeout"], billing="model:"+pid+"/"+model,
+                    )
                 parsed = json.loads(result["choices"][0]["message"]["content"])
                 if validator:
                     try:
@@ -1237,40 +1238,90 @@ def extract_facts(asset, version, demo=False):
     return demo_facts(content), "demo"
 
 
-def validate_rewrite(result, p):
-    """单条定向重写的结构校验：返回一条结构完整的稿件。"""
-    output = result.get("output") if isinstance(result, dict) else None
-    if not isinstance(output, dict):
-        raise ValueError("必须返回改写后的单条稿件")
-    _validate_output_fields(output, p)
-    return output
+def rewrite_comments(reply, existing):
+    """Read only comment copy from both editor and original creation formats."""
+    updates = {}
+    layout = reply.get("comment_layout", {})
+    if not isinstance(layout, dict):
+        raise ValueError("评论布局格式不正确")
+    for key in ("atmosphere", "knowledge"):
+        if key in layout:
+            lines = layout[key]
+            if not isinstance(lines, list) or any(not isinstance(line, str) for line in lines):
+                raise ValueError("评论组需要使用文字列表")
+            updates[key] = "\n".join(lines)
+    if "pinned" in layout:
+        if not isinstance(layout["pinned"], dict):
+            raise ValueError("置顶评论格式不正确")
+        if "text" in layout["pinned"]:
+            updates["pinned"] = layout["pinned"]["text"]
+    modern = reply.get("comments", {})
+    if not isinstance(modern, dict):
+        raise ValueError("评论修改需要注明气氛、知识或置顶评论")
+    return {**existing, **updates, **modern}
 
 
-def demo_rewrite(output, instruction):
-    """演示重写模板：明确标注未调用模型，不冒充真实改写。"""
-    draft = copy.deepcopy(output)
-    note = f"（演示重写 · 指令「{instruction[:24]}」：接入真实模型后才会按指令改写）"
-    draft["body"] = note + "\n" + (draft.get("body") or "")
-    quality = draft.get("quality") if isinstance(draft.get("quality"), dict) else {}
-    quality["note"] = "演示模式重写：模板输出，不代表模型改写结果。"
-    draft["quality"] = quality
-    return draft
+def rewrite(output, instruction, version, p, demo=False, assets=()):
+    """Apply bounded writing and production-copy edits to the stored draft."""
+    if demo:
+        note = f"（演示重写 · 指令「{instruction[:24]}」：接入真实模型后才会按指令改写）"
+        changes = {"body": note + "\n" + output.get("body", "")}
+        return editing.edited_data({**output, "demo": True}, changes, p, assets), "demo"
 
+    fields = {*editing.FIELDS, *editing.REWRITE_LISTS, "tags"}
+    if "script" in output:
+        fields.add("script")
+    draft = {key: value for key, value in output.items() if key in fields}
+    layout = output.get("comment_layout")
+    if layout:
+        draft["comments"] = {
+            "atmosphere": "\n".join(layout.get("atmosphere", [])),
+            "knowledge": "\n".join(layout.get("knowledge", [])),
+            "pinned": (layout.get("pinned") or {}).get("text", ""),
+        }
+    context = {key: output[key] for key in ("goal", "audience", "value", "direction", "role", "angle") if key in output}
+    rewritten = None
 
-def rewrite(output, instruction, version, p, demo=False):
-    """单条定向重写（内容效果升级·第一优先）：只按指令改这一条，不引入新事实。"""
-    if not demo:
-        result, model = model_json(
-            {"draft": output, "instruction": instruction},
-            {"output": creation_example(p)},
-            version,
-            "create",
-            lambda r: validate_rewrite(r, p),
-        )
-        new_output = result["output"]
-        new_output.pop("demo", None)
-        return questions.mark_edited(new_output, output), model
-    return questions.mark_edited(demo_rewrite(output, instruction), output), "demo"
+    def merge(result):
+        nonlocal rewritten
+        reply = result.get("output") if isinstance(result, dict) else None
+        if not isinstance(reply, dict):
+            raise ValueError("请返回本次修改的文案字段")
+        changes = {key: value for key, value in reply.items() if key in fields and value != draft.get(key)}
+        if "comments" in draft and ("comments" in reply or "comment_layout" in reply):
+            comments = rewrite_comments(reply, draft["comments"])
+            if comments != draft["comments"]:
+                changes["comments"] = comments
+        if not changes:
+            raise ValueError("文案未发生修改，请按指令修改可编辑字段")
+        updated = editing.edited_data(output, changes, p, assets, rewrite=True)
+        if updated == output:
+            raise ValueError("文案未发生修改，请按指令修改可编辑字段")
+        rewritten = updated
+
+    instructions = (version + "\n本次仅返回 output 中实际修改的文案或拍摄制作字段，字段形状见 draft。"
+                    "保留其他原稿内容。仅使用 assets 中可核对的业务事实，资料不足时省略对应表述。"
+                    "保持原目标和写作方向，不在公开文案使用占位符。")
+    properties = {key: {"type":"string", "maxLength":limit} for key, limit in editing.FIELDS.items()}
+    if "script" in draft:
+        properties["script"] = {"type":"string", "maxLength":30000}
+    for key, (count, length) in {**editing.REWRITE_LISTS, "tags":(20, 60)}.items():
+        properties[key] = {"type":"array", "maxItems":count, "items":{"type":"string", "maxLength":length}}
+    if p == "xhs":
+        properties["titles"].update(minItems=3, maxItems=3)
+    if "comments" in draft:
+        properties["comments"] = {"type":"object", "additionalProperties":False,
+                                  "properties":{key:{"type":"string", "maxLength":4000} for key in draft["comments"]}}
+    schema = {"type":"object", "required":["output"], "properties":{"output":{
+        "type":"object", "minProperties":1, "additionalProperties":False, "properties":properties,
+    }}}
+    result, model = model_json(
+        {"draft": draft, "context": context, "instruction": instruction, "assets": list(assets)},
+        schema, instructions, "rewrite", merge,
+    )
+    if rewritten is None:
+        merge(result)
+    return rewritten, model
 
 
 def cover(output, direction, demo=None):

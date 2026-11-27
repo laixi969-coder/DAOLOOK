@@ -312,9 +312,15 @@ async function test(name,code) {
     assert.match(html,/备选稿/);assert.match(html,/拍摄清单/);assert.match(html,/可用的评论回复/);
     assert.match(html,/发布前需核对/);assert.match(html,/复制待核对稿/);assert.match(html,/确认可发布/);
     items[0].ready_at="2026-01-01";assert.ok(creationSelection(items).includes("这版稿件已由你确认可发布"));
-    const calls=[];api=async(path,opt)=>{calls.push([path,JSON.parse(opt.body)]);return {};};refresh=async()=>{};
+    const calls=[];api=async(path,opt)=>{if(!opt)return {...items[0]};calls.push([path,JSON.parse(opt.body)]);return {};};refresh=async()=>{};
+    items[0].source_digest="reviewed-source-version";
     S.workspace.creations=items;await actions["confirm-ready"]({dataset:{id:items[0].id}});
     assert.equal(calls[0][0],"/api/creations/未核对稿/ready");assert.equal(calls[0][1].revision,0);
+    assert.equal(calls[0][1].source_digest,items[0].source_digest);
+    const newer={...items[0],source_digest:"changed-price"};
+    api=async(path,opt)=>{assert.equal(opt,undefined);return newer;};
+    await actions["confirm-ready"]({dataset:{id:items[0].id}});
+    assert.equal(items[0].source_digest,"changed-price");
   `);
   await test('board shows an explicit zero only for a measured metric and uses matched views',`
     S.workspace={sources:[],briefs:[],assets:[{kind:"账号",id:"acc",name:"总店"}],images:[],stats:{
@@ -326,6 +332,19 @@ async function test(name,code) {
     assert.ok(html.includes("浏览次数</p><strong>0</strong>"));assert.ok(html.includes("订单数</p><strong>—</strong>"));
     assert.ok(html.includes("25%"));assert.ok(html.includes("2 分钟"));assert.ok(html.includes("5.0 咨询/千次浏览（2 篇）"));
     assert.ok(html.includes("已发 25"));
+  `);
+  await test('mature release cohorts and comparable accounts display their denominators',`
+    const c={batches:4,published_batches:1,confirmed_batches:2,confirmed_drafts:3,
+      seven_day_posts:2,seven_day_filled:0,manual_revisions:2,timed_revisions:1,median_edit_minutes:0,
+      unknown_batches:1,model:{calls:2,retries:1,input_tokens:25,output_tokens:10,
+      usage_calls:1,metered_tasks:3,tasks:4,per_confirmed_microusd:null}};
+    const html=cohortOverview(c);
+    assert.ok(html.includes("25%（1/4）") && html.includes("0%（0/2）") && html.includes("0 分钟"));
+    assert.ok(html.includes("估算模型费</p><strong>—"));
+    const group={account_id:"account",account_name:"分店<一>",platform:"xhs",goal:"sales",window:"7d",
+      traffic_type:"paid",posts:2,total:2,paired_views:90,paired_actions:2,paired_posts:1};
+    const table=goalWindowTable([group],true);
+    assert.ok(table.includes("分店&lt;一&gt;") && table.includes("含付费流量"));
   `);
   await test('results editor preserves unknowns, prevents accidental loss and saves the selected window',`
     const pub="2020-01-01T12:00:00Z";const draft={id:"c",tracking:{status:"published",published_at:pub},
@@ -343,5 +362,53 @@ async function test(name,code) {
     assert.equal(payload.window,"24h");assert.equal(payload.results.leads,0);assert.equal(payload.results.views,31);
     assert.equal("orders" in payload.results,false);assert.equal(payload.expected_updated_at,"v1");assert.equal(payload.expected_published_at,pub);
   `);
-  console.log('Frontend review regressions passed (28 cases).');
+  await test('daily and archived players carry the displayed reference to a free, recoverable project draft',`
+    let dialog, closed=false, posted;
+    modal=(title,html)=>{dialog=html;}; close=()=>{closed=true;};
+    S.workspace=page(); S.overseasForm={...overseasDefaults(),topic:'柜台活动',goal:'sales',assets:['photo']};
+    for (const edition of ['today','archive']) {
+      S.page='overseas-ideas';
+      const ref='edition_'+edition, item={id:'same-video',creation_reference_id:ref,title_zh:'柜台翻牌',url:'https://www.youtube.com/shorts/E8rFu6YYzsw'};
+      S.overseasLibrary={items:[item]};
+      assert.ok(!overseasDailyCard(item).includes('用这条拍法创作'));
+      actions['play-overseas-video']({dataset:{id:item.id,reference:ref}});
+      assert.ok(dialog.includes('用这条拍法创作') && dialog.includes('data-reference="'+ref+'"'));
+      // A subsequent library refresh must not change the reference in an already open player.
+      S.overseasLibrary.items=[];
+      await actions['use-overseas-idea']({dataset:{reference:ref,title:item.title_zh,workspace:workspaceKey()},closest:()=>true});
+      assert.equal(closed,true);assert.equal(S.page,'overseas');
+      const saved=drafts.read(workspaceKey()+':overseas');
+      assert.equal(saved.reference_id,ref);assert.equal(saved.reference_title,'柜台翻牌');
+      assert.equal(saved.goal,'sales');assert.deepEqual(Array.from(saved.assets),['photo']);
+      assert.ok(overseasPage().includes('柜台翻牌'));
+    }
+    assert.ok(overseasDailyCard({id:'old',creation_reference_id:'legacy-ref',title:'往期短片'}).includes('data-reference="legacy-ref"'));
+    await actions['use-overseas-idea']({dataset:{reference:'wrong',title:'别的项目',workspace:'other:project'}});
+    assert.equal(S.overseasForm.reference_id,'edition_archive');
+    api=async(path,opts)=>{posted=JSON.parse(opts.body);return {task_ids:[]};};poll=async()=>{};
+    await startOverseas();
+    assert.equal(posted.reference_id,'edition_archive');assert.equal(posted.reference_title,undefined);
+    actions['clear-overseas-reference']();assert.equal(drafts.read(workspaceKey()+':overseas').reference_id,'');
+  `);
+  await test('editor shows fact conflicts beside source text and escapes both',`
+    S.workspace=page();S.workspace.assets=[{id:'a',name:'门店价目表'}];
+    const html=editorFactChecks({claim_checks:[{status:'review',value:'99元',sentence:'现价99元<x>',reason:'价格不符',source:{asset_id:'a',quote:'售价199元<y>'}}]});
+    assert.ok(html.includes('1 项待核对') && html.includes('99元&lt;x&gt;') && html.includes('售价199元&lt;y&gt;'));
+    assert.ok(html.includes('门店价目表') && html.includes('价格不符'));
+    assert.equal(editorFactChecks({}), '');
+  `);
+  await test('candidate with no metrics opens manual analysis with its exact link and no charge',`
+    S.workspace=page();S.transcript='上一条字幕';S.entry='keyword';
+    let html,visits=[],payments=0;const url='https://www.xiaohongshu.com/explore/test';
+    modal=(title,body)=>{html=body;};close=()=>{};navigate=async view=>visits.push(view);
+    api=async()=>{payments++;};
+    await actions['prepare-reference']({dataset:{url,workspace:'another-project'}});
+    assert.equal(S.entry,'keyword');
+    showReferenceCandidates([],[{title:'原片<x>',url},{title:'假的',url:'https://example.org/video/x'}]);
+    assert.ok(html.includes('待核实') && html.includes('带入单条拆解') && html.includes('原片&lt;x&gt;') && !html.includes('假的'));
+    await actions['prepare-reference']({dataset:{url,workspace:workspaceKey()}});
+    assert.equal(S.entry,'single');assert.equal(S.entryText,url);assert.equal(S.transcript,'');
+    assert.deepEqual(visits,['discover']);assert.equal(payments,0);
+  `);
+  console.log('Frontend review regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

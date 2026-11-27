@@ -61,6 +61,10 @@ def init():
         CREATE TABLE IF NOT EXISTS model_routes(kind TEXT PRIMARY KEY,config TEXT);
         CREATE TABLE IF NOT EXISTS settings(key TEXT PRIMARY KEY,value TEXT);
         CREATE TABLE IF NOT EXISTS skill_versions(id TEXT PRIMARY KEY,name TEXT,version INTEGER,prompt TEXT,status TEXT,created_at TEXT);
+        CREATE TABLE IF NOT EXISTS publication_bindings(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id) ON DELETE CASCADE,
+            project_id TEXT NOT NULL REFERENCES projects(id), platform TEXT NOT NULL, account_id TEXT NOT NULL,
+            post_id TEXT NOT NULL, revision INTEGER NOT NULL, traffic_type TEXT NOT NULL,
+            UNIQUE(project_id, platform, account_id, post_id));
         CREATE TABLE IF NOT EXISTS creation_tracking(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),status TEXT NOT NULL DEFAULT 'draft',account_id TEXT,published_at TEXT,checklist TEXT,updated_at TEXT);
         CREATE TABLE IF NOT EXISTS creation_results(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id),project_id TEXT REFERENCES projects(id),data TEXT NOT NULL,updated_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS creation_readiness(creation_id TEXT PRIMARY KEY REFERENCES creation_outputs(id) ON DELETE CASCADE,revision INTEGER NOT NULL,first_confirmed_at TEXT NOT NULL,confirmed_at TEXT NOT NULL);
@@ -75,6 +79,9 @@ def init():
         CREATE TABLE IF NOT EXISTS overseas_translations(key TEXT PRIMARY KEY,translated TEXT NOT NULL,created_at TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS overseas_feed_state(id INTEGER PRIMARY KEY CHECK(id=1),data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS overseas_daily_picks(day TEXT NOT NULL,position INTEGER NOT NULL,url TEXT NOT NULL,new_match INTEGER NOT NULL,PRIMARY KEY(day,position),UNIQUE(day,url));
+        CREATE TABLE IF NOT EXISTS overseas_sync_days(day TEXT PRIMARY KEY,coverage INTEGER NOT NULL);
+        CREATE TABLE IF NOT EXISTS overseas_match_events(url TEXT PRIMARY KEY,matched_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS overseas_shot_reviews(url TEXT PRIMARY KEY,decision TEXT NOT NULL,details TEXT NOT NULL,reviewed_at TEXT NOT NULL,first_eligible_at TEXT);
         CREATE TABLE IF NOT EXISTS overseas_editions(day TEXT NOT NULL,issue INTEGER NOT NULL,items TEXT NOT NULL,PRIMARY KEY(day,issue));
         CREATE TABLE IF NOT EXISTS email_codes(email TEXT NOT NULL,purpose TEXT NOT NULL,code_hash TEXT NOT NULL,expires REAL NOT NULL,attempts INTEGER NOT NULL DEFAULT 0,created REAL NOT NULL,PRIMARY KEY(email,purpose));
         CREATE TABLE IF NOT EXISTS audit_events(id TEXT PRIMARY KEY,actor_id TEXT,action TEXT NOT NULL,target TEXT,details TEXT NOT NULL,request_id TEXT,created_at TEXT NOT NULL);
@@ -97,6 +104,8 @@ def init():
             c.execute("ALTER TABLE sessions ADD COLUMN mfa_verified INTEGER NOT NULL DEFAULT 0")
         if "mfa_fingerprint" not in {row[1] for row in c.execute("PRAGMA table_info(sessions)")}:
             c.execute("ALTER TABLE sessions ADD COLUMN mfa_fingerprint TEXT NOT NULL DEFAULT ''")
+        if "source_digest" not in {row[1] for row in c.execute("PRAGMA table_info(creation_readiness)")}:
+            c.execute("ALTER TABLE creation_readiness ADD COLUMN source_digest TEXT")
         c.execute("INSERT OR IGNORE INTO overseas_feed_state VALUES (1,?)",(dumps({'state':'idle','added_count':0,'changed_count':0}),))
         defaults = {
             "mode": os.environ.get("DAOLOOK_MODE", "demo"),
@@ -142,7 +151,8 @@ def init():
                 "reusability": 0.05,
             },
         }
-        from . import access
+        from . import access, delivery_metrics
+        delivery_metrics.initialize(c)
         access.initialize(c)
         for k, v in defaults.items():
             c.execute("INSERT OR IGNORE INTO settings VALUES (?,?)", (k, dumps(v)))

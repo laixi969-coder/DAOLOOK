@@ -95,6 +95,150 @@ class DailyVideoTests(unittest.TestCase):
         with fixture.D.db() as c:
             self.assertEqual(c.execute('SELECT created_at FROM overseas_feed_videos WHERE url=?',('https://www.youtube.com/watch?v=abcdefghijk',)).fetchone()[0],DAY)
 
+    def test_front_overlap_for_published_and_archived_issues_uses_previous_calendar_day(self):
+        urls = [f'https://www.youtube.com/shorts/{n:011}' for n in range(18)]
+        editions = [('2026-09-24',0,urls[4:14]), ('2026-09-24',1,urls[:10]+[urls[11]]),
+                    ('2026-09-25',0,urls[1:11]+[urls[0]]), ('2026-09-25',1,[url.replace('/shorts/','/watch?v=') for url in urls[8:]]+[urls[0]])]
+        with fixture.D.db() as c:
+            for day, issue, links in editions:
+                items = [{'url':url,'title':'Test clip','daily_pick':{'url':url,'position':i,'new_match':0}}
+                         for i,url in enumerate(links,1)]
+                c.execute('INSERT INTO overseas_editions VALUES (?,?,?)', (day,issue,json.dumps(items)))
+        route = '/api/overseas/ideas?project_id='+self.p+'&scope='
+        def daily_meta(day, query):
+            with patch.object(feed,'now',return_value=day+'T15:00:00+00:00'):
+                status, result = self.c.req(route+query)
+            self.assertEqual(status,200)
+            return result['daily']
+        today = daily_meta('2026-09-25','today')
+        self.assertEqual((today['key'],today['repeated_front']), ('2026-09-25.1',2))
+        from datetime import date
+        from scripts import review_references
+        with fixture.D.db() as c:
+            report = review_references.report(c,date(2026,9,25),2)
+            self.assertEqual(report['days'][-1]['overlap_yesterday'],today['repeated_front'])
+        self.assertEqual(daily_meta('2026-09-25','archive&edition=2026-09-25.0')['repeated_front'],9)
+        self.assertEqual(daily_meta('2026-09-26','archive&edition=2026-09-25.1')['repeated_front'],2)
+        self.assertIsNone(daily_meta('2026-09-26','archive&edition=2026-09-24.1')['repeated_front'])
+        self.assertEqual(daily_meta('2026-09-26','today')['repeated_front'],0)
+
+    def test_preview_reference_preserves_public_material_and_project_billing(self):
+        with patch.object(feed, 'now', return_value=DAY):
+            before = self.c.req('/api/bootstrap')[1]['credits']['balance']
+            url = '/api/overseas/ideas?scope=today&project_id='
+            card = self.c.req(url+self.p)[1]['items'][0]
+            self.post('/api/overseas/ideas', {'url':card['url'], 'title':'Private business note'})
+            other = self.c.req('/api/projects','POST',{'name':'Other project'})[1]['id']
+            for project in (self.p,other):
+                self.assertEqual(self.c.req(url+project)[1]['items'][0], card)
+            self.assertEqual(self.c.req('/api/bootstrap')[1]['credits']['balance'], before)
+            with fixture.D.db() as c:
+                self.assertEqual(c.execute('SELECT count(*) FROM overseas_daily_picks').fetchone()[0], 0)
+            status, result = self.post('/api/overseas/create', {'project_id':other,'platform':'tiktok',
+                'topic':'周末开店','reference_id':card['creation_reference_id'],
+                'reference_snapshot':{'url':'https://example.org/private','title':'Private business note'}})
+        self.assertEqual(status, 202, result)
+        task = self.run_task(result)[0]
+        self.assertEqual((task['state'],task['project_id'],task['cost']), ('SUCCEEDED',other,15))
+        workspace = self.c.req('/api/workspace?project_id='+other)[1]
+        brief = workspace['briefs'][0]['data']
+        snapshot = brief['reference_snapshot']
+        self.assertEqual(snapshot['edition_key'], overseas_daily.day_for(DAY)+'.0')
+        self.assertEqual((snapshot['url'], snapshot['filming']), (card['url'],card['filming']))
+        self.assertEqual(brief['benchmark']['examples'][0], snapshot)
+        self.assertNotIn('Private business note', json.dumps(snapshot))
+        self.assertFalse(self.ws()['briefs'])
+        self.assertEqual(self.c.req('/api/bootstrap')[1]['credits']['balance'], before - 15)
+
+    def test_special_issue_and_link_only_archive_resolve_by_issue_and_work(self):
+        today = '2026-11-22'
+        old_url = 'https://www.youtube.com/shorts/oldgone0123'
+        with fixture.D.db() as c:
+            c.execute('INSERT INTO overseas_daily_picks VALUES (?,1,?,0)', (today,old_url))
+        fixture.D.init()
+        with patch.object(feed, 'now', return_value=today+'T15:00:00+00:00'):
+            route = '/api/overseas/ideas?project_id='+self.p+'&scope='
+            old = self.c.req(route+'archive')[1]['items'][0]
+            current = self.c.req(route+'today')[1]['items'][0]
+            self.assertEqual((old['daily_pick']['position'],current['daily_pick']['position']), (1,1))
+            create = {'platform':'tiktok','topic':'周末开店'}
+            before = self.c.req('/api/bootstrap')[1]['credits']['balance']
+            tampered = old['creation_reference_id'].replace(today+'.0', today+'.1')
+            self.assertEqual(self.post('/api/overseas/create', {**create,'reference_id':tampered})[0], 404)
+            self.assertEqual(self.c.req('/api/bootstrap')[1]['credits']['balance'], before)
+            for card in (old,current):
+                status, result = self.post('/api/overseas/create', {**create,'reference_id':card['creation_reference_id']})
+                self.assertEqual(status, 202, result)
+                self.assertEqual(self.run_task(result)[0]['state'], 'SUCCEEDED')
+                snapshot = next(b['data']['reference_snapshot'] for b in self.ws()['briefs'] if b['id']==result['brief_id'])
+                self.assertEqual(snapshot['url'], card['url'])
+                if card is old:
+                    self.assertFalse(any(snapshot.get(k) for k in ('idea_zh','filming','hook_zh','summary')))
+                else:
+                    self.assertEqual((snapshot['idea_zh'],snapshot['hook_zh']), (card['idea_zh'],card['hook_zh']))
+
+    def test_operator_frame_review_reaches_today_and_archived_creation_jobs(self):
+        from scripts import review_references as reviews
+        self.sync(atom([OLD]))
+        clip = feed.videos()[0]
+        stamp = '2026-10-13T15:00:00+00:00'
+        note = {'second':2,'change':'手把纸盒转过来，原来是店招','props':'纸盒和手机','method':'固定机位翻转纸盒','mechanism':'转盒显字'}
+        with fixture.D.db() as c:
+            reviews.record(c,clip['url'],'keep',note,stamp)
+            overseas_daily.select(c,stamp,True)
+        uri='/api/overseas/ideas?project_id='+self.p
+        for check, query in ((stamp,'&scope=today'),('2026-10-14T15:00:00+00:00','&scope=archive&edition=2026-10-13.0')):
+            with patch.object(feed,'now',return_value=check):
+                status, page = self.c.req(uri+query)
+                self.assertEqual(status,200)
+                card = next(i for i in page['items'] if i['url']==clip['url'])
+                self.assertIn('2 秒',card['filming_basis'])
+                status,result = self.post('/api/overseas/create', {'topic':'开店','platform':'tiktok','reference_id':card['creation_reference_id']})
+                self.assertEqual(status,202,result)
+                task = self.run_task(result)[0]
+                self.assertEqual(task['state'],'SUCCEEDED')
+                snapshot=next(b['data']['reference_snapshot'] for b in self.ws()['briefs'] if b['id']==result['brief_id'])
+                self.assertEqual((snapshot['url'],snapshot['edition_key']),(clip['url'],'2026-10-13.0'))
+                self.assertEqual((snapshot['visual_payoff'],snapshot['filming']), (note['change'],note['method']))
+            with fixture.D.db() as c:
+                c.execute('DELETE FROM overseas_feed_videos WHERE url=?',(clip['url'],))
+
+    def test_rereview_by_alternate_link_updates_saved_and_current_references(self):
+        from scripts import review_references as reviews
+        self.sync(atom([OLD]))
+        clip = feed.videos()[0]
+        shorts = 'https://www.youtube.com/shorts/abcdefghijk'
+        evidence = {'second':2,'change':'纸盒转向店名','props':'纸盒','method':'固定手机转动纸盒','mechanism':'转动纸盒'}
+        with fixture.D.db() as c:
+            reviews.record(c,shorts,'keep',evidence,DAY)
+        with patch.object(feed,'now',return_value=DAY):
+            saved = self.post('/api/overseas/ideas', {'feed_id':clip['id']})[1]
+            with fixture.D.db() as c:
+                edition = overseas_daily.select(c,DAY,True)
+                self.assertIn(clip['url'],[p['url'] for p in edition['picks']])
+                reference = overseas_daily.creation_reference_id(edition['key'],clip['url'])
+                reviews.record(c,'https://youtu.be/abcdefghijk','reject',{'reason':'复审撤回'},DAY)
+                self.assertEqual(c.execute('SELECT count(*) FROM overseas_shot_reviews').fetchone()[0],1)
+            self.assertIsNone(overseas_daily.reference(reference,DAY))
+            self.assertNotIn(clip['url'],[v['url'] for v in overseas_library.recommendations(self.p,scope='selected')])
+            current = overseas_library.reference(self.p,saved['id'])
+            self.assertTrue(current['saved'])
+            self.assertEqual((current['filming'],current['editor_review']['decision']),('','reject'))
+
+    def test_archived_automatic_reference_survives_candidate_pruning(self):
+        clip = ('abcdefghijk','Our store hours','2026-10-10T14:00:00Z','We wipe the glass to reveal our store hours')
+        self.sync(atom([clip]))
+        self.sync(atom([]),'2026-10-13T15:00:00+00:00')
+        with fixture.D.db() as c:
+            c.execute('DELETE FROM overseas_feed_videos')
+        with patch.object(feed, 'now', return_value='2026-10-13T15:00:00+00:00'):
+            page = self.c.req('/api/overseas/ideas?scope=archive&project_id='+self.p)[1]
+            card = next(i for i in page['items'] if i['url'].endswith(clip[0]))
+            snapshot = overseas_library.reference(self.p,card['creation_reference_id'])
+        self.assertEqual((snapshot['title'],snapshot['summary'],snapshot['mechanism']),
+                         (clip[1],clip[3],'擦镜显字'))
+        self.assertEqual(snapshot['reference_video']['url'],card['reference_video']['url'])
+
     def test_repeated_content_does_not_fake_new_entries_or_updated_time(self):
         first=self.sync(atom([OLD]))
         result=self.sync(atom([OLD]),'2026-10-13T15:00:00+00:00')
@@ -103,6 +247,17 @@ class DailyVideoTests(unittest.TestCase):
         self.assertEqual(result['last_checked_at'],'2026-10-13T15:00:00+00:00')
         fixture.D.init()
         self.assertEqual(feed.status()['last_updated_at'],first['last_updated_at'])
+
+    def test_readmitted_clip_keeps_first_match_and_is_not_new_again(self):
+        clip=('abcdefghijk','A paper sign','2026-10-10T14:00:00Z','Flip a cardboard sign to reveal our opening hours')
+        self.sync(atom([clip]))
+        with fixture.D.db() as c:
+            c.execute('DELETE FROM overseas_feed_videos')
+        tomorrow='2026-10-13T15:00:00+00:00'
+        self.assertEqual(self.sync(atom([clip]),tomorrow)['new_match_count'],0)
+        restored=feed.videos()[0]
+        self.assertEqual(restored['first_matched_at'],DAY)
+        self.assertFalse(next(p for p in overseas_daily.edition(tomorrow)['picks'] if p['url']==restored['url'])['new_match'])
 
     def test_daily_boundary_uses_configured_timezone(self):
         with patch.dict(os.environ,{'DAOLOOK_FEED_TIMEZONE':'America/New_York'}):
@@ -271,6 +426,43 @@ class DailyVideoTests(unittest.TestCase):
         self.sync(atom([OLD]),'2027-05-12T15:00:00+00:00')
         self.assertEqual(feed.videos(),[])
         self.assertEqual(overseas_library.reference(self.p,item['id'])['title'],OLD[1])
+
+    def test_kept_clips_survive_cleanup_and_remain_eligible_beyond_recent_candidates(self):
+        from scripts.review_references import record
+        def candidate(n, platform, published):
+            url = f'https://www.youtube.com/watch?v={n:011}' if platform=='youtube' else f'https://www.tiktok.com/@retired/video/{n:019}'
+            return {'id':f'feed_{n}', 'url':url, 'platform':platform, 'title':'店门口', 'source_kind':'daily_feed',
+                    'publisher':'测试店铺', 'published_at':published}
+        expired = '2026-01-01T15:00:00+00:00'
+        young = '2026-10-01T15:00:00+00:00'
+        keeps = [candidate(1,'youtube',expired),candidate(2,'tiktok',young)]
+        controls = [candidate(3,'youtube',expired),candidate(4,'tiktok',young)]
+        recent = [candidate(n,'youtube',DAY) for n in range(10,610)]
+        notes = {'second':2,'change':'翻纸露出店名','method':'定机位翻面','mechanism':'翻面显字','props':'纸和手机'}
+        with fixture.D.db() as c:
+            c.executemany('INSERT INTO overseas_feed_videos VALUES (?,?,?,?,?,?)',
+                          [(v['id'],v['url'],json.dumps(v),v['published_at'],DAY,DAY) for v in keeps+controls+recent])
+            for v in keeps:
+                record(c,v['url'],'keep',notes,DAY)
+            # This local review predates the public feed's change to a watch URL.
+            c.execute('UPDATE overseas_shot_reviews SET url=? WHERE url=?',
+                      (keeps[0]['url'].replace('/watch?v=','/shorts/'),keeps[0]['url']))
+            record(c,controls[0]['url'],'reject',{'reason':'缺乏画面变化'},DAY)
+        self.assertEqual(self.sync(atom([]))['removed_count'],2)
+        with patch.object(feed,'now',return_value=DAY):
+            selected = {v['url'] for v in overseas_library.recommendations(self.p,scope='selected')}
+            front = {v['url'] for v in overseas_daily.edition(DAY)['picks'][:10]}
+            for v in keeps:
+                self.assertIn(v['url'],selected & front)
+                self.assertEqual(overseas_library.reference(self.p,v['id'])['filming'],notes['method'])
+            for v in controls:
+                self.assertIsNone(feed.reference(v['id']))
+        tomorrow = '2026-10-13T15:00:00+00:00'
+        with fixture.D.db() as c:
+            record(c,keeps[1]['url'],'reject',{'reason':'复审撤下'},tomorrow)
+        self.assertEqual(self.sync(atom([]),tomorrow)['removed_count'],1)
+        self.assertIsNone(feed.reference(keeps[1]['id']))
+        self.assertIsNotNone(feed.reference(keeps[0]['id']))
 
     def test_refresh_api_returns_status_without_charging_or_reading_other_projects(self):
         before=self.c.req('/api/bootstrap')[1]['credits']

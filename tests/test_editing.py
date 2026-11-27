@@ -4,7 +4,7 @@ import json
 import unittest
 from tests import test_original as fixture
 from tests.test_app import Client
-from server import editing
+from server import editing, draft_sources
 
 
 class EditingTests(unittest.TestCase):
@@ -104,6 +104,44 @@ class EditingTests(unittest.TestCase):
         self.assertEqual(status,200)
         self.assertEqual(result['revision'],0)
         self.assertEqual(len(self.history()[1]),1)
+
+    def test_editor_checks_legacy_draft_against_current_selected_text_and_restore_rechecks(self):
+        # A saved legacy draft has a formerly valid quote. A second, unselected
+        # price list may never justify the price after the selected one changes.
+        old = "挂耳咖啡售价199元。"
+        status, asset = self.post('/api/assets', {'name':'咖啡价目表','kind':'产品信息','content':old})
+        self.assertEqual(status, 200)
+        self.post('/api/assets', {'name':'未选价目表','kind':'产品信息','content':old})
+        with fixture.D.db() as c:
+            draft = {**self.original['data'], 'title':'挂耳咖啡', 'body':old+'欢迎留言。',
+                     'audience':'咖啡顾客','value':'了解价格','cta':'欢迎留言。','demo':False,
+                     'evidence':[{'asset_id':asset['id'],'quote':old}],'quality':{'status':'checked','issues':[]}}
+            c.execute('UPDATE creation_outputs SET data=? WHERE id=?', (json.dumps(draft),self.cid))
+            c.execute("UPDATE tasks SET payload=json_set(payload,'$.assets',json(?),'$.temporary','') WHERE id=?",
+                      (json.dumps([asset['id']]),self.original['task_id']))
+        def price(data):
+            return next(check for check in data['quality']['claim_checks'] if check['kind']=='price' and '199' in check['value'])
+        def detail():
+            return self.c.req(self.path+'?project_id='+self.p)[1]['data']
+        self.assertEqual(price(detail())['status'],'matched')
+        with fixture.D.db() as c:
+            c.execute('UPDATE assets SET content=? WHERE id=?',('挂耳咖啡售价249元。',asset['id']))
+        check = price(detail())
+        self.assertEqual(check['status'],'review')
+        self.assertEqual(check['source']['asset_id'],asset['id'])
+        self.assertIn('249',check['source']['quote'])
+        status, saved = self.edit({'title':'今天的挂耳咖啡'})
+        self.assertEqual(status,200,saved)
+        self.assertEqual(price(saved['data'])['status'],'review')
+        status, restored = self.post(self.path+'/restore',{'revision':1,'restore_revision':0})
+        self.assertEqual(status,200,restored)
+        self.assertEqual(restored['data']['body'],draft['body'])
+        self.assertEqual(price(restored['data'])['status'],'review')
+        self.assertEqual(self.history()[1][-1]['data']['quality'],draft['quality'])
+        with fixture.D.db() as c:
+            self.assertEqual(draft_sources.for_creation(c,self.cid,'other-project'),[])
+            c.execute('DELETE FROM assets WHERE id=?',(asset['id'],))
+        self.assertNotIn('source',price(detail()))
 
     def test_comments_are_restorable_and_metadata_is_retained(self):
         original_layout = self.original['data']['comment_layout']

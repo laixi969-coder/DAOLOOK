@@ -42,6 +42,11 @@ class TrackingApiTests(unittest.TestCase):
     def ws(self):
         return self.c.req(f"/api/workspace?project_id={self.p}")[1]
 
+    def confirm(self, cid, revision):
+        route = f"/api/creations/{cid}"
+        source = self.c.req(route+"?project_id="+self.p)[1]["source_digest"]
+        return self.post(route+"/ready", {"revision":revision,"source_digest":source})
+
     def test_flow_publish_checklist_export(self):
         cid = self.ids[0]
         self.assertEqual(self.ws()["creations"][0]["tracking"], {"status": "draft", "checklist": {}})
@@ -115,7 +120,7 @@ class TrackingApiTests(unittest.TestCase):
             c.execute("UPDATE tasks SET created_at=? WHERE id=(SELECT task_id FROM creation_outputs WHERE id=?)",(base,cid))
         ready = f"/api/creations/{cid}/ready"
         with patch("server.editing.now",return_value="2026-01-01T12:02:00+00:00"):
-            status, confirmed = self.post(ready, {"revision":0})
+            status, confirmed = self.confirm(cid,0)
         self.assertEqual(status,200,confirmed)
         self.assertEqual(self.post(ready, {"revision":0})[1],confirmed)
         self.assertEqual(self.post(ready, {"revision":1})[0],409)
@@ -125,13 +130,58 @@ class TrackingApiTests(unittest.TestCase):
         row = next(row for row in self.ws()["creations"] if row["id"]==cid)
         self.assertIsNone(row["ready_at"])
         self.assertEqual(self.post(ready,{"revision":0})[0],409)
-        self.assertEqual(self.post(ready,{"revision":1})[0],200)
-        self.post(f"/api/creations/{second}/ready",{"revision":0})
+        self.assertEqual(self.confirm(cid,1)[0],200)
+        self.confirm(second,0)
         self.post(f"/api/tracking/{other}",{"status":"published"})
         self.assertEqual(self.post(f"/api/creations/{other}/ready",{"revision":0})[0],409)
         self.assertEqual(self.ws()["stats"]["delivery"], {
             "formal":3,"published":1,"confirmed_batches":1,"first_ready_seconds":120,
         })
+
+    def test_mature_submission_denominators_and_manual_minutes(self):
+        published, other, recent = self.ids[:3]
+        self.formal(self.ids, goal="leads")
+        with D.db() as c:
+            task = c.execute("SELECT task_id FROM creation_outputs WHERE id=?", (published,)).fetchone()[0]
+            c.execute("UPDATE tasks SET created_at='2020-01-01T10:00:00Z' WHERE id=?", (task,))
+            c.execute("UPDATE task_model_metrics SET mode='live' WHERE task_id=?", (task,))
+            for ident, mode, stamp in (("historical_failure","live","2020-01-01"), ("old_demo","demo","2020-01-01"),
+                                      ("recent_live","live",D.now()), ("missing_mode","unknown","2020-01-01")):
+                c.execute("INSERT INTO tasks SELECT ?,user_id,project_id,kind,'FAILED','{}',NULL,NULL,cost,NULL,NULL,?,? "
+                          "FROM tasks WHERE id=?", (ident, stamp, stamp, task))
+                c.execute("INSERT INTO task_model_metrics(task_id,mode,metered) VALUES (?,?,0)", (ident,mode))
+        edit = {"revision":0,"changes":{"title":"新标题"},"edit_minutes":3.5}
+        self.assertEqual(self.post(f"/api/creations/{published}/edit",{**edit,"edit_minutes":-1})[0],400)
+        self.assertEqual(self.post(f"/api/creations/{published}/edit",edit)[0],200)
+        self.assertEqual(self.confirm(published,1)[0],200)
+        for cid in (published, other):
+            self.post(f"/api/tracking/{cid}",{"status":"published","published_at":"2020-01-02T10:00:00Z"})
+        self.post(f"/api/tracking/{recent}",{"status":"published"})
+        self.post(f"/api/results/{published}",{"window":"7d","results":{"views":38,"leads":0}})
+        self.post(f"/api/results/{other}",{"window":"7d","results":{"views":70}})
+        self.c.req(f"/api/creations/{published}","DELETE",{"project_id":self.p})
+        stats = self.ws()["stats"]["cohort"]
+        self.assertEqual((stats["batches"],stats["unknown_batches"],stats["published_batches"],stats["confirmed_batches"]),(2,1,1,1))
+        self.assertEqual((stats["seven_day_posts"],stats["seven_day_filled"]),(2,1))
+        self.assertEqual((stats["median_edit_minutes"],stats["timed_revisions"],stats["manual_revisions"]),(3.5,1,1))
+        self.assertIsNone(stats["model"]["per_confirmed_microusd"])
+
+    def test_cohort_cost_includes_later_rewrite_and_uses_confirmed_drafts(self):
+        cid = self.ids[0]
+        self.formal([cid])
+        self.confirm(cid,0)
+        with D.db() as c:
+            task = c.execute("SELECT task_id FROM creation_outputs WHERE id=?", (cid,)).fetchone()[0]
+            c.execute("UPDATE tasks SET created_at='2020-01-01' WHERE id=?", (task,))
+            c.execute("UPDATE task_model_metrics SET mode='live',calls=2,retries=1,usage_calls=2,estimated=32 WHERE task_id=?", (task,))
+            c.execute("INSERT INTO tasks SELECT 'rewrite-cost',user_id,project_id,'rewrite','SUCCEEDED',?,NULL,NULL,cost,NULL,NULL,?,? "
+                      "FROM tasks WHERE id=?", (D.dumps({"creation_id":cid}),D.now(),D.now(),task))
+            c.execute("INSERT INTO task_model_metrics(task_id,mode,metered,calls,usage_calls,estimated) VALUES ('rewrite-cost','live',1,1,1,17)")
+        costs = self.ws()["stats"]["cohort"]["model"]
+        self.assertEqual((costs["tasks"],costs["calls"],costs["retries"],costs["per_confirmed_microusd"]),(2,3,1,49))
+        with D.db() as c:
+            c.execute("UPDATE task_model_metrics SET calls=calls+1 WHERE task_id='rewrite-cost'")
+        self.assertIsNone(self.ws()["stats"]["cohort"]["model"]["per_confirmed_microusd"])
 
     def test_fixed_windows_roundtrip_weighted_comparisons_and_exports(self):
         first, second, demo, draft = self.ids[:4]

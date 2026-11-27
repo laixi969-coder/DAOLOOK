@@ -88,20 +88,21 @@ def saved(c, project, limit=20, offset=0):
         (project, limit, offset))]
 
 
-def feedback(c, project, platform=None, limit=20):
+def feedback(c, project, platform=None, limit=20, account_id=None):
     # One current note per creation. Clearing a note, unpublishing or deleting the
     # creation immediately removes it from future retrieval; unknown is not zero.
     rows = c.execute(
-        "SELECT o.id,o.data,r.data AS results,r.updated_at,k.published_at,COALESCE(json_extract(o.data,'$.target_platform'),s.platform) AS effective_platform "
+        "SELECT o.id,o.data,r.data AS results,r.updated_at,k.published_at,k.account_id,COALESCE(b.traffic_type,'unknown') AS traffic_type,COALESCE(json_extract(o.data,'$.target_platform'),s.platform) AS effective_platform "
         "FROM creation_results r JOIN creation_outputs o ON o.id=r.creation_id "
         "JOIN source_contents s ON s.id=o.source_id JOIN creation_tracking k ON k.creation_id=o.id "
-        "WHERE o.project_id=? AND o.deleted_at IS NULL AND k.status='published' "
+        "LEFT JOIN publication_bindings b ON b.creation_id=o.id AND b.account_id=k.account_id "
+        "WHERE (? IS NULL OR k.account_id=?) AND o.project_id=? AND o.deleted_at IS NULL AND k.status='published' "
         "AND COALESCE(json_extract(o.data,'$.demo'),0)=0 "
         "AND length(trim(COALESCE(json_extract(r.data,'$.note'),'')))>0 "
         "AND (? IS NULL OR COALESCE(json_extract(o.data,'$.target_platform'),s.platform)=? "
         "OR (?='overseas' AND COALESCE(json_extract(o.data,'$.target_platform'),s.platform) IN ('tiktok','instagram','youtube'))) "
         "ORDER BY r.updated_at DESC,o.id DESC LIMIT ?",
-        (project, platform, platform, platform, limit)).fetchall()
+        (account_id, account_id, project, platform, platform, platform, limit)).fetchall()
     result = []
     for row in rows:
         output, metrics = json.loads(row["data"]), json.loads(row["results"])
@@ -111,6 +112,7 @@ def feedback(c, project, platform=None, limit=20):
         result.append({"id": "feedback:" + row["id"], "creation_id": row["id"],
                        "text": text, "source": "published_feedback", "source_label": SOURCES["published_feedback"],
                        "context": output.get("title", ""), "reference": "", "occurred_on": "",
+                       "account_id": row["account_id"], "traffic_type": row["traffic_type"],
                        "recorded_at": row["updated_at"], "published_at": row["published_at"],
                        "platform": row["effective_platform"], "goal": output.get("goal"),
                        "results": {k: v for k, v in metrics.items() if k != "note"}})
@@ -119,8 +121,8 @@ def feedback(c, project, platform=None, limit=20):
     return result
 
 
-def context(c, project, platform, topic, current_id=None, facts=None, assets=None):
-    candidates = saved(c, project, 500) + feedback(c, project, platform, 30)
+def context(c, project, platform, topic, current_id=None, facts=None, assets=None, account_id=None):
+    candidates = saved(c, project, 500) + feedback(c, project, platform, 30, account_id)
     texts = {a["id"]: a.get("content", "") for a in assets or [] if a.get("kind") != "图片"}
     for index, fact in enumerate(facts or []):
         quote = fact.get("quote", "")

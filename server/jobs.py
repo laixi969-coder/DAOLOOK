@@ -1,6 +1,8 @@
 import hashlib, json, queue, threading
 from .db import db, uid, now, dumps, setting, ledger
+from .result_imports import HAS_GOAL_METRIC
 from . import adapters, covers, discovery, overseas, overseas_library, spending, resource_limits, audit, access, questions, production
+from . import content_quality, delivery_metrics, draft_sources, editing
 
 MAX_USER_ACTIVE = 20
 MAX_GLOBAL_ACTIVE = 200
@@ -19,18 +21,19 @@ class TaskAdmissionError(ValueError):
         self.retry_after = retry_after
 
 
-def history_results(project, platform, goal):
+def history_results(project, platform, goal, account_id=None):
     """Only this project's same-platform, same-objective published results."""
     with db() as c:
         rows = c.execute(
-            "SELECT o.data,r.data AS results,r.updated_at,k.published_at,COALESCE(json_extract(o.data,'$.target_platform'),s.platform) AS platform FROM creation_results r "
+            "SELECT o.data,r.data AS results,r.updated_at,k.published_at,k.account_id,COALESCE(b.traffic_type,'unknown') AS traffic_type,COALESCE(json_extract(o.data,'$.target_platform'),s.platform) AS platform FROM creation_results r "
             "JOIN creation_outputs o ON o.id=r.creation_id JOIN source_contents s ON s.id=o.source_id "
-            "JOIN creation_tracking k ON k.creation_id=o.id "
-            "WHERE o.project_id=? AND k.status='published' AND o.deleted_at IS NULL "
+            "JOIN creation_tracking k ON k.creation_id=o.id LEFT JOIN publication_bindings b ON b.creation_id=o.id AND b.account_id=k.account_id "
+            "WHERE (? IS NULL OR k.account_id=?) AND o.project_id=? AND k.status='published' AND o.deleted_at IS NULL "
             "AND COALESCE(json_extract(o.data,'$.demo'),0)=0 AND json_extract(o.data,'$.goal')=? "
             "AND (COALESCE(json_extract(o.data,'$.target_platform'),s.platform)=? "
             "OR (?='overseas' AND COALESCE(json_extract(o.data,'$.target_platform'),s.platform) IN ('tiktok','instagram','youtube'))) "
-            "ORDER BY r.updated_at DESC LIMIT 12", (project, goal, platform, platform),
+            f"AND (? IS NULL OR {HAS_GOAL_METRIC}) ORDER BY r.updated_at DESC,o.id DESC LIMIT 12",
+            (account_id, account_id, project, goal, platform, platform, account_id),
         ).fetchall()
     result = []
     for row in rows:
@@ -41,7 +44,8 @@ def history_results(project, platform, goal):
         if "windows" in metrics:
             metrics["windows"] = production.current_windows(metrics, row["published_at"])
         result.append({"title": output.get("title"), "angle": output.get("angle"), "platform": row["platform"],
-                       "results": metrics, "source": "用户手动记录，未经平台验证",
+                       "results": metrics, "source": "用户填写或导入，未经平台验证",
+                       "account_id": row["account_id"], "traffic_type": row["traffic_type"],
                        "published_at": row["published_at"], "recorded_at": row["updated_at"]})
     return result[:12]
 
@@ -51,16 +55,75 @@ def discover_pick():
     return value if type(value) is int and 1 <= value <= 10 else 3
 
 
-def selected_facts(c, asset_ids):
-    """所选资料的结构化要点（含原文出处），随创作输入一起交给模型。"""
-    ids = [i for i in asset_ids if i and i != "temporary"]
-    if not ids:
+FACT_KINDS = ("品牌资料", "产品信息", "受众画像", "账号", "其他")
+
+
+def facts_source(c, project, asset_id):
+    row = c.execute("SELECT id,name,kind,content FROM assets WHERE project_id=? AND id=?", (project, asset_id)).fetchone()
+    if not row or row["kind"] not in FACT_KINDS or not row["content"].strip():
+        raise ValueError("资料已删除或不再适合整理要点")
+    asset = dict(row)
+    return asset, hashlib.sha256(dumps(asset).encode()).hexdigest()
+
+
+def selected_facts(c, assets):
+    """Only use facts belonging to the same version as the submitted text."""
+    texts = [a for a in assets if a.get("kind") in FACT_KINDS]
+    if not texts:
         return []
     rows = c.execute(
-        f"SELECT asset_id,category,fact,quote,demo FROM asset_facts WHERE asset_id IN ({','.join('?' * len(ids))})",
-        ids,
+        "SELECT f.asset_id,f.category,f.fact,f.quote,f.demo FROM json_each(?) s "
+        "JOIN assets a ON a.id=json_extract(s.value,'$.id') AND a.name=json_extract(s.value,'$.name') "
+        "AND a.kind=json_extract(s.value,'$.kind') AND a.content=json_extract(s.value,'$.content') "
+        "JOIN asset_facts f ON f.asset_id=a.id AND instr(a.content,f.quote)>0",
+        (dumps(texts),),
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+def rewrite_target(c, ident, project, revision):
+    row = editing.creation(c, ident, project)
+    if editing.revision(c, ident) != revision:
+        raise ValueError("稿件已被修改，请打开最新版本后重新发起重写")
+    locked = c.execute(
+        "SELECT 1 FROM creation_tracking WHERE creation_id=? AND status='published' "
+        "UNION ALL SELECT 1 FROM creation_results WHERE creation_id=? LIMIT 1", (ident, ident),
+    ).fetchone()
+    if locked:
+        raise ValueError("稿件已发布或已记录效果，保留原文；重写已取消并退回积分")
+    return row
+
+
+def rewrite_original(c, row):
+    """Recover missing server-owned context on drafts saved by older rewrites."""
+    original = json.loads(row["data"])
+    initial = c.execute("SELECT data FROM creation_revisions WHERE creation_id=? AND revision=0", (row["id"],)).fetchone()
+    if initial:
+        first = json.loads(initial["data"])
+        for key in ("goal", "image_asset_ids", "image_suggestions", "origin", "batch", "demo",
+                    "audience", "value", "evidence", "topic_plan", "topic_basis"):
+            if key not in original and key in first:
+                original[key] = first[key]
+    if "goal" in original and "image_asset_ids" in original:
+        return original
+    task = c.execute(
+        """SELECT COALESCE(json_extract(payload,'$.goal'), json_extract(payload,'$.brief.goal')) AS goal,
+                  CASE WHEN json_type(payload,'$.asset_snapshot')='array' THEN
+                       (SELECT json_group_array(json_extract(a.value,'$.id'))
+                        FROM json_each(payload,'$.asset_snapshot') a WHERE json_extract(a.value,'$.kind')='图片')
+                       WHEN json_extract(payload,'$.assets')='[]' THEN '[]' END AS images
+           FROM tasks WHERE id=? AND project_id=? AND kind IN ('create','original')""",
+        (row["task_id"], row["project_id"]),
+    ).fetchone()
+    if not task:
+        return original
+    if task["goal"] in content_quality.GOALS:
+        original.setdefault("goal", task["goal"])
+    # A saved asset's kind may have changed. If the original kinds have expired,
+    # an untyped selection cannot establish which items were originally images.
+    if task["images"] is not None:
+        original.setdefault("image_asset_ids", json.loads(task["images"]))
+    return original
 
 
 def task_cost(kind, payload, rules=None):
@@ -123,6 +186,9 @@ def submit_many(user, project, kind, payloads, actor=None, request_id=""):
         ).fetchone()[0]
         if total_active + len(payloads) > MAX_GLOBAL_ACTIVE:
             raise TaskAdmissionError("当前排队人数较多，请稍后重试", 503)
+        if kind == "facts":
+            # Same asset, different source text: allow the replacement task to queue.
+            payloads = [{**p, "source_digest": facts_source(c, project, p.get("asset_id"))[1]} for p in payloads]
         existing = {
             submission_fingerprint(kind, json.loads(row["payload"]))
             for row in active if row["project_id"] == project and row["kind"] == kind
@@ -172,7 +238,8 @@ def submit_many(user, project, kind, payloads, actor=None, request_id=""):
                     resource_limits.validate_inputs(payload)
                     payload["question_context"] = questions.context(
                         c, project, platform, topic + " " + payload.get("requirements", ""),
-                        payload.get("observation_id"), selected_facts(c, wanted), rows)
+                        payload.get("observation_id"), selected_facts(c, rows), rows,
+                        account_id=payload.get("feedback_account_id") or payload.get("brief", {}).get("feedback_account_id"))
                     while payload["question_context"]:
                         try:
                             resource_limits.validate_inputs(payload)
@@ -199,6 +266,7 @@ def submit_many(user, project, kind, payloads, actor=None, request_id=""):
                     now(),
                 ),
             )
+            delivery_metrics.record_task(c, ident, kind, mode)
             if cost:
                 ledger(c, user, ident, "FREEZE", -cost, "冻结：" + kind)
         if actor:
@@ -296,6 +364,7 @@ def _run(ident):
     version = None
     model = "demo"
     new_sources = []
+    pending_references = []
     outputs = []
     image = None
     failures = []
@@ -361,6 +430,9 @@ def _run(ident):
                 for item in discovery.pick(
                     items, payload.get("pick") or discover_pick(), field, base
                 ):
+                    if item["selection"]["evidence_status"] == "needs_metrics":
+                        pending_references.append({"title":item["title"], "url":item["url"]})
+                        continue
                     if not active(ident):
                         return
                     try:
@@ -370,7 +442,9 @@ def _run(ident):
                         continue
                     if base:
                         content[field] = base
-                    for key in ("age_days", "followers"):
+                    # Detail responses sometimes omit counters shown by the source list.
+                    # Preserve the observed evidence and prefer the newer detail's zero.
+                    for key in ("likes", "saves", "comments", "age_days", "followers"):
                         if content.get(key) is None and item.get(key) is not None:
                             content[key] = item[key]
                     content["selection"] = item["selection"]
@@ -403,7 +477,7 @@ def _run(ident):
                 "fetched_at": now(),
             }
             new_sources.append((uid(), content, analysis))
-        if not new_sources:
+        if not new_sources and not pending_references:
             raise ValueError(
                 "精选内容均未能完成拆解："
                 + (failures[0]["error"] if failures else "没有可用内容")
@@ -448,8 +522,8 @@ def _run(ident):
                     )
                 )
             ]
-            facts = selected_facts(c, [a["id"] for a in assets])
-        assets = list(payload.get("asset_snapshot", assets))
+            assets = list(payload.get("asset_snapshot", assets))
+            facts = selected_facts(c, assets)
         if payload.get("temporary"):
             assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
@@ -465,7 +539,7 @@ def _run(ident):
             previous=previous,
             demo=demo,
             goal=payload.get("goal", "leads"),
-            history_results=history_results(t["project_id"], content["platform"], payload.get("goal", "leads")),
+            history_results=history_results(t["project_id"], content["platform"], payload.get("goal", "leads"), payload.get("feedback_account_id")),
             facts=facts,
             observations=payload.get("question_context", []),
         )
@@ -494,8 +568,8 @@ def _run(ident):
                     )
                 )
             ]
-            facts = selected_facts(c, payload.get("assets", []))
-        assets = list(payload.get("asset_snapshot", []))
+            assets = list(payload.get("asset_snapshot", []))
+            facts = selected_facts(c, assets)
         if payload.get("temporary"):
             assets.append({"id": "temporary", "name": "临时资料", "content": payload["temporary"]})
         selected_image_ids = [a["id"] for a in assets if a.get("kind") == "图片"]
@@ -511,7 +585,7 @@ def _run(ident):
                 batch,
                 previous=previous,
                 demo=demo,
-                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
+                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads"), brief.get("feedback_account_id")),
                 observations=payload.get("question_context", []),
             )
         else:
@@ -524,7 +598,7 @@ def _run(ident):
                 batch,
                 previous=previous,
                 demo=demo,
-                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads")),
+                history_results=history_results(t["project_id"], brief["platform"], brief.get("goal", "leads"), brief.get("feedback_account_id")),
                 facts=facts,
                 observations=payload.get("question_context", []),
             )
@@ -537,12 +611,9 @@ def _run(ident):
         if not state(ident, "GENERATING"):
             return
         with db() as c:
-            asset = c.execute(
-                "SELECT id,name,kind,content FROM assets WHERE id=? AND project_id=?",
-                (payload["asset_id"], t["project_id"]),
-            ).fetchone()
-        if not asset:
-            raise ValueError("资料已删除，整理任务已终止")
+            asset, source_digest = facts_source(c, t["project_id"], payload["asset_id"])
+        if payload.get("source_digest", source_digest) != source_digest:
+            raise ValueError("资料版本已变化，旧版要点整理已终止")
         facts, model = adapters.extract_facts(asset, prompt, demo)
         if not facts:
             raise ValueError("这份资料没有整理出可用要点")
@@ -550,25 +621,12 @@ def _run(ident):
         if not state(ident, "GENERATING"):
             return
         with db() as c:
-            row = c.execute(
-                "SELECT o.data AS data,o.created_at AS created_at FROM creation_outputs o "
-                "JOIN source_contents s ON s.id=o.source_id "
-                "WHERE o.id=? AND o.project_id=? AND o.deleted_at IS NULL",
-                (payload["creation_id"], t["project_id"]),
-            ).fetchone()
-            if not row:
-                raise ValueError("稿件已删除，重写任务已终止")
-            if (
-                c.execute(
-                    "SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?",
-                    (payload["creation_id"],),
-                ).fetchone()[0]
-                != payload["revision"]
-            ):
-                raise ValueError("稿件已被修改，请打开最新版本后重新发起重写")
+            row = rewrite_target(c, payload["creation_id"], t["project_id"], payload["revision"])
+            draft = rewrite_original(c, row)
+            assets = draft_sources.for_creation(c, row["id"], t["project_id"])
         original = (row["data"], row["created_at"])
         output, model = adapters.rewrite(
-            json.loads(row["data"]), payload["instruction"], prompt, p, demo
+            draft, payload["instruction"], prompt, p, demo, assets
         )
     else:
         if not state(ident, "GENERATING"):
@@ -656,6 +714,8 @@ def _run(ident):
                 )
             result["brief_id"] = payload["source_id"]
         if kind == "facts":
+            if facts_source(c, t["project_id"], payload["asset_id"])[1] != source_digest:
+                raise ValueError("资料版本已变化，旧版要点整理已终止")
             # 重新整理整组替换该资料的旧要点
             c.execute("DELETE FROM asset_facts WHERE asset_id=?", (payload["asset_id"],))
             for fact in facts:
@@ -675,19 +735,8 @@ def _run(ident):
             result["facts"] = len(facts)
         if kind == "rewrite":
             target = payload["creation_id"]
-            if c.execute(
-                "SELECT 1 FROM creation_tracking WHERE creation_id=? AND status='published'",
-                (target,),
-            ).fetchone() or c.execute(
-                "SELECT 1 FROM creation_results WHERE creation_id=?", (target,)
-            ).fetchone():
-                raise ValueError("稿件已发布或已记录效果，保留原文；重写已取消并退回积分")
-            current = c.execute(
-                "SELECT COALESCE(MAX(revision),0) FROM creation_revisions WHERE creation_id=?",
-                (target,),
-            ).fetchone()[0]
-            if current != payload["revision"]:
-                raise ValueError("稿件在重写期间被修改，已退回积分，请重新发起")
+            rewrite_target(c, target, t["project_id"], payload["revision"])
+            output = editing.recheck(output, p, draft_sources.for_creation(c, target, t["project_id"]))
             c.execute(
                 "INSERT OR IGNORE INTO creation_revisions VALUES (?,?,?,?,?)",
                 (target, 0, original[0], "初始稿", original[1]),
@@ -751,19 +800,26 @@ def _run(ident):
                 "逐条结算：未完成或未找到的条目退回",
             )
         ledger(c, t["user_id"], ident, "SETTLE", 0, "结算：" + kind)
+        notices = []
+        if pending_references:
+            result["pending_references"] = pending_references
+            notices.append(f"{len(pending_references)} 条缺少互动，待核实且未扣积分")
+            if not new_sources:
+                model = None
         if failures:
+            notices.append(f"{len(failures)} 条未完成，已退回对应积分")
             result["failures"] = failures
         result["charged"] = charged
         c.execute(
             "UPDATE tasks SET state=?,result=?,cost=?,model=?,skill_version=?,updated_at=?,error=? WHERE id=?",
             (
-                "PARTIAL" if failures else "SUCCEEDED",
+                "PARTIAL" if notices else "SUCCEEDED",
                 dumps(result),
                 charged,
                 model,
                 version_id,
                 now(),
-                f"{len(failures)} 条未完成，已退回对应积分" if failures else None,
+                "；".join(notices) or None,
                 ident,
             ),
         )

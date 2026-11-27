@@ -26,7 +26,8 @@ class WorkspaceTimezoneTests(unittest.TestCase):
         @contextmanager
         def fake_db():
             yield Connection()
-        with patch.object(workspace, 'db', fake_db), patch.object(workspace.datetime, 'datetime', FixedDateTime):
+        with patch.object(workspace, 'db', fake_db), patch.object(workspace.datetime, 'datetime', FixedDateTime), \
+             patch.object(workspace.delivery_metrics, 'project_report', return_value={}):
             with patch.dict(os.environ, {'DAOLOOK_DISPLAY_TIMEZONE': 'Asia/Shanghai'}):
                 self.assertEqual(workspace.stats('project')['today'], 1)
             with patch.dict(os.environ, {'DAOLOOK_DISPLAY_TIMEZONE': 'UTC'}):

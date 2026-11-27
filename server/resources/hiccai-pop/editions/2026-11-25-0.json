@@ -1,0 +1,243 @@
+{
+  "day": "2026-11-25",
+  "issue": 0,
+  "items": [
+    {
+      "id": "case_aura_booking",
+      "platform": "instagram",
+      "publisher": "Aura Studio",
+      "title": "一块纸板翻面，露出工作室的预约信息",
+      "hook_zh": "纸板缺了一口，戴墨镜的人还在嚼。她真在吃纸吗？",
+      "mechanism": "翻牌指路",
+      "visual_payoff": "她把纸板翻过来，背面竟是工作室的价格和预约方式。让人看错的道具，正好用来递出广告。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DdrLEgxMAa1",
+        "title": "一块纸板翻面，露出工作室的预约信息",
+        "publisher": "Aura Studio",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/DdrLEgxMAa1",
+      "idea_zh": "她把纸板翻过来，背面竟是工作室的价格和预约方式。让人看错的道具，正好用来递出广告。",
+      "daily_poster": "/art/overseas/instagram-DdrLEgxMAa1.webp"
+    },
+    {
+      "id": "case_kenny_cup",
+      "platform": "instagram",
+      "publisher": "Kenny’s Café × K Galerie",
+      "title": "一杯饮料悬在街边，让路人停了下来",
+      "hook_zh": "街上悬着一杯冰饮，跑过来的人真能拿到它吗？",
+      "mechanism": "借位悬浮",
+      "visual_payoff": "路人停下、伸手、喝了一口。原本像贴在画面上的杯子，突然成了人物能拿走的真饮料。",
+      "reference_video": {
+        "url": "https://www.instagram.com/p/DdQtR1it9gI",
+        "title": "一杯饮料悬在街边，让路人停了下来",
+        "publisher": "Kenny’s Café × K Galerie",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/p/DdQtR1it9gI",
+      "idea_zh": "路人停下、伸手、喝了一口。原本像贴在画面上的杯子，突然成了人物能拿走的真饮料。",
+      "daily_poster": "/art/overseas/instagram-DdQtR1it9gI.webp"
+    },
+    {
+      "id": "feed_90516503566298b0ef47db3bdbe76d2a",
+      "platform": "tiktok",
+      "publisher": "Jordi Koalitic",
+      "title": "Shadows & stories 🌗 1-4 comment your fav photo👇 Conceptual photography with a message, hidden in everyday life. All shot on a phone, with the behind the scenes.  #photography #mobilephotography #behin",
+      "title_zh": "手机拍出的四组影子",
+      "summary_zh": "作者用手机拍了四组日常物件的影子，也展示了幕后摆法。可以先猜影子来自什么，再看他怎么布置。",
+      "hook_zh": "先只看影子，你能猜到镜头前摆的是什么吗？",
+      "mechanism": "借影构图",
+      "visual_payoff": "先看影子构图，再看幕后摆法，可以让朋友猜它怎么拍出来。",
+      "reference_video": {
+        "url": "https://www.tiktok.com/@jordi.koalitic/video/7698824827100089622",
+        "title": "Shadows & stories 🌗 1-4 comment your fav photo👇 Conceptual photography with a message, hidden in everyday life. All shot on a phone, with the behind the scenes.  #photography #mobilephotography #behindthescenes",
+        "publisher": "Jordi Koalitic",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 20,
+        "published_at": "2026-10-20T18:52:27+00:00",
+        "source": "TikTok官方公开嵌入"
+      },
+      "url": "https://www.tiktok.com/@jordi.koalitic/video/7698824827100089622",
+      "idea_zh": "作者用手机拍了四组日常物件的影子，也展示了幕后摆法。可以先猜影子来自什么，再看他怎么布置。",
+      "daily_poster": "/art/overseas/tiktok-7698824827100089622.webp"
+    },
+    {
+      "id": "case_library_bookface",
+      "platform": "instagram",
+      "publisher": "Evergreen Park Public Library",
+      "title": "举起一本书，封面上的人和馆员接成同一个人",
+      "hook_zh": "封面上的那个人，怎么有一半身体站在书外面？",
+      "mechanism": "封面借位接脸",
+      "visual_payoff": "馆员把自己的身体和封面人物接齐。书放下来，刚才看成一个人的两部分才分开。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/CfedPE9AEbG",
+        "title": "举起一本书，封面上的人和馆员接成同一个人",
+        "publisher": "Evergreen Park Public Library",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/CfedPE9AEbG",
+      "idea_zh": "馆员把自己的身体和封面人物接齐。书放下来，刚才看成一个人的两部分才分开。",
+      "daily_poster": "/art/overseas/instagram-CfedPE9AEbG.webp"
+    },
+    {
+      "id": "feed_f8018d569ff949db7deba3cffa7c7af8",
+      "platform": "youtube",
+      "publisher": "Sermon Shots",
+      "title": "A Satisfying Church Invite Reel You Can Recreate",
+      "title_zh": "刷子扫出一封周日邀请",
+      "summary_zh": "刷子横扫画面，下面的字跟着刷痕露出来，最后拼成一封周日去教堂的邀请。",
+      "hook_zh": "刷子扫过，下面开始露字。这一整句会是什么？",
+      "mechanism": "刷痕显字",
+      "visual_payoff": "消息沿着刷痕出现，手的动作决定读字顺序。",
+      "reference_video": {
+        "url": "https://www.youtube.com/shorts/bDE9T9v33-A",
+        "title": "A Satisfying Church Invite Reel You Can Recreate",
+        "publisher": "Sermon Shots",
+        "platform": "youtube",
+        "relation": "来源视频",
+        "published_at": "2026-09-23",
+        "source": "YouTube Shorts 创作者说明"
+      },
+      "url": "https://www.youtube.com/watch?v=bDE9T9v33-A",
+      "idea_zh": "刷子横扫画面，下面的字跟着刷痕露出来，最后拼成一封周日去教堂的邀请。",
+      "daily_poster": "/art/overseas/youtube-bDE9T9v33-A.webp"
+    },
+    {
+      "id": "case_juice_cup",
+      "platform": "instagram",
+      "publisher": "Juice Junction",
+      "title": "吸管次次投进杯里，换个机位才看懂",
+      "hook_zh": "三个人站那么远，三根吸管怎么会全投中？",
+      "mechanism": "机位错觉",
+      "visual_payoff": "正面只看得到杯口，反打才露出同伴在镜头旁放备用吸管的手。「全中就来试吃」变成了店员合演的玩笑。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DaFuCwZB0BJ",
+        "title": "吸管次次投进杯里，换个机位才看懂",
+        "publisher": "Juice Junction",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/DaFuCwZB0BJ",
+      "idea_zh": "正面只看得到杯口，反打才露出同伴在镜头旁放备用吸管的手。「全中就来试吃」变成了店员合演的玩笑。",
+      "daily_poster": "/art/overseas/instagram-DaFuCwZB0BJ.webp"
+    },
+    {
+      "id": "case_fold_ladder",
+      "platform": "youtube",
+      "publisher": "Jon Harris",
+      "title": "纸面上的梯子立起来了",
+      "hook_zh": "一张卡纸上的梯子，怎么看起来能爬上去？",
+      "mechanism": "折纸透视",
+      "visual_payoff": "梯档画在折痕两边，从特定角度看刚好接齐。折纸和透视一起，让平面的线条有了高度。",
+      "reference_video": {
+        "url": "https://www.youtube.com/shorts/UyLS3UUTzkw",
+        "title": "纸面上的梯子立起来了",
+        "publisher": "Jon Harris",
+        "platform": "youtube",
+        "relation": "来源视频"
+      },
+      "url": "https://www.youtube.com/watch?v=UyLS3UUTzkw",
+      "idea_zh": "梯档画在折痕两边，从特定角度看刚好接齐。折纸和透视一起，让平面的线条有了高度。",
+      "daily_poster": "/art/overseas/youtube-UyLS3UUTzkw.webp"
+    },
+    {
+      "id": "case_duna_menu",
+      "platform": "instagram",
+      "publisher": "Duna Restobar",
+      "title": "刚给松饼打光的菜单，甩一下就落回桌面",
+      "hook_zh": "刚才拿来给松饼补光的菜单，怎么被甩走了？",
+      "mechanism": "甩物接镜",
+      "visual_payoff": "菜单在下一镜顺着同一方向落到桌面摊开。前一秒的拍摄道具，变成了客人眼前的菜单。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DZiJFKzo4l-",
+        "title": "刚给松饼打光的菜单，甩一下就落回桌面",
+        "publisher": "Duna Restobar",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/DZiJFKzo4l-",
+      "idea_zh": "菜单在下一镜顺着同一方向落到桌面摊开。前一秒的拍摄道具，变成了客人眼前的菜单。",
+      "daily_poster": "/art/overseas/instagram-DZiJFKzo4l-.webp"
+    },
+    {
+      "id": "case_deli_frame",
+      "platform": "instagram",
+      "publisher": "TV’s Deli & Diner",
+      "title": "用一张挖空的感谢卡，逐个介绍店员",
+      "hook_zh": "「这家店离不开……」只写了半句话，谁来补完？",
+      "mechanism": "纸框取景",
+      "visual_payoff": "纸框中间的空格套住正在工作的店员。每换一个人，同一句感谢就有了新的结尾。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DfC74B9CWLU",
+        "title": "用一张挖空的感谢卡，逐个介绍店员",
+        "publisher": "TV’s Deli & Diner",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/DfC74B9CWLU",
+      "idea_zh": "纸框中间的空格套住正在工作的店员。每换一个人，同一句感谢就有了新的结尾。",
+      "daily_poster": "/art/overseas/instagram-DfC74B9CWLU.webp"
+    },
+    {
+      "id": "case_infinity_card",
+      "platform": "youtube",
+      "publisher": "Crafter Aditi",
+      "title": "翻不完的纸卡又回到第一面",
+      "hook_zh": "同一张卡翻了好几次，为什么还有下一面？",
+      "mechanism": "纸卡循环",
+      "visual_payoff": "创作者把不同图案分在连续翻折的卡面上，最后一次又翻回开头，整段可以接成一个循环。",
+      "reference_video": {
+        "url": "https://www.youtube.com/shorts/8Fo5u8x7ucg",
+        "title": "翻不完的纸卡又回到第一面",
+        "publisher": "Crafter Aditi",
+        "platform": "youtube",
+        "relation": "来源视频"
+      },
+      "url": "https://www.youtube.com/watch?v=8Fo5u8x7ucg",
+      "idea_zh": "创作者把不同图案分在连续翻折的卡面上，最后一次又翻回开头，整段可以接成一个循环。",
+      "daily_poster": "/art/overseas/youtube-8Fo5u8x7ucg.webp"
+    },
+    {
+      "id": "case_library_eyes",
+      "platform": "youtube",
+      "publisher": "Glen Ellyn Public Library",
+      "title": "给书封加两只活动眼睛，正经封面突然有了表情",
+      "hook_zh": "一本正经的书封上，怎么有一双眼睛在晃？",
+      "mechanism": "两只活动眼睛换表情",
+      "visual_payoff": "给不同书封安上同一对活动眼睛。书名没变，只换了眼神，每个封面就像有了自己的表情。",
+      "reference_video": {
+        "url": "https://www.youtube.com/shorts/rdtb38_A4Kg",
+        "title": "给书封加两只活动眼睛，正经封面突然有了表情",
+        "publisher": "Glen Ellyn Public Library",
+        "platform": "youtube",
+        "relation": "来源视频"
+      },
+      "url": "https://www.youtube.com/watch?v=rdtb38_A4Kg",
+      "idea_zh": "给不同书封安上同一对活动眼睛。书名没变，只换了眼神，每个封面就像有了自己的表情。",
+      "daily_poster": "/art/overseas/youtube-rdtb38_A4Kg.webp"
+    },
+    {
+      "id": "case_nika_sign",
+      "platform": "instagram",
+      "publisher": "Sweets by Nika",
+      "title": "纸板缺了一口，翻过来给甜品摊指路",
+      "hook_zh": "女孩举着缺了一口的纸板，嘴里嚼的到底是什么？",
+      "mechanism": "翻牌指路",
+      "visual_payoff": "先露出藏在纸板后的饼干，再把纸板翻成路牌。观众刚弄懂她在吃什么，就看到去哪儿能买到。",
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/Ddmkp8jyuMP",
+        "title": "纸板缺了一口，翻过来给甜品摊指路",
+        "publisher": "Sweets by Nika",
+        "platform": "instagram",
+        "relation": "来源视频"
+      },
+      "url": "https://www.instagram.com/reel/Ddmkp8jyuMP",
+      "idea_zh": "先露出藏在纸板后的饼干，再把纸板翻成路牌。观众刚弄懂她在吃什么，就看到去哪儿能买到。",
+      "daily_poster": "/art/overseas/instagram-Ddmkp8jyuMP.webp"
+    }
+  ]
+}

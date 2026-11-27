@@ -55,6 +55,9 @@ def enrich(item):
         translated=REVIEWED.get(original) or cached.get(key(original))
         if translated:target[field+'_zh']=translated
         elif original in texts:enqueue(original)
+    review = item.get('editor_review') or {}
+    if review.get('decision') == 'keep' and review.get('title_zh'):
+        value['title_zh'] = review['title_zh']
     if video:value['reference_video']=video
     return value
 

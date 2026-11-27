@@ -51,6 +51,16 @@ def review_key(url):
     parts = urlsplit(url)
     host = parts.hostname or ''
     path = parts.path.strip('/').split('/')
+    if host in ('www.youtube.com', 'youtube.com', 'm.youtube.com', 'youtu.be'):
+        code = ''
+        if host == 'youtu.be' and len(path) == 1:
+            code = path[0]
+        elif path == ['watch']:
+            code = parse_qs(parts.query).get('v', [''])[0]
+        elif len(path) == 2 and path[0] in ('shorts', 'embed'):
+            code = path[1]
+        if re.fullmatch(r'[A-Za-z0-9_-]{11}', code):
+            return ('youtube', code)
     if host in ('www.instagram.com','instagram.com') and len(path)==2 and path[0] in ('p','reel','reels'):
         return ('instagram',path[1])
     if host in ('www.tiktok.com','tiktok.com') and len(path)==3 and path[1]=='video':
@@ -207,7 +217,55 @@ def caption_setup(text):
     return caption_review(text)[1]
 
 
+def candidate_rows(connection):
+    """Read recent public candidates and any older videos currently approved by an editor."""
+    rows = connection.execute('SELECT data,url FROM overseas_feed_videos ORDER BY published_at DESC,url')
+    kept = None
+    for position,row in enumerate(rows):
+        if position >= 600:
+            if kept is None:
+                kept = kept_keys(connection)
+            if not kept:
+                break
+            if review_key(row['url']) not in kept:
+                continue
+        yield row
+
+
+def reviews_by_key(connection):
+    rows = connection.execute('SELECT * FROM overseas_shot_reviews ORDER BY reviewed_at, url')
+    return {review_key(row['url']):row for row in rows}
+
+
+def kept_keys(connection):
+    return {key for key,row in reviews_by_key(connection).items() if row['decision'] == 'keep'}
+
+
+def attach_reviews(connection, items):
+    """Apply the latest decision for the same original, including earlier URL forms."""
+    items = list(items)
+    if not items:
+        return []
+    reviews = reviews_by_key(connection)
+    result = []
+    for item in items:
+        review = reviews.get(review_key(item.get('url') or ''))
+        if review:
+            item = {**item, 'editor_review':{'decision':review['decision'], **json.loads(review['details'])}}
+            matched = [v for v in (item.get('first_matched_at'), review['first_eligible_at']) if v]
+            if matched:
+                item['first_matched_at'] = min(matched)
+        result.append(item)
+    return result
+
+
 def with_setup(item):
+    review = item.get('editor_review')
+    if review:
+        if review['decision'] == 'reject':
+            return {**item, 'visual_payoff':'', 'filming':'', 'filming_basis':'编辑审片未入选'}
+        return {**item, 'visual_payoff':review['change'], 'mechanism':review['mechanism'],
+                'filming':review['method'], 'filming_basis':f"编辑观看原片 · {review['second']:g} 秒 · {review['props']}"}
     case = REVIEWED.get(review_key(item.get('url') or ''))
     if case:
         return {**case, **item, 'filming': case['filming'], 'mechanism': case['mechanism'],

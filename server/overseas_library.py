@@ -59,18 +59,23 @@ def with_reference_video(value):
     return overseas_translation.enrich(overseas_visuals.with_setup(value))
 
 
-def view(row):
-    return with_reference_video({**json.loads(row['data']), 'id':row['id'], 'saved':bool(row['saved']), 'collected_at':row['created_at'], 'updated_at':row['updated_at']})
+def views(connection, rows):
+    items = [{**json.loads(row['data']), 'id':row['id'], 'saved':bool(row['saved']),
+              'collected_at':row['created_at'], 'updated_at':row['updated_at']} for row in rows]
+    return [with_reference_video(item) for item in overseas_visuals.attach_reviews(connection, items)]
 
 
 def list_ideas(project):
     with db() as c:
-        return [view(r) for r in c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC',(project,))]
+        return views(c,c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND deleted_at IS NULL ORDER BY updated_at DESC',(project,)))
 
 
 def reference(project, ident):
+    if ident.startswith('edition_'):
+        return overseas_daily.reference(ident, overseas_feed.now())
     if ident in overseas_visuals.CASES:
-        return copy.deepcopy(overseas_visuals.CASES[ident])
+        with db() as c:
+            return overseas_visuals.with_setup(overseas_visuals.attach_reviews(c, [copy.deepcopy(overseas_visuals.CASES[ident])])[0])
     if ident.startswith('feed_'):
         item = overseas_feed.reference(ident)
         return overseas_visuals.with_setup(item) if item else None
@@ -79,7 +84,7 @@ def reference(project, ident):
         return with_reference_video(copy.deepcopy(value)) if value else None
     with db() as c:
         row = c.execute('SELECT * FROM overseas_ideas WHERE id=? AND project_id=? AND deleted_at IS NULL',(ident,project)).fetchone()
-        return view(row) if row else None
+        return views(c,[row])[0] if row else None
 
 
 def store_in(c, project, value, saved=False):
@@ -93,7 +98,7 @@ def store_in(c, project, value, saved=False):
     else:
         ident=uid(); timestamp=now()
         c.execute('INSERT INTO overseas_ideas VALUES (?,?,?,?,?,NULL,?,?)',(ident,project,key,dumps(value),int(saved),timestamp,timestamp))
-    return view(c.execute('SELECT * FROM overseas_ideas WHERE id=?',(ident,)).fetchone())
+    return views(c,c.execute('SELECT * FROM overseas_ideas WHERE id=?',(ident,)))[0]
 
 
 def store(project, value, saved=False):
@@ -146,13 +151,8 @@ def recommendations(project, query='', category='', saved=False, platform='all',
     daily={p['url']:p for p in edition['picks']} if not saved and scope!='candidates' else {}
     today=not saved and scope=='today'
     snapshot=today and 'items' in edition
-    if snapshot:
-        records=[]
-    elif today:
-        marks=','.join('?' for _ in daily) or 'NULL'
-        with db() as c:
-            records=[view(r) for r in c.execute('SELECT * FROM overseas_ideas WHERE project_id=? AND deleted_at IS NULL AND source_key IN ('+marks+')',(project,*daily))]
-    else:records=list_ideas(project)
+    # Shared playlist cards and their creation references must contain the same public material.
+    records=[] if today else list_ideas(project)
     by_url={r.get('url'):r for r in records if r.get('url')}
     if snapshot:
         items=edition['items']
@@ -160,7 +160,9 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         items = records
     else:
         cases = []
-        for case in overseas_visuals.CASES.values():
+        with db() as c:
+            reviewed_cases = overseas_visuals.attach_reviews(c, overseas_visuals.CASES.values())
+        for case in reviewed_cases:
             if today and case['url'] not in daily:continue
             cases.append({**case, 'saved':False, **by_url.get(case['url'], {})})
         public=overseas_feed.videos(daily) if today else overseas_feed.videos()
@@ -173,7 +175,8 @@ def recommendations(project, query='', category='', saved=False, platform='all',
     scored=[];seen=set()
     for i,item in enumerate(items):
         link=item.get('url') or (item.get('reference_video') or {}).get('url') or item['id']
-        if link in seen:continue
+        original = link if snapshot else overseas_visuals.review_key(link)
+        if original in seen:continue
         if saved and not item['saved']: continue
         if category and item.get('category') not in (category,''): continue
         if industry and item.get('industry')!=industry:continue
@@ -193,16 +196,19 @@ def recommendations(project, query='', category='', saved=False, platform='all',
         direct=[t for t in tokens if t in corpus or (KEYWORDS.get(t) and KEYWORDS[t] in corpus)]
         hits=[t for t in tokens if t in corpus or t in ALIASES.get(item.get('category'),'') or t in direct]
         if tokens and not hits: continue
-        seen.add(link)
+        seen.add(original)
         reason='匹配关键词：'+'、'.join(direct) if direct else ('同类创意：'+item.get('category_name','') if hits else ('匹配所选品类' if category else '可复用的创意结构，按资料顺序展示'))
         value={**item,'recommendation':item.get('visual_payoff') or reason}
+        if not snapshot and (today or (item.get('editor_review') or {}).get('decision') == 'keep'):
+            value['daily_poster'] = overseas_visuals.daily_poster(item)
+        if today:
+            value['creation_reference_id'] = overseas_daily.creation_reference_id(edition['key'],link)
         if today and not snapshot:
-            value['daily_poster']=overseas_visuals.daily_poster(item)
-            value['idea_zh']=overseas_translation.REVIEWED.get(item.get('summary','')) or item.get('visual_payoff','')
+            value['idea_zh']=item.get('visual_payoff','') if item.get('editor_review') else overseas_translation.REVIEWED.get(item.get('summary','')) or item.get('visual_payoff','')
         if pick:value['daily_pick']={'position':pick['position'],'new_match':bool(pick['new_match'])}
         published=overseas_feed.timestamp(item.get('published_at') or item.get('collected_at'))
         kind=0 if item.get('source_kind')=='daily_feed' else (2 if item.get('source_kind')=='archetype' else 1)
-        reviewed=0 if link in overseas_visuals.BY_URL else 1 if setup else 2
+        reviewed=0 if setup and (link in overseas_visuals.BY_URL or item.get("editor_review")) else 1 if setup else 2
         platform_rank=0 if actual_platform=='tiktok' else 1
         story_rank=0 if item.get('story_candidate') else 1
         priority=pick['position'] if pick else 100

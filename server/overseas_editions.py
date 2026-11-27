@@ -6,34 +6,47 @@ from pathlib import Path
 from . import overseas_translation, overseas_visuals
 
 
-def save_automatic(connection, day, picks):
+def cards_for_picks(connection, picks):
     if not picks:
-        return
+        return []
     urls = [pick['url'] for pick in picks]
     marks = ','.join('?' for _ in urls)
     rows = connection.execute('SELECT url,data FROM overseas_feed_videos WHERE url IN (' + marks + ')', urls)
     feed = {row['url']: json.loads(row['data']) for row in rows}
+    public = [overseas_visuals.BY_URL.get(url) or feed.get(url) for url in urls]
+    reviewed = {item['url']:item for item in overseas_visuals.attach_reviews(connection, filter(None,public))}
     items = []
     for pick in picks:
         url = pick['url']
-        public = overseas_visuals.BY_URL.get(url) or feed.get(url)
+        public = reviewed.get(url)
         if public:
             source = overseas_translation.enrich(overseas_visuals.with_setup(public))
-            card = {k: source[k] for k in ('id', 'platform', 'publisher', 'title', 'title_zh', 'summary_zh',
-                    'hook_zh', 'mechanism', 'visual_payoff', 'reference_video', 'url') if k in source}
-            card['idea_zh'] = overseas_translation.REVIEWED.get(source.get('summary')) or source.get('visual_payoff', '')
+            card = {k: source[k] for k in ('id', 'platform', 'publisher', 'title', 'title_zh', 'summary',
+                    'summary_zh', 'hook_zh', 'mechanism', 'visual_payoff', 'filming', 'filming_basis',
+                    'industry', 'publisher_type', 'category', 'category_name', 'reference_video', 'url') if k in source}
+            card['idea_zh'] = source.get('visual_payoff', '') if source.get('editor_review') else overseas_translation.REVIEWED.get(source.get('summary')) or source.get('visual_payoff', '')
             card['daily_poster'] = overseas_visuals.daily_poster(source)
         else:
             # Old ranking records may outlive the feed. Preserve the actual video link.
             card = {'id': hashlib.sha256(url.encode()).hexdigest(), 'title': '往期短片', 'url': url}
         card['daily_pick'] = pick
         items.append(card)
+    return items
+
+
+def save_automatic(connection, day, picks):
+    items = cards_for_picks(connection, picks)
+    if not items:
+        connection.execute("UPDATE overseas_editions SET items='[]' WHERE day=? AND issue=0", (day,))
+        return
     connection.execute('INSERT INTO overseas_editions(day,issue,items) VALUES (?,0,?) '
                        'ON CONFLICT(day,issue) DO UPDATE SET items=excluded.items',
                        (day, json.dumps(items, ensure_ascii=False)))
 
 
 def install(connection):
+    connection.execute("INSERT OR IGNORE INTO overseas_match_events SELECT url,json_extract(data,'$.first_matched_at') "
+                       "FROM overseas_feed_videos WHERE json_extract(data,'$.first_matched_at') IS NOT NULL")
     days = connection.execute('SELECT DISTINCT day FROM overseas_daily_picks WHERE day NOT IN '
                               '(SELECT day FROM overseas_editions WHERE issue=0)').fetchall()
     for row in days:
@@ -45,7 +58,7 @@ def install(connection):
         edition = json.loads(path.read_text())
         items = edition['items']
         for position, item in enumerate(items, 1):
-            item['daily_pick'] = {'url': item['url'], 'position': position, 'new_match': False}
+            item['daily_pick'] = {'url': item['url'], 'position': position, 'new_match': item.pop('new_match', False)}
             item.setdefault('daily_poster', overseas_visuals.daily_poster(item))
         connection.execute('INSERT OR IGNORE INTO overseas_editions(day,issue,items) VALUES (?,?,?)',
                            (edition['day'], edition['issue'], json.dumps(items, ensure_ascii=False)))

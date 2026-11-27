@@ -15,6 +15,20 @@ class CalibrationTests(unittest.TestCase):
         self.assertEqual(len(combos), 3003)
         self.assertTrue(all(sum(c) == 10 and min(c) >= 0 for c in combos))
 
+    def test_calibration_counts_ties_at_the_precision_used_in_production(self):
+        rows = [{"label":label,"content":{"likes":50000 + label}} for label in (0, 1)]
+        fitted_auc, weights = cal.grid(rows, .5)
+        scores = [cal.ranking.score(row["content"], weights)["score"] for row in rows]
+        self.assertEqual(fitted_auc, cal.auc(scores, [0, 1]))
+        self.assertEqual(fitted_auc, .5)
+
+    def test_holdout_excludes_shared_post_when_one_export_lacks_an_id(self):
+        url = "https://www.xiaohongshu.com/explore/abc123?source=share"
+        train = {"batch":"search","split":"train","item_key":"xhs:abc123","content":{"url":url}}
+        other = {"batch":"search","split":"train","item_key":"xhs:def456","content":{"url":""}}
+        held = {"batch":"creator","split":"holdout","content":{"url":"https://www.xiaohongshu.com/discovery/item/abc123"}}
+        self.assertEqual(cal.partition([train, other, held], ["holdout"]), ([other], [held]))
+
     def test_script_reports_suggested_weights(self):
         with tempfile.TemporaryDirectory() as d:
             rows = []

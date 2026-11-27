@@ -26,6 +26,13 @@ def median(values):
     return values[mid] if len(values) % 2 else (values[mid - 1] + values[mid]) / 2
 
 
+def weighted_score(components, weights):
+    total = sum(weights.get(key, 0) for key in components)
+    if not total or "engagement" not in components:
+        return None
+    return round(100 * sum(value * weights.get(key, 0) for key, value in components.items()) / total, 1)
+
+
 def score(content, weights=None):
     weights = weights if weights is not None else setting("ranking")
     components = {}
@@ -59,14 +66,10 @@ def score(content, weights=None):
     reuse = number("reusability")
     if reuse is not None:
         components["reusability"] = min(1, reuse)
-    total = sum(weights.get(k, 0) for k in components)
     return {
-        "score": round(
-            100 * sum(v * weights.get(k, 0) for k, v in components.items()) / total, 1
-        )
-        if total
-        else None,
+        "score": weighted_score(components, weights),
         "components": components,
         "coverage": len(components),
+        "evidence_status": "measured" if "engagement" in components else "needs_metrics",
         "calibrated": False,
     }

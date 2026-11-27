@@ -2474,3 +2474,17 @@ tr:last-child td {
   line-height: 1.7;
 }
 .sidebar > .brand { margin-bottom: 24px; }
+
+.pack-pages { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 18px 0; }
+.pack-pages figure { margin: 0; }
+.pack-pages img { display: block; width: 100%; aspect-ratio: 3 / 4; }
+.pack-pages figcaption { margin-top: 4px; font-size: .85rem; }
+@media (max-width: 560px) {
+  .pack-pages { grid-template-columns: repeat(3, 76%); overflow-x: auto; scroll-snap-type: x proximity; }
+  .pack-pages figure { scroll-snap-align: start; }
+}
+.pack-zoom { display: block; width: 100%; background: none; padding: 0; border: 0; cursor: zoom-in; }
+.pack-pages.zoomed { display: block; }
+.pack-pages.zoomed figure:not(.enlarged) { display: none; }
+.pack-pages .enlarged { max-width: 480px; margin: 0 auto; }
+.pack-pages .enlarged .pack-zoom { cursor: zoom-out; }

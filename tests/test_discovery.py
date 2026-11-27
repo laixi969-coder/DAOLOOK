@@ -51,6 +51,9 @@ class ParseTests(unittest.TestCase):
         self.assertEqual(discovery.parse_count("1,234"), 1234)
         self.assertIsNone(discovery.parse_count("很多"))
         self.assertIsNone(discovery.parse_count(True))
+        self.assertEqual(discovery.parse_count("9,007,199,254,740,993"), 9007199254740993)
+        for invalid in ("1+2", "12,34", "9999999999999999999亿", float("inf"), float("nan")):
+            self.assertIsNone(discovery.parse_count(invalid))
         self.assertAlmostEqual(
             discovery.parse_age_days({"create_time": NOW - 86400 * 2}, NOW), 2
         )
@@ -126,8 +129,8 @@ class DiscoveryJobTests(unittest.TestCase):
                 ).fetchone()
             )
 
-    def run_keyword(self, fail_urls):
-        raw = xhs_search([(10, 0), (500, 100), (30, 5), (80, 1), (2, 0)])
+    def run_keyword(self, fail_urls, raw=None, detail_metrics=None):
+        raw = raw or xhs_search([(10, 0), (500, 100), (30, 5), (80, 1), (2, 0)])
 
         def detail(self_, url, p):
             if url in fail_urls:
@@ -144,6 +147,7 @@ class DiscoveryJobTests(unittest.TestCase):
                 "comments": 0,
                 "followers": None,
                 "age_days": None,
+                **(detail_metrics or {}),
             }
 
         start = self.account()[0]
@@ -181,6 +185,30 @@ class DiscoveryJobTests(unittest.TestCase):
         self.assertTrue(all(s["category_median"] == 40 for s in sources))
         self.assertTrue(all(s["followers"] == 12000 for s in sources))
         self.assertTrue(all(s["age_days"] is not None for s in sources))
+
+    def test_detail_with_missing_counters_keeps_same_posts_selection_evidence(self):
+        _, task, sources = self.run_keyword(set(), detail_metrics={"likes":None, "saves":0, "comments":None})
+        self.assertEqual(task["state"], "SUCCEEDED")
+        self.assertEqual([(s["title"],s["likes"],s["saves"]) for s in sources],
+                         [("n1",500,0),("n3",80,0),("n2",30,0)])
+
+    def test_no_metrics_are_returned_separately_without_charging_for_analysis(self):
+        raw = xhs_search([(1,1),(2,2),(3,3)])
+        for item in raw["data"]["items"]:
+            item["note"]["interact_info"] = {}
+        start, task, sources = self.run_keyword(set(), raw)
+        self.assertEqual((task["state"], task["cost"], self.account()), ("PARTIAL", 0, (start, 0)))
+        self.assertFalse(sources)
+        self.assertIsNone(task["model"])
+        rows = json.loads(task["result"])["pending_references"]
+        self.assertEqual([r["url"].rsplit("/",1)[1] for r in rows], ["n0","n1","n2"])
+        self.assertTrue(all("title" in r for r in rows))
+        raw["data"]["items"][1]["note"]["interact_info"] = {"liked_count":0}
+        start, task, sources = self.run_keyword(set(), raw)
+        result = json.loads(task["result"])
+        self.assertEqual(len(result["source_ids"]),1)
+        self.assertEqual(len(result["pending_references"]),2)
+        self.assertEqual((task["state"],task["cost"],self.account()),("PARTIAL",5,(start-5,0)))
 
     def test_partial_failure_refunds_per_item(self):
         start, task, sources = self.run_keyword(

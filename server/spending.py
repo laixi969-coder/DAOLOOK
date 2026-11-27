@@ -12,6 +12,16 @@ from contextlib import contextmanager
 from .db import db, uid, now
 
 IDENTITY = contextvars.ContextVar('daolook_billing_identity', default=None)
+MODEL_RETRY = contextvars.ContextVar('daolook_model_retry', default=False)
+
+
+@contextmanager
+def model_attempt(retry):
+    token = MODEL_RETRY.set(retry)
+    try:
+        yield
+    finally:
+        MODEL_RETRY.reset(token)
 
 
 class BudgetExceeded(ValueError):
@@ -111,6 +121,16 @@ def reserve(operation, payload):
         ident=uid()
         c.execute('INSERT INTO external_calls VALUES (?,?,?,?,?,?,?,?,?,?)',
                   (ident,identity['user'],identity.get('task'),operation,day,ceiling,'started',None,None,now()))
+        if operation.startswith('model:') and identity.get('task'):
+            updated = c.execute(
+                "UPDATE task_model_metrics SET calls=calls+1,retries=retries+?,reserved=reserved+? "
+                "WHERE task_id=? AND mode='live' AND metered=1",
+                (int(MODEL_RETRY.get()), ceiling, identity['task']),
+            )
+            if updated.rowcount:
+                c.execute("INSERT INTO model_call_rates VALUES (?,?,?,?)",
+                          (ident, price['input_per_million'], price['output_per_million'],
+                           price.get('per_call', 0) + images * price.get('per_image', 0)))
     return ident
 
 
@@ -122,5 +142,19 @@ def finish(ident, result=None, failed=False):
         n=usage.get(key)
         return n if type(n) is int and 0<=n<=2**63-1 else None
     with db() as c:
-        c.execute('UPDATE external_calls SET state=?,input_tokens=?,output_tokens=? WHERE id=?',
-                  ('failed' if failed else 'responded',count('prompt_tokens'),count('completion_tokens'),ident))
+        inputs, outputs = count('prompt_tokens'), count('completion_tokens')
+        updated = c.execute("UPDATE external_calls SET state=?,input_tokens=?,output_tokens=? WHERE id=? AND state='started'",
+                            ('failed' if failed else 'responded', inputs, outputs, ident))
+        if not updated.rowcount or failed:
+            return
+        rate = c.execute("SELECT e.task_id,r.input_rate,r.output_rate,r.fixed_fee FROM model_call_rates r "
+                         "JOIN external_calls e ON e.id=r.call_id WHERE r.call_id=?", (ident,)).fetchone()
+        if rate:
+            complete = inputs is not None and outputs is not None
+            amount = (rate['fixed_fee'] + (inputs * rate['input_rate'] + 999999)//1000000
+                      + (outputs * rate['output_rate'] + 999999)//1000000) if complete else 0
+            if amount > 2**63 - 1:
+                complete, amount = False, 0
+            c.execute("UPDATE task_model_metrics SET usage_calls=usage_calls+?,estimated=estimated+?,"
+                      "input_tokens=input_tokens+?,output_tokens=output_tokens+? WHERE task_id=?",
+                      (int(complete), amount, inputs or 0, outputs or 0, rate['task_id']))

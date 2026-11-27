@@ -3,6 +3,7 @@ import datetime
 import hashlib
 import json
 import os
+import re
 from zoneinfo import ZoneInfo
 
 from . import overseas_editions, overseas_visuals
@@ -22,23 +23,74 @@ def _stored(connection, day):
         'SELECT url,position,new_match FROM overseas_daily_picks WHERE day=? ORDER BY position', (day,))]
 
 
+def front_keys(items):
+    return {overseas_visuals.review_key(p['url']) for p in items[:FRONT_PAGE]}
+
+
+def _previous_front(connection, day):
+    yesterday = (datetime.date.fromisoformat(day) - datetime.timedelta(days=1)).isoformat()
+    issue = connection.execute('SELECT items FROM overseas_editions WHERE day=? ORDER BY issue DESC LIMIT 1',
+                               (yesterday,)).fetchone()
+    if issue:
+        return front_keys(json.loads(issue['items']))
+    picks = _stored(connection, yesterday)
+    return front_keys(picks) if picks else None
+
+
+def _with_overlap(edition, previous):
+    front = front_keys(edition['picks'])
+    return {**edition, 'repeated_front':len(front & previous) if previous is not None else None}
+
+
+def _last_shown(connection, day):
+    history, first_page = {}, {}
+    def remember(url, shown, front):
+        key = overseas_visuals.review_key(url)
+        history[key] = max(shown, history.get(key, ''))
+        if front:
+            first_page[key] = max(front, first_page.get(key, ''))
+    rows = connection.execute('SELECT url,MAX(day),MAX(CASE WHEN position<=? THEN day END) '
+                              'FROM overseas_daily_picks WHERE day<? GROUP BY url', (FRONT_PAGE,day))
+    for url, shown, front in rows:
+        remember(url, shown, front)
+    cutoff = (datetime.date.fromisoformat(day) - datetime.timedelta(days=180)).isoformat()
+    snapshots = connection.execute('SELECT day,items FROM overseas_editions e WHERE day>=? AND day<? '
+                                   'AND (issue>0 OR NOT EXISTS (SELECT 1 FROM overseas_daily_picks p WHERE p.day=e.day))',
+                                   (cutoff, day))
+    for shown, items in snapshots:
+        for i, item in enumerate(json.loads(items)):
+            remember(item['url'], shown, shown if i < FRONT_PAGE else None)
+    return history, first_page
+
+
 def select(connection, stamp, persist, limit=EDITION_SIZE):
     day = day_for(stamp)
-    published = connection.execute('SELECT items FROM overseas_editions WHERE day=? AND issue>0 '
+    previous = _previous_front(connection, day)
+    published = connection.execute('SELECT issue,items FROM overseas_editions WHERE day=? AND issue>0 '
                                    'ORDER BY issue DESC LIMIT 1', (day,)).fetchone()
     if published:
-        return overseas_editions.unpack(day, published['items'], FRONT_PAGE)
+        edition = overseas_editions.unpack(day, published['items'], FRONT_PAGE)
+        return _with_overlap({**edition, 'key': f"{day}.{published['issue']}"}, previous)
     picks = _stored(connection, day)
     if picks:
         # A source can retract a post or change its description between checks.
         marks = ','.join('?' for _ in picks)
         rows = connection.execute('SELECT url,data FROM overseas_feed_videos WHERE url IN ('+marks+')',
                                   [pick['url'] for pick in picks])
-        available = {url for url,case in overseas_visuals.BY_URL.items() if case.get('visual_payoff')}
-        available.update(row['url'] for row in rows if overseas_visuals.with_setup(json.loads(row['data'])).get('visual_payoff'))
-        retained = [pick for pick in picks if pick['url'] in available]
+        chosen_urls = {p['url'] for p in picks}
+        candidates = [case for case in overseas_visuals.CASES.values() if case['url'] in chosen_urls]
+        candidates.extend(json.loads(row['data']) for row in rows)
+        available = {item['url'] for item in overseas_visuals.attach_reviews(connection,candidates)
+                     if overseas_visuals.with_setup(item).get('visual_payoff')}
+        retained = []
+        seen = set()
+        for pick in picks:
+            key = overseas_visuals.review_key(pick['url'])
+            if pick['url'] in available and key not in seen:
+                retained.append(pick)
+                seen.add(key)
         if len(retained) != len(picks):
-            if any(p['position'] <= FRONT_PAGE and p['url'] not in available for p in picks):
+            if retained[:FRONT_PAGE] != picks[:FRONT_PAGE]:
                 # Fill vacated front-page slots by ranking all eligible alternatives.
                 retained = [p for p in retained if p['position'] <= FRONT_PAGE]
             picks = [dict(pick, position=position) for position,pick in enumerate(retained,1)]
@@ -48,38 +100,43 @@ def select(connection, stamp, persist, limit=EDITION_SIZE):
                                        [(day,p['position'],p['url'],p['new_match']) for p in picks])
     if len(picks) < (limit if persist else FRONT_PAGE):
         original_count = len(picks)
-        yesterday = (datetime.date.fromisoformat(day) - datetime.timedelta(days=1)).isoformat()
-        history = dict(connection.execute('SELECT url,max(day) FROM overseas_daily_picks WHERE day<? GROUP BY url', (day,)))
-        first_page = dict(connection.execute('SELECT url,max(day) FROM overseas_daily_picks WHERE day<? AND position<=? GROUP BY url', (day,FRONT_PAGE)))
-        pool = {case['url']: case for case in overseas_visuals.CASES.values() if case.get('visual_payoff')}
-        for row in connection.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600'):
-            item = overseas_visuals.with_setup(json.loads(row['data']))
-            if item.get('visual_payoff') and overseas_visuals.review_key(item['url']) not in overseas_visuals.REVIEWED:
-                pool[item['url']] = item
+        prior_urls = previous or set()
+        history, first_page = _last_shown(connection, day)
+        public = list(overseas_visuals.CASES.values())
+        for row in overseas_visuals.candidate_rows(connection):
+            item = json.loads(row['data'])
+            if overseas_visuals.review_key(item['url']) not in overseas_visuals.REVIEWED:
+                public.append(item)
+        pool = {}
+        for item in overseas_visuals.attach_reviews(connection, public):
+            item = overseas_visuals.with_setup(item)
+            if item.get('visual_payoff'):
+                pool.setdefault(overseas_visuals.review_key(item['url']), item)
         used = {key:set() for key in ('mechanism','publisher','industry','publisher_type')}
         def remember(item):
             for key, values in used.items():
                 values.add((item.get('mechanism') or item['filming']) if key=='mechanism' else item.get(key))
         for pick in picks:
-            item = pool.pop(pick['url'],None)
+            item = pool.pop(overseas_visuals.review_key(pick['url']),None)
             if item:remember(item)
-        def rank(item):
+        def rank(key):
+            item = pool[key]
             url = item['url']
-            shown = history.get(url, '')
+            shown = history.get(key, '')
             matched = item.get('first_matched_at','')
             new_today = bool(matched and day_for(matched) == day)
             mechanism = item.get('mechanism') or item['filming']
-            return (first_page.get(url)==yesterday, mechanism in used['mechanism'], item.get('publisher') in used['publisher'],
-                    bool(shown), shown, first_page.get(url,''), not new_today, item.get('industry') in used['industry'],
+            return (key in prior_urls, not new_today, bool(first_page.get(key)),
+                    mechanism in used['mechanism'], item.get('publisher') in used['publisher'],
+                    bool(shown), first_page.get(key,''), shown, item.get('industry') in used['industry'],
                     item.get('publisher_type') in used['publisher_type'], item.get('platform') != 'tiktok',
                     hashlib.sha256((day+url).encode()).digest())
         while pool and len(picks) < limit:
-            item = min(pool.values(), key=rank)
+            item = pool.pop(min(pool, key=rank))
             url = item['url']
             matched = item.get('first_matched_at','')
             picks.append({'url':url, 'position':len(picks)+1, 'new_match':int(bool(matched and day_for(matched)==day))})
             remember(item)
-            del pool[url]
         if persist:
             connection.executemany('INSERT INTO overseas_daily_picks(day,position,url,new_match) VALUES (?,?,?,?)',
                                    [(day, p['position'], p['url'], p['new_match']) for p in picks[original_count:]])
@@ -87,7 +144,41 @@ def select(connection, stamp, persist, limit=EDITION_SIZE):
             connection.execute('DELETE FROM overseas_daily_picks WHERE day<?', (cutoff,))
     if persist:
         overseas_editions.save_automatic(connection, day, picks)
-    return {'day':day, 'front_page':FRONT_PAGE, 'picks':picks}
+    return _with_overlap({'day':day, 'key':f'{day}.0', 'front_page':FRONT_PAGE, 'picks':picks}, previous)
+
+
+def creation_reference_id(edition_key, url):
+    # Positions can change when a post is withdrawn. Bind the selection to its original URL.
+    return f"edition_{edition_key}.{hashlib.sha256(url.encode()).hexdigest()[:32]}"
+
+
+def reference(ident, stamp):
+    match = re.fullmatch(r'edition_(\d{4}-\d{2}-\d{2})\.(0|[1-9]\d{0,8})\.[a-f0-9]{32}', ident)
+    if not match:
+        return None
+    day, issue = match.groups()
+    key = f'{day}.{issue}'
+    today = day_for(stamp)
+    if day > today:
+        return None
+    with db() as connection:
+        card = None
+        if day == today and issue == '0':
+            # The current automatic page reads live public material, even before the first sync.
+            preview = select(connection, stamp, persist=False)
+            if preview['key'] == key:
+                picks = [p for p in preview['picks'] if creation_reference_id(key, p['url']) == ident]
+                if not picks:
+                    return None
+                card = next(iter(overseas_editions.cards_for_picks(connection, picks)), None)
+        if card is None:
+            row = connection.execute('SELECT items FROM overseas_editions WHERE day=? AND issue=?', (day, issue)).fetchone()
+            items = json.loads(row['items']) if row else []
+            card = next((item for item in items if creation_reference_id(key, item['url']) == ident), None)
+    if card is None:
+        return None
+    return {**{k:v for k,v in card.items() if k not in ('daily_poster','daily_pick','landscape')},
+            'source_kind':'daily_edition', 'edition_key':key}
 
 
 def edition(stamp, archive_key=None):
@@ -95,5 +186,7 @@ def edition(stamp, archive_key=None):
     # the page early must not lock yesterday's cache into today's permanent edition.
     with db() as connection:
         if archive_key is not None:
-            return overseas_editions.archive(connection, day_for(stamp), archive_key, FRONT_PAGE)
+            archived = overseas_editions.archive(connection, day_for(stamp), archive_key, FRONT_PAGE)
+            previous = _previous_front(connection, archived['day']) if archived['day'] else None
+            return _with_overlap(archived, previous)
         return select(connection, stamp, persist=False)

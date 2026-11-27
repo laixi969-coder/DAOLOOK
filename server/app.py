@@ -4,7 +4,7 @@ from http.server import BaseHTTPRequestHandler
 from http.cookies import SimpleCookie
 from pathlib import Path
 from .db import db, init, uid, now, dumps, setting, ledger
-from . import jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, editing, overseas, overseas_library, overseas_daily, overseas_feed, questions
+from . import publish_pack, result_imports, jobs, adapters, maintenance, covers, catalog, mailer, documents, production, content_quality, draft_sources, editing, overseas, overseas_library, overseas_daily, overseas_feed, questions
 from .ranking import score
 from .skills import SKILL_NAMES
 from . import audit, secret_store, spending, resource_limits, workspace, access, intake, account_deletion, mfa
@@ -16,7 +16,7 @@ RATE = RateLimiter()
 STATIC_CACHE = StaticCache()
 
 # 参与结构化整理的资料类型（图片没有文字，禁用词不是业务事实）
-FACT_KINDS = ("品牌资料", "产品信息", "受众画像", "账号", "其他")
+FACT_KINDS = jobs.FACT_KINDS
 
 
 def queue_facts(user, project, asset_id):
@@ -25,7 +25,7 @@ def queue_facts(user, project, asset_id):
         # 真实模式未配置可用模型时必然失败，直接不排队
         if setting("mode") == "live" and not adapters.candidates("analyze"):
             return None
-        return jobs.submit(user, project, "facts", {"asset_id": asset_id})[0]
+        return jobs.submit(user, project, "facts", {"asset_id": asset_id})
     except (jobs.TaskAdmissionError, ValueError):
         return None
 
@@ -615,7 +615,7 @@ class Handler(BaseHTTPRequestHandler):
                               'previous_offset':offset-size if offset else None,
                               'categories':overseas_library.CATEGORIES, 'platforms':overseas.PLATFORMS,
                               'industries':overseas_library.INDUSTRIES, 'publisher_types':overseas_library.PUBLISHER_TYPES,
-                              'daily':{**{k:edition[k] for k in ('day','front_page','key','archive') if k in edition},
+                              'daily':{**{k:edition[k] for k in ('day','front_page','key','archive','repeated_front') if k in edition},
                                        'count':len(edition['picks'])},
                               'search_available':setting('mode')!='demo' and bool(setting('tikhub').get('api_key')),
                               'refresh':overseas_feed.status(),
@@ -686,6 +686,16 @@ class Handler(BaseHTTPRequestHandler):
             if kind=='images' and url.startswith('https://') and not any(ord(ch)<=32 or ord(ch)==127 for ch in url):
                 return self.send(b'',302,headers={'Location':url})
             raise Error('图片格式无效')
+        pack = re.fullmatch(r'/api/creations/([a-f0-9]{32})/publish-pack', path)
+        if pack and method == 'GET':
+            raw_revision = q.get('revision', [''])[0]
+            if not re.fullmatch(r'[0-9]{1,12}', raw_revision):
+                raise Error('需要有效的稿件版本')
+            with db() as c:
+                c.execute('BEGIN')
+                payload = publish_pack.manifest(c, project_id, pack[1], int(raw_revision),
+                                                q.get('photo', [''])[0], q.get('check', [''])[0])
+            return self.send(payload)
         creation_images=re.fullmatch(r'/api/creations/([a-f0-9]{32})/images',path)
         single_image=re.fullmatch(r'/api/images/([a-f0-9]{32})',path)
         if method=='GET' and (creation_images or single_image):
@@ -707,9 +717,10 @@ class Handler(BaseHTTPRequestHandler):
             kind,ident=detail_match.groups()
             table={'sources':'source_contents','creations':'creation_outputs','assets':'assets'}[kind]
             with db() as c:
+                c.execute('BEGIN')
                 row=c.execute(f'SELECT * FROM {table} WHERE id=? AND project_id=?'+(' AND deleted_at IS NULL' if kind=='creations' else ''),(ident,project_id)).fetchone()
                 if not row:raise Error('内容不存在',404)
-                result=workspace.source_view(c,row) if kind=='sources' else workspace.creation_view(c,row) if kind=='creations' else dict(row)
+                result=workspace.source_view(c,row) if kind=='sources' else workspace.creation_view(c,row,review_facts=True) if kind=='creations' else dict(row)
             return self.send(result)
         if path == "/api/analyze" and method == "POST":
             entry = data.get("entry", "single")
@@ -839,6 +850,7 @@ class Handler(BaseHTTPRequestHandler):
                     "goal": data.get("goal", last.get("goal", "leads")),
                     "observation": data.get("observation"),
                     "observation_id": last.get("observation_id"),
+                    "feedback_account_id": data.get("feedback_account_id", last.get("feedback_account_id")),
                 }
                 # 追加生成时沿用客户端对追问的显式选择
                 for flag in ("skip_question", "answer"):
@@ -856,6 +868,9 @@ class Handler(BaseHTTPRequestHandler):
                     ("goal", "leads"),
                 ]
             }
+            if data.get("feedback_account_id"):
+                with db() as c:
+                    payload['feedback_account_id'] = result_imports.account(c, project_id, data['feedback_account_id'])
             payload["observation"] = questions.clean(data.get("observation"))
             if isinstance(data.get("observation_id"), str):
                 with db() as c:
@@ -943,6 +958,10 @@ class Handler(BaseHTTPRequestHandler):
                 if not 2 <= len(brief["topic"]) <= 200:
                     raise Error("请填写 2 到 200 字的创作主题")
                 requirements = data.get("requirements", "")
+            feedback_account = data.get('feedback_account_id', (old_brief or {}).get('feedback_account_id'))
+            if feedback_account:
+                with db() as c:
+                    brief['feedback_account_id'] = result_imports.account(c, project_id, feedback_account)
             if requested_overseas and brief['platform'] not in overseas.PLATFORMS:
                 raise Error('这个主题属于国内创作，请从对应入口继续')
             if brief['platform'] in overseas.PLATFORMS:
@@ -1166,7 +1185,7 @@ class Handler(BaseHTTPRequestHandler):
             )
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/ready", path)
         if match and method == "POST":
-            return self.send(editing.confirm_ready(match.group(1), project_id, data.get("revision")))
+            return self.send(editing.confirm_ready(match.group(1), project_id, data.get("revision"), data.get("source_digest")))
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/(revisions|edit|restore)", path)
         if match:
             ident, operation = match.groups()
@@ -1177,6 +1196,7 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("请选择要恢复的版本")
                 return self.send(editing.save(ident, project_id, data.get("revision"),
                                              changes=data.get("changes"),
+                                             edit_minutes=data.get("edit_minutes"),
                                              restore=data.get("restore_revision") if operation == "restore" else None))
             raise Error("不支持的操作", 405)
         match = re.fullmatch(r"/api/(sources|creations|assets)/([a-f0-9]+)", path)
@@ -1233,8 +1253,12 @@ class Handler(BaseHTTPRequestHandler):
                         raise Error('资料名称或内容格式无效')
                     if data.get('kind')!='图片' and len(data['content'])>resource_limits.MAX_TEXT_CHARS:
                         raise Error('文本资料最多 100000 字')
-                    old=c.execute('SELECT length(CAST(content AS BLOB)) FROM assets WHERE id=?',(ident,)).fetchone()[0]
-                    resource_limits.check_storage(c,u['id'],len(data['content'].encode())-old)
+                    old_size, same_source = c.execute(
+                        'SELECT length(CAST(content AS BLOB)),name=? AND kind=? AND content=? FROM assets WHERE id=?',
+                        (data['name'],data.get('kind','品牌资料'),data['content'],ident)).fetchone()
+                    resource_limits.check_storage(c,u['id'],len(data['content'].encode())-old_size)
+                    if not same_source:
+                        c.execute('DELETE FROM asset_facts WHERE asset_id=?',(ident,))
                     c.execute(
                         "UPDATE assets SET name=?,kind=?,content=? WHERE id=?",
                         (
@@ -1255,14 +1279,35 @@ class Handler(BaseHTTPRequestHandler):
             if refine_asset:
                 queue_facts(u["id"], project_id, ident)
             return self.send({"ok": True})
+        if path == '/api/results/template' and method == 'GET':
+            with db() as c:
+                content = result_imports.template(c, project_id, q.get('account_id', [''])[0], q.get('platform', [''])[0])
+            return self.send(content, content_type='text/csv; charset=utf-8', headers={'Content-Disposition': 'attachment; filename="daolook-results.csv"'})
+        if path in ('/api/results/preview', '/api/results/import') and method == 'POST':
+            apply = path.endswith('/import')
+            with db() as c:
+                c.execute('BEGIN IMMEDIATE' if apply else 'BEGIN')
+                result, pending, stamp = result_imports.plan(c, project_id, data.get('account_id'), data.get('platform'), data.get('csv'))
+                if apply:
+                    if not result['valid']:
+                        raise Error('文件中有未解决的记录，请重新预览', 409)
+                    token = data.get('token')
+                    same_scope = isinstance(token,str) and re.fullmatch(r'[a-f0-9]{64}\.[a-f0-9]{64}',token) and token[:64] == result['token'][:64]
+                    if not same_scope or (pending and token != result['token']):
+                        raise Error('记录或文件已变化，请重新预览', 409)
+                    for cid, values in pending.items():
+                        c.execute('INSERT OR REPLACE INTO creation_results VALUES (?,?,?,?)', (cid, project_id, dumps(values), stamp))
+                    resource_limits.check_storage(c, u['id'])
+            return self.send(result)
         match = re.fullmatch(r"/api/results/([a-f0-9]+)", path)
         if match and method == "POST":
             ident = match.group(1)
             results = content_quality.clean_results(data.get("results"))
             with db() as c:
                 c.execute("BEGIN IMMEDIATE")
-                row = c.execute("SELECT f.data,f.updated_at,k.status,k.published_at FROM creation_outputs o "
+                row = c.execute("SELECT f.data,f.updated_at,k.status,k.published_at,b.traffic_type FROM creation_outputs o "
                                 "LEFT JOIN creation_results f ON f.creation_id=o.id LEFT JOIN creation_tracking k ON k.creation_id=o.id "
+                                "LEFT JOIN publication_bindings b ON b.creation_id=o.id AND b.account_id=k.account_id "
                                 "WHERE o.id=? AND o.project_id=? AND o.deleted_at IS NULL", (ident, project_id)).fetchone()
                 if not row:
                     raise Error("稿件不存在", 404)
@@ -1272,6 +1317,8 @@ class Handler(BaseHTTPRequestHandler):
                     raise Error("发布时间已变化，请重新打开后填写", 409)
                 stamp = now()
                 previous = json.loads(row['data'] or '{}')
+                if row['status']=='published':
+                    result_imports.validate_spend(row['traffic_type'], results)
                 if 'note' not in data['results'] and data.get('window','lifetime') != 'lifetime':
                     results['note'] = previous.get('note','')
                 results = production.merge_result(previous, results, data.get('window','lifetime'),
@@ -1292,6 +1339,8 @@ class Handler(BaseHTTPRequestHandler):
                 row = c.execute(
                     "SELECT * FROM creation_tracking WHERE creation_id=?", (ident,)
                 ).fetchone()
+                if 'expected_tracking' in data and data['expected_tracking'] != (row['updated_at'] if row else None):
+                    raise Error('发布信息已更新，请重新打开',409)
                 cur = {
                     "status": row["status"] if row else "draft",
                     "account_id": row["account_id"] if row else None,
@@ -1324,6 +1373,7 @@ class Handler(BaseHTTPRequestHandler):
                     ).fetchone():
                         raise Error("账号不存在，请先在项目资料里添加「账号」")
                     cur["account_id"] = account
+                result_imports.bind(c, ident, project_id, cur, data, row)
                 if "checklist" in data:
                     cur["checklist"] = production.clean_checklist(data["checklist"])
                 c.execute(
@@ -1342,7 +1392,8 @@ class Handler(BaseHTTPRequestHandler):
                     "SELECT * FROM creation_tracking WHERE creation_id=?", (ident,)
                 ).fetchone()
                 resource_limits.check_storage(c,u["id"])
-            return self.send(production.row_view(row))
+                view = production.row_view(row, result_imports.binding(c, ident))
+            return self.send(view)
         if path == "/api/export":
             return self.export(project_id, q.get("format", ["csv"])[0])
         raise Error("接口不存在", 404)
@@ -1395,9 +1446,11 @@ class Handler(BaseHTTPRequestHandler):
             ]
         ]
         with db() as c:
+            c.execute("BEGIN")
+            source_versions = {}
             for r in c.execute(
                 "SELECT o.*,s.platform,s.url,s.data AS source_data,t.model,v.name AS skill_name,v.version AS skill_number,"
-                "k.status AS track_status,k.published_at,a.name AS account_name,f.data AS result_data,f.updated_at AS result_time,cr.confirmed_at "
+                "k.status AS track_status,k.published_at,a.name AS account_name,f.data AS result_data,f.updated_at AS result_time,cr.confirmed_at,cr.source_digest "
                 "FROM creation_outputs o JOIN source_contents s ON s.id=o.source_id LEFT JOIN tasks t ON t.id=o.task_id "
                 "LEFT JOIN skill_versions v ON v.id=o.skill_version LEFT JOIN creation_tracking k ON k.creation_id=o.id "
                 "LEFT JOIN assets a ON a.id=k.account_id LEFT JOIN creation_results f ON f.creation_id=o.id "
@@ -1457,7 +1510,7 @@ class Handler(BaseHTTPRequestHandler):
                         dumps(d["topic_plan"]) if d.get("topic_plan") else "",
                         dumps(d["topic_basis"].get("sources",[])) if d.get("topic_basis") else "",
                         dumps(d["topic_basis"].get("answer_sources",[])) if d.get("topic_basis") else "",
-                        r["confirmed_at"] or "",
+                        r["confirmed_at"] if r["confirmed_at"] and r["source_digest"] == draft_sources.signature(c,r["id"],project,r["task_id"],source_versions) else "",
                         *(windows.get(period, {}).get(metric, "") for period in production.WINDOWS for metric in production.METRICS),
                         shoot.get("people",""), "、".join(shoot.get("locations",[])), "、".join(shoot.get("props",[])), shoot.get("simpler_take","")]
                 )
@@ -1998,6 +2051,9 @@ def main():
         init()
         if setting("mode") == "live":
             mfa.validate_live_security()
+        from . import overseas_release
+        with db() as connection:
+            overseas_release.install(connection)
         bootstrap_admin()
         jobs.start()
         maintenance.start()

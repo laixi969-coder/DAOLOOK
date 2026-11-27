@@ -74,12 +74,13 @@ def clean_checklist(value):
     return {k: bool(value.get(k)) for k in CHECKLIST}
 
 
-def row_view(row):
+def row_view(row, binding=None):
     if not row:
         return {"status": "draft", "checklist": {}}
     return {
         "status": row["status"],
         "account_id": row["account_id"],
+        **({k: binding[k] for k in ('platform', 'post_id', 'revision', 'traffic_type')} if binding and row['account_id']==binding['account_id'] else {}),
         "published_at": row["published_at"],
         "checklist": json.loads(row["checklist"] or "{}"),
         "updated_at": row["updated_at"],

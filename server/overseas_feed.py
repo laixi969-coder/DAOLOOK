@@ -318,19 +318,20 @@ def sources_revision():
 def videos(urls=None):
     with db() as c:
         if urls is None:
-            rows=c.execute('SELECT data FROM overseas_feed_videos ORDER BY published_at DESC LIMIT 600')
+            rows=overseas_visuals.candidate_rows(c)
         elif urls:
             marks=','.join('?' for _ in urls)
             rows=c.execute('SELECT data FROM overseas_feed_videos WHERE url IN ('+marks+')',tuple(urls))
         else:return []
-        values=[json.loads(row['data']) for row in rows]
+        values=overseas_visuals.attach_reviews(c, (json.loads(row['data']) for row in rows))
     return [overseas_translation.enrich(value) for value in values]
 
 
 def reference(ident):
     with db() as c:
         row=c.execute('SELECT data FROM overseas_feed_videos WHERE id=?',(ident,)).fetchone()
-    return overseas_translation.enrich(json.loads(row['data'])) if row else None
+        value=overseas_visuals.attach_reviews(c,[json.loads(row['data'])])[0] if row else None
+    return overseas_translation.enrich(value) if value else None
 
 
 def status():
@@ -424,33 +425,51 @@ def _sync(token):
         state=json.loads(c.execute('SELECT data FROM overseas_feed_state WHERE id=1').fetchone()[0])
         if state.get('run_id')!=token:
             return
+        reviewed = {item['id']:item for item in overseas_visuals.attach_reviews(c,accepted)}
+        first_matches = {overseas_visuals.review_key(url):matched for url,matched in
+                         c.execute('SELECT url,matched_at FROM overseas_match_events ORDER BY matched_at DESC')}
         for item in accepted:
             current=c.execute('SELECT data,created_at FROM overseas_feed_videos WHERE id=?',(item['id'],)).fetchone()
             previous=json.loads(current['data']) if current else {}
             if previous.get('first_matched_at'):
                 item['first_matched_at']=previous['first_matched_at']
-            if item['url'] not in overseas_visuals.BY_URL and overseas_visuals.with_setup(item).get('visual_payoff'):
+            original = overseas_visuals.review_key(item['url'])
+            if original not in overseas_visuals.REVIEWED and overseas_visuals.with_setup(reviewed[item['id']]).get('visual_payoff'):
                 first=previous.get('first_matched_at')
                 if not first and current and overseas_visuals.with_setup(previous).get('visual_payoff'):first=current['created_at']
-                item['first_matched_at']=first or stamp
-                new_matches+=int(not first)
+                known = (first, first_matches.get(original), reviewed[item['id']].get('first_matched_at'), stamp)
+                item['first_matched_at'] = min(value for value in known if value)
+                if original not in first_matches:
+                    c.execute('INSERT INTO overseas_match_events VALUES (?,?)', (item['url'],item['first_matched_at']))
+                    first_matches[original] = item['first_matched_at']
+                    new_matches += int(not first)
             if previous==item:
                 continue
             added+=int(current is None);changed+=int(current is not None)
             c.execute('INSERT INTO overseas_feed_videos VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET data=excluded.data,published_at=excluded.published_at,updated_at=excluded.updated_at',
                       (item['id'],item['url'],dumps(item),item['published_at'],stamp,stamp))
         cutoff=(timestamp(stamp)-datetime.timedelta(days=MAX_AGE_DAYS)).isoformat()
-        removed=c.execute('DELETE FROM overseas_feed_videos WHERE published_at<?',(cutoff,)).rowcount
         tiktok_sources={s['source_id'] for s in SOURCES if s.get('source_id')}
-        for row in c.execute('SELECT id,data FROM overseas_feed_videos').fetchall():
+        kept = overseas_visuals.kept_keys(c)
+        retired_ids = []
+        for row in c.execute('SELECT id,url,data,published_at FROM overseas_feed_videos'):
+            if overseas_visuals.review_key(row['url']) in kept:
+                continue
+            if row['published_at'] < cutoff:
+                retired_ids.append((row['id'],))
+                continue
             data=json.loads(row['data'])
             retired=data.get('platform')=='tiktok' and (data.get('source_id') not in tiktok_sources or data.get('selection_version')!=SELECTION_VERSION)
             if successes and retired:
-                removed+=c.execute('DELETE FROM overseas_feed_videos WHERE id=?',(row['id'],)).rowcount
+                retired_ids.append((row['id'],))
+        removed=c.executemany('DELETE FROM overseas_feed_videos WHERE id=?',retired_ids).rowcount
         state.update(state='succeeded' if not errors else ('partial' if successes else 'failed'),
                      last_attempt_finished_at=stamp,added_count=added,changed_count=changed,new_match_count=new_matches,errors=sorted(errors),
                      successful_sources=successes,detail_pending_sources=sorted(missing_details),
                      removed_count=removed,sources_revision=sources_revision())
+        coverage = 2 if state['state']=='succeeded' else 1 if successes else 0
+        c.execute('INSERT INTO overseas_sync_days VALUES (?,?) ON CONFLICT(day) DO UPDATE SET '
+                  'coverage=MAX(coverage,excluded.coverage)', (overseas_daily.day_for(stamp),coverage))
         if successes:state['last_checked_at']=stamp
         if added or changed or removed:state['last_updated_at']=stamp
         c.execute('UPDATE overseas_feed_state SET data=? WHERE id=1',(dumps(state),))

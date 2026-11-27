@@ -3,6 +3,7 @@
 import re
 import unicodedata
 import datetime
+from .claim_checks import EXCLUDED_ASSET_KINDS, check_claims
 
 GOALS = {
     "reach": ("更多人看到", "让目标人群停下来读，提供一个值得收藏或分享的具体收获；结尾只留一个相关问题。"),
@@ -17,7 +18,7 @@ CONTRACT = """交付标准（优先于旧版本中冲突的创作规则）：
 每条额外返回 audience（写给谁）、value（读者得到什么）、cta（一句行动引导，与正文结尾一致）、evidence（业务事实依据数组，每项 asset_id 和 quote 原文短句；只引用文本资料，不引用参考或图片推断，无法引用则空数组并在 missing 说明）。
 不把治疗替换成改善来掩盖未经证实的功效；不用虚构亲历、保证效果、假评价。图片只支撑可见外观，不能证明效果、资质或价格。
 同批标题与正文须有实质区别。更多流量、有效咨询、成交是不同结果，不能保证爆款。不使用统一点击率阈值给投放建议。
-history_results 是用户手动记录的历史表现；只把相同目标和平台的结果当作选题线索，留意发布时间和付费流量，不将单条高数据归因为某种写法必然有效。
+history_results 来自用户填写或导入的效果数据。按 account_id、traffic_type 和观察期分组，自然、含付费和未区分的样本分开观察；只把相同目标和平台的结果当作选题线索，留意发布时间和付费流量，不将单条高数据归因为某种写法必然有效。
 results.windows 分别记录发布后24小时、7天、30天的累计快照。只横向比较同观察期的数据，不能相加；未填写的值未知，零是有记录的结果。
 """
 
@@ -66,7 +67,7 @@ def evidence_valid(output, assets):
     evidence = output.get("evidence")
     if not isinstance(evidence, list) or not evidence:
         return False
-    texts = {a.get("id"): a.get("content", "") for a in assets if a.get("kind") != "图片"}
+    texts = {a.get("id"): a.get("content", "") for a in assets if a.get("kind") not in EXCLUDED_ASSET_KINDS}
     return all(
         isinstance(e, dict) and isinstance(e.get("asset_id"), str)
         and isinstance(e.get("quote"), str) and len(e["quote"].strip()) >= 4
@@ -85,6 +86,7 @@ _PURCHASE = re.compile(r"下单|购买|到店|链接|店铺|小店|团购|淘宝
 _ASK = re.compile(r"问|留言|私信|评论|聊聊|说|告诉")
 _ASK_SALES = re.compile(r"私信|留言|咨询|问我|提问")
 _REACH = re.compile(r"收藏|关注|转发|问|评论|留言")
+VISIBLE_COPY = re.compile(r"字幕|口播|台词|旁白|配音|文案|标语|题字|价签|价格牌|屏显|标价|写上|写着|印着")
 
 
 def methodology_hints(output, p):
@@ -124,15 +126,16 @@ def methodology_hints(output, p):
     return hints[:3]
 
 
-def assess(output, assets, p):
+def assess(output, assets, p, *, additional_claim_text=()):
     """Checks are observable checks, not semantic fact verification."""
     issues = []
-    text = unicodedata.normalize('NFKC', public_text(output))
+    copy_text = public_text(output)
+    text = unicodedata.normalize('NFKC', copy_text)
     if re.search(r'百分之百有效|100%有效|保证(?:治愈|痊愈|赚钱|盈利)|绝对安全|零风险|永久有效|国家级|世界第一', text, re.I):
         issues.append('检测到可能的绝对化或效果保证表述，请核实并修改后发布')
     if output.get("demo"):
         issues.append("这是演示模板，请切换真实服务后生成正式内容")
-    if re.search(r"(?<![A-Za-z])X{2,}(?![A-Za-z])|待补充|待填写|请补充|【[^】]*待填", public_text(output), re.I):
+    if re.search(r"(?<![A-Za-z])X{2,}(?![A-Za-z])|待补充|待填写|请补充|【[^】]*待填", copy_text, re.I):
         issues.append("文案含未填写内容，请补齐后再发布")
     if len(output.get("title", "")) > (20 if p == "xhs" else 25 if p == "douyin" else 160):
         issues.append("标题偏长，请缩短后发布")
@@ -142,10 +145,20 @@ def assess(output, assets, p):
         issues.append("正文缺少明确的下一步，请补上结尾的行动引导")
     if not evidence_valid(output, assets):
         issues.append("业务事实缺少可核对的文字依据，请补充产品或服务资料")
+    claim_checks = []
+    if p in ("xhs", "douyin"):
+        shots = [line for line in output.get("storyboard", []) if isinstance(line, str)]
+        # A production checklist can also specify what viewers will read or hear.
+        # A crew-only item such as a 500ml measuring cup is not a product claim.
+        shots.extend(line for key in ("image_suggestions", "shooting_list") for line in output.get(key, [])
+                     if isinstance(line, str) and VISIBLE_COPY.search(line))
+        claim_checks, claim_issues = check_claims("\n".join([copy_text, *shots, *additional_claim_text]), assets)
+        issues.extend(claim_issues)
     issues.extend(m for m in output.get("missing", []) if m.strip())
     return {
         "status": "needs_input" if issues else "checked",
         "issues": list(dict.fromkeys(issues)),
+        "claim_checks": claim_checks,
         "hints": methodology_hints(output, p),
         "note": "发布前仍需核对价格、产品效果和购买方式是否准确。方法论自检是结构提示，不预测流量或转化。",
     }

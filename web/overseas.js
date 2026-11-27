@@ -9,9 +9,11 @@ function overseasFormValues() {
   for (const name of ["platform","goal","topic","market","language","temporary","requirements"])
     value[name]=$(`#overseas-${name}`).value;
   value.observation=questionValues("overseas");
+  value.feedback_account_id=$("#overseas-feedback-account")?.value || "";
   value.duration=Number($("#overseas-duration").value);
   value.assets=selectedAssetIDs("overseas-asset",S.overseasForm?.assets||[]);
   value.reference_id=S.overseasForm?.reference_id || "";
+  value.reference_title=S.overseasForm?.reference_title || "";
   return value;
 }
 function saveOverseasDraft() {
@@ -77,7 +79,7 @@ function overseasPage() {
   const value=S.overseasForm || overseasDefaults();
   const assets=S.workspace.assets.filter(a=>a.kind!=="账号");
   return heading("海外创作", "",button("浏览海外灵感","overseas-ideas","secondary","grid"))+
-    `<div class="overseas-studio"><section class="panel"><form id="overseas-form"><div class="original-grid"><label class="field"><span>发布平台</span><select id="overseas-platform">${Object.entries(OVERSEAS_NAMES).map(([id,label])=>`<option value="${id}" ${id===value.platform?"selected":""}>${label}</option>`).join("")}</select></label>${goalPicker("overseas-goal",value.goal)}</div><label class="field"><span>产品或创作主题</span><input id="overseas-topic" maxlength="200" required value="${esc(value.topic)}" placeholder="例如：周末咖啡市集、门店上新"></label><div class="original-grid"><label class="field"><span>目标市场</span><input id="overseas-market" maxlength="60" required value="${esc(value.market)}" placeholder="例如：美国 / 德国"></label><label class="field"><span>台词语言 + 中文翻译</span><select id="overseas-language">${Object.entries({"en-zh":"英文 + 中文","es-zh":"西班牙文 + 中文","fr-zh":"法文 + 中文","de-zh":"德文 + 中文"}).map(([id,label])=>`<option value="${id}" ${id===value.language?"selected":""}>${label}</option>`).join("")}</select></label></div><label class="field"><span>目标时长（秒）</span><input id="overseas-duration" type="number" min="5" max="60" step="1" value="${value.duration}" required></label>${value.reference_id?`<div class="notice">已选参考：${esc(S.overseasReferenceTitle||"海外创意")}。<button class="text-btn" type="button" data-action="clear-overseas-reference">取消参考</button></div>`:""}<label class="field"><span>真实卖点、受众和拍摄条件</span><textarea id="overseas-temporary" rows="5" maxlength="100000" placeholder="粘贴产品参数、已证实的卖点、客户疑问、可用的实物与场景。也可以先只写产品名，缺失事实会明确标注。">${esc(value.temporary)}</textarea></label>${overseasMaterials(value,assets)}${questionIntake("overseas",value.observation)}<label class="field"><span>特别要求（可选）</span><textarea id="overseas-requirements" rows="2" maxlength="100000" placeholder="例如：不露脸、一人用手机拍、家居桌面场景">${esc(value.requirements)}</textarea></label><div class="entry-bottom"><span>${S.boot.mode==="demo"?"演示模板 · 不调用模型、不实际翻译":"一次给出 3 个不同创意建议"}</span><span>预计 ${originalCost()} 积分 · 失败退还</span></div><button class="btn primary full" type="submit" ${S.busy||S.overseasUploading===workspaceKey()?"disabled":""}>${icon("spark")}${S.overseasUploading===workspaceKey()?"资料上传中…":S.busy?"正在生成海外创意":"生成 3 个创意建议"}</button></form></section></div>`;
+    `<div class="overseas-studio"><section class="panel"><form id="overseas-form"><div class="original-grid"><label class="field"><span>发布平台</span><select id="overseas-platform">${Object.entries(OVERSEAS_NAMES).map(([id,label])=>`<option value="${id}" ${id===value.platform?"selected":""}>${label}</option>`).join("")}</select></label>${goalPicker("overseas-goal",value.goal)}</div><label class="field"><span>产品或创作主题</span><input id="overseas-topic" maxlength="200" required value="${esc(value.topic)}" placeholder="例如：周末咖啡市集、门店上新"></label><div class="original-grid"><label class="field"><span>目标市场</span><input id="overseas-market" maxlength="60" required value="${esc(value.market)}" placeholder="例如：美国 / 德国"></label><label class="field"><span>台词语言 + 中文翻译</span><select id="overseas-language">${Object.entries({"en-zh":"英文 + 中文","es-zh":"西班牙文 + 中文","fr-zh":"法文 + 中文","de-zh":"德文 + 中文"}).map(([id,label])=>`<option value="${id}" ${id===value.language?"selected":""}>${label}</option>`).join("")}</select></label></div><label class="field"><span>目标时长（秒）</span><input id="overseas-duration" type="number" min="5" max="60" step="1" value="${value.duration}" required></label>${value.reference_id?`<div class="notice">已选参考：${esc(value.reference_title||"海外创意")}。<button class="text-btn" type="button" data-action="clear-overseas-reference">取消参考</button></div>`:""}<label class="field"><span>真实卖点、受众和拍摄条件</span><textarea id="overseas-temporary" rows="5" maxlength="100000" placeholder="粘贴产品参数、已证实的卖点、客户疑问、可用的实物与场景。也可以先只写产品名，缺失事实会明确标注。">${esc(value.temporary)}</textarea></label>${overseasMaterials(value,assets)}${feedbackAccountPicker("overseas",value.feedback_account_id,value.platform,value.goal)}${questionIntake("overseas",value.observation)}<label class="field"><span>特别要求（可选）</span><textarea id="overseas-requirements" rows="2" maxlength="100000" placeholder="例如：不露脸、一人用手机拍、家居桌面场景">${esc(value.requirements)}</textarea></label><div class="entry-bottom"><span>${S.boot.mode==="demo"?"演示模板 · 不调用模型、不实际翻译":"一次给出 3 个不同创意建议"}</span><span>预计 ${originalCost()} 积分 · 失败退还</span></div><button class="btn primary full" type="submit" ${S.busy||S.overseasUploading===workspaceKey()?"disabled":""}>${icon("spark")}${S.overseasUploading===workspaceKey()?"资料上传中…":S.busy?"正在生成海外创意":"生成 3 个创意建议"}</button></form></section></div>`;
 }
 function overseasIdeasPage() {
   const lib=S.overseasLibrary, filters=S.overseasFilters||{query:"",platform:"all"};
@@ -98,7 +100,8 @@ function overseasIdeasPage() {
   const limit=lib.daily?.front_page||10;
   const expanded=filters.expandedDay && filters.expandedDay===lib.daily?.day;
   const visible=today&&!expanded?lib.items.slice(0,limit):lib.items;
-  const status=scope==="candidates"?overseasFeedStatus(lib.refresh):"";
+  const repeats=playlist && lib.daily?.repeated_front;
+  const status=scope==="candidates"?overseasFeedStatus(lib.refresh):repeats?`<p class="overseas-feed-status">首屏有 ${esc(String(repeats))} 条与前一天重复</p>`:"";
   const sectionHead=playlist?"":`<div class="section-head"><h2>${tabs[scope]} <span>${esc(String(lib.total ?? lib.items.length))} 条</span></h2></div>`;
   let body=visible.length?`<div class="${playlist?"overseas-daily-grid":"overseas-idea-grid"}">${visible.map(playlist?overseasDailyCard:overseasIdeaCard).join("")}</div>`:archive?empty("暂无往期推荐","",button("回到今日推荐","overseas-tab","secondary","grid",'data-scope="today"')):empty("暂时没有匹配的创意","可以去易拍片库查看其他拍法。",button("浏览易拍片库","overseas-tab","secondary","grid",'data-scope="selected"'));
   if(today && !expanded && lib.items.length>limit) body+=`<div class="actions overseas-more">${button("再看 "+(lib.items.length-limit)+" 条","overseas-daily-more","secondary","arrow")}</div>`;
@@ -157,6 +160,17 @@ function dailyVideoLink(item) {
     [item?.reference_video?.url,item?.url].find(link=>/^https:\/\/(?:(?:(?:www|m)\.)?(?:youtube\.com|instagram\.com|tiktok\.com)|youtu\.be|(?:vm|vt)\.tiktok\.com)\//i.test(link||""));
 }
 
+function dailyCreateButton(item) {
+  if (!item.creation_reference_id) return "";
+  const attrs = `type="button" data-reference="${esc(item.creation_reference_id)}" data-title="${esc(item.title_zh || item.title || "往期短片")}" data-workspace="${esc(workspaceKey())}"`;
+  return button("用这条拍法创作", "use-overseas-idea", "primary small", "spark", attrs);
+}
+
+function overseasPoster(item) {
+  const image=item.daily_poster || item.reference_video?.thumbnail || "";
+  return /^\/art\/overseas\/[\w-]+\.webp$/.test(image) ? image : safeImage(image);
+}
+
 function overseasDailyCard(item) {
   const link=dailyVideoLink(item);
   const player=link && overseasPlayerUrl(link);
@@ -167,15 +181,14 @@ function overseasDailyCard(item) {
   const title=[item.title_zh,item.title,item.mechanism].find(chinese) || "推荐短片";
   const position=item.daily_pick?.position;
   const label=position?`第 ${position} 条原片 · ${title}`:title;
-  const image=item.daily_poster || item.reference_video?.thumbnail || "";
-  const poster=/^\/art\/overseas\/[\w-]+\.webp$/.test(image) ? image : safeImage(image);
+  const poster=overseasPoster(item);
   const source={tiktok:"TikTok",instagram:"Instagram",youtube:"YouTube",tencent:"腾讯视频"}[item.platform]||"原片";
   const cover=poster?`<img src="${esc(poster)}" alt="" loading="${position<=3?"eager":"lazy"}" referrerpolicy="no-referrer">`:"";
-  const media=player?`<button type="button" class="daily-poster" data-action="play-overseas-video" data-id="${esc(item.id)}" aria-label="播放：${esc(label)}"><small aria-hidden="true">${source}</small>${cover}<span aria-hidden="true">▶</span></button>`:"";
+  const media=player?`<button type="button" class="daily-poster" data-action="play-overseas-video" data-id="${esc(item.id)}" data-reference="${esc(item.creation_reference_id || "")}" aria-label="播放：${esc(label)}"><small aria-hidden="true">${source}</small>${cover}<span aria-hidden="true">▶</span></button>`:"";
   const original=link?`<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer" aria-label="${esc(label)}，在原平台观看">在原平台观看 ↗</a>`:"";
-  const notes=[["钩子",hook],["创意",idea]].filter(([,value])=>value)
+  const notes=[["钩子",hook],["创意",idea],["画面依据",item.filming_basis?.startsWith("编辑观看原片") ? item.filming_basis : ""]].filter(([,value])=>value)
     .map(([label,value])=>`<p><strong>${label}</strong>${esc(value)}</p>`).join("");
-  return `<article class="overseas-idea-card"><h2 class="daily-title" lang="zh-CN">${esc(title)}</h2>${media}<div class="daily-notes" lang="zh-CN">${notes}</div>${original}</article>`;
+  return `<article class="overseas-idea-card"><h2 class="daily-title" lang="zh-CN">${esc(title)}</h2>${media}<div class="daily-notes" lang="zh-CN">${notes}</div>${original}${player ? "" : dailyCreateButton(item)}</article>`;
 }
 
 function overseasIdeaCard(item) {
@@ -189,7 +202,8 @@ function overseasIdeaCard(item) {
 }
 function overseasReferenceVideo(item) {
   const video=item.reference_video;
-  if(video?.url) return `<a class="overseas-reference-video" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${video.thumbnail?`<img src="${esc(safeImage(video.thumbnail))}" alt="${esc(video.title_zh||video.title)}" loading="lazy" referrerpolicy="no-referrer">`:""}<span class="video-source">${video.relation==="来源视频"?"来源视频":"同类产品参考"} · ${esc({tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube"}[video.platform]||"YouTube")}</span><strong>${esc(video.title_zh||video.title)}</strong>${video.title_zh?`<span class="video-original">原文：${esc(video.title)}</span>`:""}<span class="video-source">发布者：${esc(video.publisher)}</span>${video.published_at?`<span class="video-source">发布于 ${esc(/^\d{4}-\d{2}-\d{2}$/.test(video.published_at)?video.published_at:date(video.published_at))}</span>`:""}<span class="video-watch">观看参考视频 ↗</span></a>`;
+  const poster=overseasPoster(item);
+  if(video?.url) return `<a class="overseas-reference-video" href="${esc(video.url)}" target="_blank" rel="noopener noreferrer">${poster?`<img src="${esc(poster)}" alt="${esc(video.title_zh||video.title)}" loading="lazy" referrerpolicy="no-referrer">`:""}<span class="video-source">${video.relation==="来源视频"?"来源视频":"同类产品参考"} · ${esc({tiktok:"TikTok",instagram:"Instagram Reels",youtube:"YouTube"}[video.platform]||"YouTube")}</span><strong>${esc(video.title_zh||video.title)}</strong>${video.title_zh?`<span class="video-original">原文：${esc(video.title)}</span>`:""}<span class="video-source">发布者：${esc(video.publisher)}</span>${video.published_at?`<span class="video-source">发布于 ${esc(/^\d{4}-\d{2}-\d{2}$/.test(video.published_at)?video.published_at:date(video.published_at))}</span>`:""}<span class="video-watch">观看参考视频 ↗</span></a>`;
   return item.url?`<a class="video-watch" href="${esc(item.url)}" target="_blank" rel="noopener noreferrer">查看原始内容 ↗</a>`:"";
 }
 async function loadOverseasIdeas(background=false) {
@@ -265,7 +279,7 @@ async function startOverseas(briefId) {
   if(S.busy) return;
   if(S.overseasUploading===workspaceKey()) throw new Error("资料正在上传，请完成后再生成");
   const key=workspaceKey(); if(!briefId) saveOverseasDraft();
-  const value=S.overseasForm;
+  const {reference_title, ...value}=S.overseasForm;
   if(!briefId && value.topic.trim().length<2) throw new Error("请填写至少2个字的产品或创作主题");
   S.busy=true;render();
   try {
@@ -342,14 +356,15 @@ Object.assign(actions,{
   "focus-overseas-creation":el=>{S.focusCreation=el.dataset.id;render();window.scrollTo({top:0});},
   overseas:()=>navigate("overseas"),"overseas-ideas":()=>navigate("overseas-ideas"),
   "play-overseas-video":el=>{
-    const item=S.overseasLibrary?.items.find(i=>i.id===el.dataset.id);
+    const item=S.overseasLibrary?.items.find(i=>i.id===el.dataset.id && (!el.dataset.reference || i.creation_reference_id===el.dataset.reference));
+    if (!item) return;
     const link=dailyVideoLink(item);
     const player=link && overseasPlayerUrl(link);
     if(!player)return;
     const src=new URL(player);
     if(src.hostname!=="www.instagram.com")src.searchParams.set("autoplay","1");
     const brand=/^https:\/\/weibo\.com\/\d+\/[a-zA-Z0-9]+$/.test(item.brand_post||"")?`<a class="video-watch" href="${esc(item.brand_post)}" target="_blank" rel="noopener noreferrer">品牌微博 ↗</a>`:"";
-    modal("观看原片",overseasFrame(src.href,item.title_zh||item.title||"原片播放器",item.landscape)+`<div class="actions"><a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在原平台观看 ↗</a>${brand}</div>`,item.landscape);
+    modal("观看原片",overseasFrame(src.href,item.title_zh||item.title||"原片播放器",item.landscape)+`<div class="actions">${dailyCreateButton(item)}<a class="video-watch" href="${esc(link)}" target="_blank" rel="noopener noreferrer">在原平台观看 ↗</a>${brand}</div>`,item.landscape);
   },
   "refresh-overseas-ideas":refreshOverseasIdeas,
   "collect-overseas":collectOverseasModal,"search-overseas":searchOverseas,
@@ -367,11 +382,17 @@ Object.assign(actions,{
     await loadOverseasIdeas();toast(item.saved?"已取消收藏":"创意已收藏");
   },
   "use-overseas-idea":async el=>{
-    const item=S.overseasLibrary.items.find(i=>i.id===el.dataset.id);if(!item)return;
-    S.overseasForm={...S.overseasForm,reference_id:item.id};S.overseasReferenceTitle=item.title_zh||item.title;
-    drafts.save(workspaceKey()+":overseas",S.overseasForm);await navigate("overseas");
+    const {reference, title, workspace} = el.dataset;
+    if (workspace && workspace !== workspaceKey()) return;
+    const item = reference ? null : S.overseasLibrary?.items.find(i=>i.id === el.dataset.id);
+    if (!reference && !item) return;
+    S.overseasForm = {...S.overseasForm, reference_id: reference || item.id,
+      reference_title: reference ? title : item.title_zh || item.title};
+    drafts.save(workspaceKey()+":overseas",S.overseasForm);
+    if (el.closest?.(".dialog")) close();
+    await navigate("overseas");
   },
-  "clear-overseas-reference":()=>{saveOverseasDraft();S.overseasForm.reference_id="";S.overseasReferenceTitle="";drafts.save(workspaceKey()+":overseas",S.overseasForm);render();},
+  "clear-overseas-reference":()=>{saveOverseasDraft();S.overseasForm.reference_id="";S.overseasForm.reference_title="";drafts.save(workspaceKey()+":overseas",S.overseasForm);render();},
   "overseas-again":el=>startOverseas(el.dataset.id),
   "copy-overseas-screen-text":async el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id)?.data;if(!d)return;const shot=overseasShots(d)[Number(el.dataset.shot)];if(!shot?.screen_text?.trim())return;await navigator.clipboard.writeText(shot.screen_text);toast("屏幕文案已复制");},
   "copy-overseas-prompt":async el=>{const d=S.workspace.creations.find(c=>c.id===el.dataset.id)?.data;if(!d)return;const shot=overseasShots(d)[Number(el.dataset.shot)];if(!shot)return;await navigator.clipboard.writeText(overseasAiPrompt(d,shot));toast("提示词已复制");},

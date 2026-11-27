@@ -118,6 +118,13 @@ vm.runInContext(fs.readFileSync(require.resolve('../web/overseas.js'),'utf8'),co
    assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,13);
    S.overseasLibrary.daily.day="2026-11-22";
    assert.equal((overseasIdeasPage().match(/<article class="overseas-idea-card">/g)||[]).length,10);
+   S.overseasLibrary.daily.repeated_front=3;
+   assert.ok(overseasIdeasPage().includes('首屏有 3 条与前一天重复'));
+   S.overseasFilters.scope="archive";
+   assert.ok(overseasIdeasPage().includes('首屏有 3 条与前一天重复'));
+   S.overseasLibrary.daily.repeated_front=null;
+   assert.ok(!overseasIdeasPage().includes('与前一天重复'));
+   S.overseasFilters.scope="today";
    // Public daily recommendations are collected through the verified source ID.
    S.overseasLibrary={items:[freshVideo]};
    let collected;

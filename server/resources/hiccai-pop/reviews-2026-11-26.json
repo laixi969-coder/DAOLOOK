@@ -1,0 +1,850 @@
+{
+  "reviewed_at": "2026-11-27T03:16:09.425609+00:00",
+  "reviews": [
+    {
+      "url": "https://www.tiktok.com/@kevinbparry/video/7693255239159254324",
+      "decision": "keep",
+      "details": {
+        "change": "上半屏的红圈从纸面底线跳到半空，下半屏同时让人看到手指在纸上摆圈。",
+        "props": "纸、笔、彩色绳圈、手机",
+        "method": "纸上画出几个高度，把绳圈依次摆在标记上，每次移开手拍一张。再录一段摆圈过程，与定格成片上下拼接。",
+        "mechanism": "上下分屏拆解定格",
+        "title_zh": "桌面上的红圈是怎么跳起来的？",
+        "second": 0.55
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@loewe/video/7708325268078873878",
+      "decision": "keep",
+      "details": {
+        "change": "刚贴好的图案原本印在浅色墙面上，灯光一暗，同一组图形在黑暗里泛出绿光。",
+        "props": "夜光贴纸、白板或浅色墙面、台灯、手机",
+        "method": "把夜光贴摆成店铺标志，照亮几秒后固定机位，先拍贴纸，再熄灯，等黑底上的图案显出来。",
+        "mechanism": "熄灯显形",
+        "title_zh": "灯暗下来，墙上的贴纸开始发光",
+        "second": 10.75
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@ryanair/video/7711774651231292694",
+      "decision": "keep",
+      "details": {
+        "change": "黄色轮廓留在跑道中央，飞机图案从右边滑进轮廓，又旋转着离开；画面上方邀请观众截屏对齐。",
+        "props": "手机、一张商品图、同一件商品的轮廓图",
+        "method": "把商品轮廓放在画面中央。给商品图设横移和旋转，只让它短暂经过轮廓上方，留给观众暂停对齐。",
+        "mechanism": "截屏对轮廓",
+        "title_zh": "飞机飞进轮廓，观众来截屏",
+        "second": 1.65
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@thedelibakescafe/video/7709431352990567700",
+      "decision": "keep",
+      "details": {
+        "change": "两人隔着镜头一问一答，先是空手交叉说没时间；切回同一个人时，她两手已各端一杯，结尾两人一起喝。",
+        "props": "两位店员、两杯饮品、手机",
+        "method": "在柜台两侧分别拍问话和拒绝的反打。让拒绝的店员下一镜直接端出两杯，最后切到两人碰头喝。",
+        "mechanism": "用手上道具反转台词",
+        "title_zh": "刚说没空喝咖啡，手里已经端了两杯",
+        "second": 5
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@kevinbparry/video/7697311233279642901",
+      "decision": "reject",
+      "details": {
+        "reason": "后半段把红色圆片沿纸上轨迹逐格挪动，与同批已收的红圈定格用法重复；另一条同时给出成片和手上动作，更容易照着拍。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jacquemus/video/7706961795633761568",
+      "decision": "reject",
+      "details": {
+        "reason": "黑衣人物站在沙发前提包，镜头从摄影师身后缓慢靠近。包和背景始终未变，主要看点是模特和造型。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@loewe/video/7709203370640297238",
+      "decision": "reject",
+      "details": {
+        "reason": "两人站在房间里，一人转身摆臂跳舞，另一人站着看。笑点依赖两人的表演，画面里的商品没有参与动作。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@ryanair/video/7710721221826186519",
+      "decision": "reject",
+      "details": {
+        "reason": "教程字幕在吉祥物、裹毯小动物和飞机起飞之间跳切。要保留笑点需要数个来源不同的素材，现场复拍很难连起来。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@thedelibakescafe/video/7710966584528932117",
+      "decision": "reject",
+      "details": {
+        "reason": "人物拿着面包从柜台走到沙发、落座再咬一口。走位容易复现，但产品始终在手里，没有新的画面变化。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jordi.koalitic/video/7711743269067115798",
+      "decision": "reject",
+      "details": {
+        "reason": "跟拍摄影师沿栈道行走和下蹲，后半段切到湖面秋色的成片。这组前后对照主要靠景区景致和光线。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@kevinbparry/video/7712131832870898950",
+      "decision": "reject",
+      "details": {
+        "reason": "玩具音箱从礼盒升起，又在圣诞树和数个房间之间连续移动。原片的完整效果要做多场景定格，超出一处柜台短拍的成本。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DfcLgCBCku6",
+      "decision": "keep",
+      "details": {
+        "change": "起初盘里只有一个完整的小派。勺子撬开酥皮，7.8 秒近景露出浅色馅，随后火鸡、玉米和填料的字卡随着切面逐一出现。左上角从开头就请观众选要不要来一份。",
+        "props": "一份有层次的小派、一把勺子、一只盘子",
+        "method": "先拍整份，只让手和勺子入镜。挖开时把手机移近，按不同内馅露出的顺序各标一个词，开头放一个是否想尝的投票。",
+        "mechanism": "用切面逐层揭晓配料",
+        "title_zh": "一勺挖开感恩节派，给每一层馅点名",
+        "second": 7.8
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/Df-irHytxtf",
+      "decision": "keep",
+      "details": {
+        "change": "左边的人一手持绿卡，一手举起刷卡机。1.1 秒右边的人用手机贴上来，机器随即被拉开。两个人又碰又躲，最后笑着把手一同压在机器上。",
+        "props": "一部手机、一张道具卡、一台未启用的刷卡机",
+        "method": "固定机位把两人的脸和手同时收进画面。让一人抬起机器，另一人用手机贴过去。围绕同一台机器来回两次，再把它推回桌面。",
+        "mechanism": "同一道具引出双人争抢",
+        "title_zh": "朋友抢着买单，刷卡机成了两人的拔河绳",
+        "second": 1.1
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/Dfjd7JYto9x",
+      "decision": "keep",
+      "details": {
+        "change": "两人隔桌坐着，服务员拿来刷卡机。4 秒时右侧客人仍在原位，随后连人带椅往画面右边移，到 5.5 秒桌边只剩另一位客人探身看；最后由他把卡凑到机器前。",
+        "props": "餐桌、两把椅子、道具卡和刷卡机",
+        "method": "把一位客人的座位放在画面边缘，手机对准另一人和桌面。刷卡机出现后，边缘那位自己挪出镜头，留下的同伴先探身找人，再慢半拍掏卡。",
+        "mechanism": "让一位角色出画揭晓谁买单",
+        "title_zh": "结账时同桌从画面滑走了",
+        "second": 5.5
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DfuC4ACtw-t",
+      "decision": "keep",
+      "details": {
+        "change": "客人边吃边说，服务员在 4 秒和 16 秒先后走进同一桌边又离开。32 秒她直接坐到客人身边听，38 秒手里也举着勺子。来服务的人变成了同桌。",
+        "props": "一张餐桌、两把椅子、一碗菜、两把勺子",
+        "method": "固定手机，在客人旁边留一把空椅。让服务员前两次停在桌边就走，第三次坐到空位上，拿起自己的勺子继续听。",
+        "mechanism": "三次回到同一位置改变角色",
+        "title_zh": "服务员听着听着，坐到客人旁边拿起了勺子",
+        "second": 32
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DfcVlNRibK-",
+      "decision": "reject",
+      "details": {
+        "reason": "0、2 和 4.8 秒均是两名围着不同颜色围裙的同事并排合影，上方队名保持不变。没有可拆出的动作或揭晓。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DfU9GCbi82f",
+      "decision": "reject",
+      "details": {
+        "reason": "2 秒从烤箱取出托盘，6 秒正面端出六个派，10 至 13.5 秒拍成品。是常规出炉展示，缺少能独立成梗的动作。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DgAodtgiVqG",
+      "decision": "reject",
+      "details": {
+        "reason": "与已入选的 DfcLgCBCku6 共用完整小派、放酱、挖开和依次标馅的镜头，连开场盘沿与结尾营业牌都相同。本版只少了投票框。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/Df736wDPl5I",
+      "decision": "reject",
+      "details": {
+        "reason": "0 至 1 秒男子张嘴举叉，2 秒镜头扫过餐桌，3 至 7.6 秒停在托腮微笑的女子身上。横摇交代视线后没有第二层变化。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DfpYWZMNrw1",
+      "decision": "reject",
+      "details": {
+        "reason": "约 4 秒客人离席，6 至 12 秒服务员低头端详一张纸币，14 至 17.7 秒抬头做惊讶表情。画面不足以交代纸币带来的具体意外。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/Df5OL64umeD",
+      "decision": "reject",
+      "details": {
+        "reason": "0 至 3 秒女子吃东西，4 秒切到对面男子，后者举杯盯着镜头直到片尾。笑点主要交给字幕，两人的动作单独看很普通。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/Dfm8oqFNUep",
+      "decision": "reject",
+      "details": {
+        "reason": "0 至 4 秒第一位客人静静拿着饮料，5 秒换到第二位客人挥手讲述。人物性格对照主要来自字幕和表演，画面没有进一步揭晓。"
+      }
+    },
+    {
+      "url": "https://www.instagram.com/reel/DgFkRNtt4t0",
+      "decision": "reject",
+      "details": {
+        "reason": "4 秒顾客刷卡，9 至 10 秒又递出纸币，约 15 秒服务员俯身拥抱。收小费后夸张致谢与同组结账题材接近，优先保留刷卡机争夺、同桌出画两种更易读的动作。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@crocs/video/7712140494343638285",
+      "decision": "keep",
+      "details": {
+        "change": "前两秒，一名女子穿过办公室门口。镜头转向亮着屏幕的工位，2.7 秒已经能看见椅面上的一双鞋，4 秒切近景看鞋面上的人像。",
+        "props": "办公椅、桌上电脑、一双带图案的鞋。",
+        "method": "一人从店门走向平时站的位置，切到椅子或柜台，先拍清商品占了人的位置，再补一个细节近景。两镜头都用店内现有陈设。",
+        "mechanism": "商品占了人的位置",
+        "title_zh": "Crocs 把一双鞋放上办公椅，让它先到岗",
+        "second": 2.7
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@marcjacobs/video/7707337472094637342",
+      "decision": "keep",
+      "details": {
+        "change": "同一个四角带黑弧的圆形视野里，0.1 秒一人捧着小银罩，0.7 秒已经换成另一位来客举起罩子；后面换成戴派对帽的人，3.3 秒有人往托特包里探手。",
+        "props": "浅色墙面、小银罩、派对帽和手提包；镜头一直正对来客。",
+        "method": "手机固定在门内，给画面四角加同一个圆形遮罩。让两三名同事站到同一位置，各自把一件货递向镜头，按递出的动作切换来客。",
+        "mechanism": "固定猫眼换来客",
+        "title_zh": "Marc Jacobs 把来客拍成一串猫眼里的亮相",
+        "second": 0.7
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@metmuseum/video/7712186147044101389",
+      "decision": "keep",
+      "details": {
+        "change": "39 秒先看到戴草帽的男子肖像，41 秒出现同一展品另一面的深色人物画。47–49 秒拉开看透明展柜，能看清画框的两面都有观看空间。",
+        "props": "两面都能看的画框、透明展柜。",
+        "method": "在桌上把两张图背靠背立起。手机先拍熟悉的正面，再绕半圈停在背面，最后拉远交代两张图共用同一展示架。可把背面的图换成包装内侧的手写信息。",
+        "mechanism": "绕到背面揭晓",
+        "title_zh": "大都会博物馆用画框的背面再讲一层",
+        "second": 41.0
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@thedelibakescafe/video/7712098251499162886",
+      "decision": "keep",
+      "details": {
+        "change": "2.3 秒能看到架上散放的灰蓝和粉色线球。店员布置窗面和灯具后，9.7 秒镜头切到多色线球垒成的树形，店员正用双手调整下层的一颗。",
+        "props": "粗线缠成的球、临街窗、树形线球摆设。",
+        "method": "保留散件和摆好后的两个镜头。用纸团缠线，在柜台上把几个球垒出小树轮廓，最后拍手扶正底层线球的动作。",
+        "mechanism": "散件叠成节日陈列",
+        "title_zh": "The Deli Bakes 用一堆线球收尾节日布置",
+        "second": 9.7
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@theordinary/video/7711831840696356104",
+      "decision": "reject",
+      "details": {
+        "reason": "2.2 秒并排展示四件护肤品，随后逐件示范，19.8 秒再一起举起；核心是常规试用，首尾的产品排布没有出现新的画面关系。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jacquemus/video/7697653022175792416",
+      "decision": "reject",
+      "details": {
+        "reason": "固定机位拍户外表演，人物轮流升至高空并翻转，落地区域铺有专业软垫；主要看点依赖特技和专门场地。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jacquemus/video/7698009107076287777",
+      "decision": "reject",
+      "details": {
+        "reason": "人物从红墙房间远端走向镜头又走进窗边光线，靠的是场地尺度和自然光；没有可单独提取的商品动作或揭晓。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@milwaukeepubliclibrary/video/7703989013769768205",
+      "decision": "reject",
+      "details": {
+        "reason": "两位馆员在固定机位前挥臂，字幕一直是 GO TO THE LIBRARY；动作没有让货品、空间或信息发生新的变化。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@loewe/video/7709950726805540118",
+      "decision": "reject",
+      "details": {
+        "reason": "画面依次切换包上的不同玩偶挂饰，结尾仍是静态特写。字幕把趣味寄托在想象挂饰唱歌，本轮逐帧能核实的画面不足以提炼一个独立的视觉变化。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@scrubdaddy/video/7670279337764998431",
+      "decision": "reject",
+      "details": {
+        "reason": "约 90 秒内先后出现医院布景、穿手术服的演员、锅具、推床和警察角色；海绵反复出现，但整段喜剧依赖多人表演和多套布景。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@crocs/video/7711923723044982029",
+      "decision": "reject",
+      "details": {
+        "reason": "前约 25 秒是同一位人物坐着对镜讲话，后段叠入鞋款和人物图片；画面的主要变化来自插图，没有可以用实物演出来的揭晓。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@jacquemus/video/7712152397396643105",
+      "decision": "reject",
+      "details": {
+        "reason": "街上的人物本来已穿着红靴，约 7.6 秒抬腿把鞋底送近画面，最后转身走开；主体一直是穿搭展示，缺少第二个视觉变化。"
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@theordinary/video/7712214399603199240",
+      "decision": "keep",
+      "details": {
+        "change": "0.2 秒还是完整的红面，金属圆勺边缘压上去，0.6 秒已经出现裂纹；5 秒裂口里能看到红色瓶身和白色标签，结尾戴手套的手把瓶子拿起。",
+        "props": "金属圆勺、红色外壳、带白标的小瓶、手套。",
+        "method": "用预先剪开几道缝的红卡纸盖住桌上的产品，手机固定俯拍。用圆勺把纸瓣往里拨，露出第一截标签，再用手取出商品。",
+        "mechanism": "破开同色外壳显物",
+        "title_zh": "The Ordinary 打开一层红色外壳，露出同色小瓶",
+        "second": 5.0
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@milwaukeepubliclibrary/video/7709933220971711758",
+      "decision": "keep",
+      "details": {
+        "change": "手先在馆内镜头前张开，随后伸向远处的屋顶。15 秒时指尖从近处对准楼下明亮的门口，之后对着书架、红色雕塑和树冠做相似的手势。",
+        "props": "一只靠近手机的手、场馆里的门框和书架、室外雕塑。",
+        "method": "在店里选门头、货架和一件招牌货，把手放到手机镜头前，把指尖分别对到远处物件的边缘，做两下轻点。每个位置拍两秒，按指尖动作剪在一起。",
+        "mechanism": "近处手指隔空触景",
+        "title_zh": "密尔沃基公共图书馆用手指隔空逛馆",
+        "second": 15.0
+      }
+    },
+    {
+      "url": "https://www.tiktok.com/@crocs/video/7710340550024514830",
+      "decision": "keep",
+      "details": {
+        "change": "3.3 秒手指并在两只黑鞋上方，鞋口仍是黑色；3.5 秒手还在画面中央，鞋口已经出现一白一红的褶边，随后切到穿在脚上的效果。",
+        "props": "一双黑色洞洞鞋、红白褶边、桌上的小鞋饰。",
+        "method": "俯拍固定两件商品的位置。让手入画做一次靠拢手指的动作，装好两条不同颜色的布饰后从同一位置再拍一次，在手势处接上下一条，最后切实穿或上身。",
+        "mechanism": "指尖动作切换装饰",
+        "title_zh": "Crocs 用一个手势给鞋口换上节日装饰",
+        "second": 3.5
+      }
+    }
+  ],
+  "videos": [
+    {
+      "id": "feed_3c4a4fa7e1f061aeb6c31ff680d18f5d",
+      "feed_id": "feed_3c4a4fa7e1f061aeb6c31ff680d18f5d",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@kevinbparry/video/7693255239159254324",
+      "title": "I made an activity book! Learn more at the link in my bioooooo www.stopmotionbook.com #animation #stopmotion",
+      "source_id": "tiktok:kevinbparry",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Kevin Parry",
+      "industry": "影视与创意",
+      "publisher_type": "达人创作者",
+      "published_at": "2026-10-05T18:39:37+00:00",
+      "duration": 15,
+      "category": "",
+      "category_name": "",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@kevinbparry/video/7693255239159254324",
+        "title": "I made an activity book! Learn more at the link in my bioooooo www.stopmotionbook.com #animation #stopmotion",
+        "publisher": "Kevin Parry",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 15,
+        "published_at": "2026-10-05T18:39:37+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_aaf11548f010edd4b06ec9d1f5eff623",
+      "feed_id": "feed_aaf11548f010edd4b06ec9d1f5eff623",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@loewe/video/7708325268078873878",
+      "title": "Get cozy 🍵 #LOEWE Issue 13 available now in selected stores.",
+      "source_id": "tiktok:loewe",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "LOEWE",
+      "industry": "时装配饰",
+      "publisher_type": "奢侈品牌",
+      "published_at": "2026-11-15T09:19:05+00:00",
+      "duration": 15,
+      "category": "E",
+      "category_name": "服饰鞋包与身材管理",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@loewe/video/7708325268078873878",
+        "title": "Get cozy 🍵 #LOEWE Issue 13 available now in selected stores.",
+        "publisher": "LOEWE",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 15,
+        "published_at": "2026-11-15T09:19:05+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_31243285f7dd7a86727c89c8eb07b184",
+      "feed_id": "feed_31243285f7dd7a86727c89c8eb07b184",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@ryanair/video/7711774651231292694",
+      "title": "any winners? #ryanair",
+      "source_id": "tiktok:ryanair",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Ryanair",
+      "industry": "旅行交通",
+      "publisher_type": "大众品牌",
+      "published_at": "2026-11-24T16:24:22+00:00",
+      "duration": 4,
+      "category": "",
+      "category_name": "",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@ryanair/video/7711774651231292694",
+        "title": "any winners? #ryanair",
+        "publisher": "Ryanair",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 4,
+        "published_at": "2026-11-24T16:24:22+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_4526e810e26b83cec48de96c4060b600",
+      "feed_id": "feed_4526e810e26b83cec48de96c4060b600",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@thedelibakescafe/video/7709431352990567700",
+      "title": "always have time for a good coffee 🤓☕️  . #cafebandung #TDBEyckman #TheDeliBakes #placetogobandung",
+      "source_id": "tiktok:thedelibakescafe",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "The Deli Bakes",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-18T08:51:12+00:00",
+      "duration": 9,
+      "category": "",
+      "category_name": "",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@thedelibakescafe/video/7709431352990567700",
+        "title": "always have time for a good coffee 🤓☕️  . #cafebandung #TDBEyckman #TheDeliBakes #placetogobandung",
+        "publisher": "The Deli Bakes",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 9,
+        "published_at": "2026-11-18T08:51:12+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_b9488acf6e45655f803798758ee81048",
+      "feed_id": "feed_b9488acf6e45655f803798758ee81048",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/DfcLgCBCku6",
+      "title": "If we make these for Thanksgiving week, would you order one?",
+      "source_id": "instagram:tvsdeli",
+      "source_kind": "daily_feed",
+      "source": "Instagram 官方公开嵌入",
+      "publisher": "TV’s Deli & Diner",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-07T12:28:35+00:00",
+      "duration": 15.966,
+      "category": "",
+      "category_name": "",
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DfcLgCBCku6",
+        "title": "If we make these for Thanksgiving week, would you order one?",
+        "publisher": "TV’s Deli & Diner",
+        "platform": "instagram",
+        "relation": "来源视频",
+        "duration": 15.966,
+        "published_at": "2026-11-07T12:28:35+00:00",
+        "source": "Instagram 官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_e8c7670c6aa1c00c5ad8fd30923b5a85",
+      "feed_id": "feed_e8c7670c6aa1c00c5ad8fd30923b5a85",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/Df-irHytxtf",
+      "title": "Когда доходишь до ТОГО самого момента ужина с лучшей подругой",
+      "source_id": "instagram:duna_restobar",
+      "source_kind": "daily_feed",
+      "source": "Instagram 官方公开嵌入",
+      "publisher": "Duna Restobar",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-20T20:44:17+00:00",
+      "duration": 5.2,
+      "category": "",
+      "category_name": "",
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/Df-irHytxtf",
+        "title": "Когда доходишь до ТОГО самого момента ужина с лучшей подругой",
+        "publisher": "Duna Restobar",
+        "platform": "instagram",
+        "relation": "来源视频",
+        "duration": 5.2,
+        "published_at": "2026-11-20T20:44:17+00:00",
+        "source": "Instagram 官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_ae05e380ca4ac7e493e1b12622d8d1de",
+      "feed_id": "feed_ae05e380ca4ac7e493e1b12622d8d1de",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/Dfjd7JYto9x",
+      "title": "Кто заплатит?",
+      "source_id": "instagram:duna_restobar",
+      "source_kind": "daily_feed",
+      "source": "Instagram 官方公开嵌入",
+      "publisher": "Duna Restobar",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-10T08:25:02+00:00",
+      "duration": 9.333,
+      "category": "",
+      "category_name": "",
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/Dfjd7JYto9x",
+        "title": "Кто заплатит?",
+        "publisher": "Duna Restobar",
+        "platform": "instagram",
+        "relation": "来源视频",
+        "duration": 9.333,
+        "published_at": "2026-11-10T08:25:02+00:00",
+        "source": "Instagram 官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_4202891ea3167e9213ac72b1c04d2baa",
+      "feed_id": "feed_4202891ea3167e9213ac72b1c04d2baa",
+      "platform": "instagram",
+      "url": "https://www.instagram.com/reel/DfuC4ACtw-t",
+      "title": "Увлекательная история",
+      "source_id": "instagram:duna_restobar",
+      "source_kind": "daily_feed",
+      "source": "Instagram 官方公开嵌入",
+      "publisher": "Duna Restobar",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-14T11:03:01+00:00",
+      "duration": 46.252,
+      "category": "",
+      "category_name": "",
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.instagram.com/reel/DfuC4ACtw-t",
+        "title": "Увлекательная история",
+        "publisher": "Duna Restobar",
+        "platform": "instagram",
+        "relation": "来源视频",
+        "duration": 46.252,
+        "published_at": "2026-11-14T11:03:01+00:00",
+        "source": "Instagram 官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_62459612eb571b24fefc6d7143f86f86",
+      "feed_id": "feed_62459612eb571b24fefc6d7143f86f86",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@crocs/video/7712140494343638285",
+      "title": "nobody is safe, not even our clogs 💜 The Twilight Saga x Crocs Special Edition clogs drop on 12/3",
+      "source_id": "tiktok:crocs",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Crocs",
+      "industry": "时装配饰",
+      "publisher_type": "大众品牌",
+      "published_at": "2026-11-25T17:00:00+00:00",
+      "duration": 8,
+      "category": "E",
+      "category_name": "服饰鞋包与身材管理",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@crocs/video/7712140494343638285",
+        "title": "nobody is safe, not even our clogs 💜 The Twilight Saga x Crocs Special Edition clogs drop on 12/3",
+        "publisher": "Crocs",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 8,
+        "published_at": "2026-11-25T17:00:00+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_f37cdf8a059c43aba10c96530b649ede",
+      "feed_id": "feed_f37cdf8a059c43aba10c96530b649ede",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@marcjacobs/video/7707337472094637342",
+      "title": "A good guest never arrives empty-handed. The new Marc Jacobs winter collection is at the door.  Starring: Andre Drummond, Ashtin Earle, Mel Ottenberg, Kai Schreiber, Miyako Bellizzi, and Amina Ahmed #",
+      "source_id": "tiktok:marcjacobs",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "marcjacobs",
+      "industry": "时装配饰",
+      "publisher_type": "设计师品牌",
+      "published_at": "2026-11-12T17:25:58+00:00",
+      "duration": 5,
+      "category": "E",
+      "category_name": "服饰鞋包与身材管理",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@marcjacobs/video/7707337472094637342",
+        "title": "A good guest never arrives empty-handed. The new Marc Jacobs winter collection is at the door.  Starring: Andre Drummond, Ashtin Earle, Mel Ottenberg, Kai Schreiber, Miyako Bellizzi, and Amina Ahmed #marcjacobs",
+        "publisher": "marcjacobs",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 5,
+        "published_at": "2026-11-12T17:25:58+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_d7b1edf2b40b98e73370b2e81590b339",
+      "feed_id": "feed_d7b1edf2b40b98e73370b2e81590b339",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@metmuseum/video/7712186147044101389",
+      "title": "Zooming in on your phone? Not quite the same as seeing it in person! These details deserve more than a double tap! Consider this your sign to come to The Met and discover what you might miss on your s",
+      "source_id": "tiktok:metmuseum",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "The Met",
+      "industry": "艺术文化",
+      "publisher_type": "机构媒体",
+      "published_at": "2026-11-25T19:01:02+00:00",
+      "duration": 89,
+      "category": "A",
+      "category_name": "3C 数码与汽车周边",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@metmuseum/video/7712186147044101389",
+        "title": "Zooming in on your phone? Not quite the same as seeing it in person! These details deserve more than a double tap! Consider this your sign to come to The Met and discover what you might miss on your screen.",
+        "publisher": "The Met",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 89,
+        "published_at": "2026-11-25T19:01:02+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_c67043790759e41f88390819eb65a228",
+      "feed_id": "feed_c67043790759e41f88390819eb65a228",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@thedelibakescafe/video/7712098251499162886",
+      "title": "New season, newe look! A recap of our decor transformation at The Deli Bakes Pudak! 🤪🎄  This one feels extra special as we’re teaming up with @Speicher Concepts to bring a little more Christmas magic ",
+      "source_id": "tiktok:thedelibakescafe",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "The Deli Bakes",
+      "industry": "餐饮食品",
+      "publisher_type": "独立商家",
+      "published_at": "2026-11-25T13:20:07+00:00",
+      "duration": 10,
+      "category": "",
+      "category_name": "",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@thedelibakescafe/video/7712098251499162886",
+        "title": "New season, newe look! A recap of our decor transformation at The Deli Bakes Pudak! 🤪🎄  This one feels extra special as we’re teaming up with @Speicher Concepts to bring a little more Christmas magic to our space… 💙❤️🤎 #cafebandung #placetogobandung #TheDeliBakes #TDBPudak  #decorchristmas",
+        "publisher": "The Deli Bakes",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 10,
+        "published_at": "2026-11-25T13:20:07+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_8fc6e5ec80d76e085fbc7bd43f587d6b",
+      "feed_id": "feed_8fc6e5ec80d76e085fbc7bd43f587d6b",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@theordinary/video/7712214399603199240",
+      "title": "no tea, no shade tho cc: @og slimes ☻ #theordinary #slimeasmr #waxcracking #slime #peelingsolution",
+      "source_id": "tiktok:theordinary",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "The Ordinary",
+      "industry": "美妆护肤",
+      "publisher_type": "大众品牌",
+      "published_at": "2026-11-25T20:50:50+00:00",
+      "duration": 17,
+      "category": "B",
+      "category_name": "美妆个护与变美玄学",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@theordinary/video/7712214399603199240",
+        "title": "no tea, no shade tho cc: @og slimes ☻ #theordinary #slimeasmr #waxcracking #slime #peelingsolution",
+        "publisher": "The Ordinary",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 17,
+        "published_at": "2026-11-25T20:50:50+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_9e07bf1d9c740b5a8a1898d622095363",
+      "feed_id": "feed_9e07bf1d9c740b5a8a1898d622095363",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@milwaukeepubliclibrary/video/7709933220971711758",
+      "title": "Sounds of the library #ASMR #ASMRSounds #Library",
+      "source_id": "tiktok:milwaukeepubliclibrary",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Milwaukee Public Library",
+      "industry": "艺术文化",
+      "publisher_type": "机构媒体",
+      "published_at": "2026-11-19T17:18:49+00:00",
+      "duration": 38,
+      "category": "",
+      "category_name": "",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@milwaukeepubliclibrary/video/7709933220971711758",
+        "title": "Sounds of the library #ASMR #ASMRSounds #Library",
+        "publisher": "Milwaukee Public Library",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 38,
+        "published_at": "2026-11-19T17:18:49+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_be8f015acf0ea94d90470f239be69718",
+      "feed_id": "feed_be8f015acf0ea94d90470f239be69718",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@crocs/video/7710340550024514830",
+      "title": "deck the…clogs!!",
+      "source_id": "tiktok:crocs",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Crocs",
+      "industry": "时装配饰",
+      "publisher_type": "大众品牌",
+      "published_at": "2026-11-20T19:39:28+00:00",
+      "duration": 7,
+      "category": "E",
+      "category_name": "服饰鞋包与身材管理",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@crocs/video/7710340550024514830",
+        "title": "deck the…clogs!!",
+        "publisher": "Crocs",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 7,
+        "published_at": "2026-11-20T19:39:28+00:00",
+        "source": "TikTok官方公开嵌入"
+      }
+    },
+    {
+      "id": "feed_f8018d569ff949db7deba3cffa7c7af8",
+      "feed_id": "feed_f8018d569ff949db7deba3cffa7c7af8",
+      "platform": "youtube",
+      "url": "https://www.youtube.com/watch?v=bDE9T9v33-A",
+      "title": "A Satisfying Church Invite Reel You Can Recreate",
+      "source_id": "youtube:UC03cgQeKt3_sE5eWxvAibtQ",
+      "source_kind": "daily_feed",
+      "source": "YouTube Shorts 创作者说明",
+      "publisher": "Sermon Shots",
+      "industry": "社区活动",
+      "publisher_type": "达人创作者",
+      "published_at": "2026-09-23T00:00:00+00:00",
+      "category": "",
+      "category_name": "",
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.youtube.com/shorts/bDE9T9v33-A",
+        "title": "A Satisfying Church Invite Reel You Can Recreate",
+        "publisher": "Sermon Shots",
+        "platform": "youtube",
+        "relation": "来源视频",
+        "published_at": "2026-09-23",
+        "source": "YouTube Shorts 创作者说明"
+      },
+      "summary": "A satisfying paint-wipe church invite reel you can recreate for your own church. Smooth paint across the frame to reveal the message underneath: \"You are loved by Jesus. Come to church this Sunday.\" \n\nThe wipe-to-reveal keeps people watching to the end. Pick your color, write your message, and film the smooth wipe, then swap in your own invite and service day.",
+      "first_matched_at": "2026-11-21T12:56:56.466682+00:00"
+    },
+    {
+      "id": "feed_90516503566298b0ef47db3bdbe76d2a",
+      "feed_id": "feed_90516503566298b0ef47db3bdbe76d2a",
+      "platform": "tiktok",
+      "url": "https://www.tiktok.com/@jordi.koalitic/video/7698824827100089622",
+      "title": "Shadows & stories 🌗 1-4 comment your fav photo👇 Conceptual photography with a message, hidden in everyday life. All shot on a phone, with the behind the scenes.  #photography #mobilephotography #behin",
+      "source_id": "tiktok:jordi.koalitic",
+      "source_kind": "daily_feed",
+      "source": "TikTok官方公开嵌入",
+      "publisher": "Jordi Koalitic",
+      "industry": "摄影与设计",
+      "publisher_type": "达人创作者",
+      "published_at": "2026-10-20T18:52:27+00:00",
+      "duration": 20,
+      "category": "A",
+      "category_name": "3C 数码与汽车周边",
+      "selection_version": 3,
+      "story_candidate": false,
+      "metrics": {},
+      "reference_video": {
+        "url": "https://www.tiktok.com/@jordi.koalitic/video/7698824827100089622",
+        "title": "Shadows & stories 🌗 1-4 comment your fav photo👇 Conceptual photography with a message, hidden in everyday life. All shot on a phone, with the behind the scenes.  #photography #mobilephotography #behindthescenes",
+        "publisher": "Jordi Koalitic",
+        "platform": "tiktok",
+        "relation": "来源视频",
+        "duration": 20,
+        "published_at": "2026-10-20T18:52:27+00:00",
+        "source": "TikTok官方公开嵌入"
+      },
+      "summary": "Shadows & stories 🌗 1-4 comment your fav photo👇 Conceptual photography with a message, hidden in everyday life. All shot on a phone, with the behind the scenes.  #photography #mobilephotography #behindthescenes",
+      "first_matched_at": "2026-11-21T12:56:56.466682+00:00"
+    }
+  ]
+}
