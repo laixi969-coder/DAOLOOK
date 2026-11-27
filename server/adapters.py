@@ -894,6 +894,7 @@ def creation_instruction(p):
         "analysis 是这条参考的拆解结果：先读其中的爆点判断与可迁移规则，再决定每条复用哪条机制。",
         "previous_outputs 是这条参考已经生成过的稿件：新的一批不得重复其中任何「方向+切角」组合，也不要沿用相同标题句式。",
         "按 Daolook 方法论组织表达：标题与首句至少含一种钩子要素（具体数字、明确人群、真实疑问、可见反差）；细节写到能执行（数字、时间、分量、场景），不用「很好用」类空泛形容；全文只留一个下一步，由 goal 决定指向（收藏提问 / 私信咨询 / 购买路径）；每批至少两条用创意算子拉开（反差、具体化、身份错位、借势误区）。这些是结构规范，不预测流量。",
+        "融入现象级爆款三核（hiccai-baokuan）：先戳中时代集体情绪或具体生活憋屈，每篇埋 1 个 1 秒记住的超级模因（短句/反差画面/标志动作），并通过去 Logo 测试（删掉产品或服务则切口不成立）；严禁「在这个快节奏的时代」「总而言之」「赋能」「抓手」「闭环」「重新定义」等 AI 套话，且绝不借反常识虚构事实。",
     ]
     if p == "xhs":
         rules += [
@@ -1261,13 +1262,47 @@ def rewrite_comments(reply, existing):
     return {**existing, **updates, **modern}
 
 
-def rewrite(output, instruction, version, p, demo=False, assets=()):
-    """Apply bounded writing and production-copy edits to the stored draft."""
-    if demo:
-        note = f"（演示重写 · 指令「{instruction[:24]}」：接入真实模型后才会按指令改写）"
-        changes = {"body": note + "\n" + output.get("body", "")}
-        return editing.edited_data({**output, "demo": True}, changes, p, assets), "demo"
+REDTEAM_DIMENSIONS = (
+    ("hook", "钩子拦截力"),
+    ("emotion", "时代情绪与真实肌理"),
+    ("meme", "模因与二创潜力"),
+    ("sharpness", "去 AI 味与表达锋利度"),
+    ("fit", "载体契合与不可替代度"),
+)
 
+
+def _clean_redteam_review(raw):
+    if not isinstance(raw, dict):
+        raise ValueError("红队审稿缺少 review 结构")
+    raw_scores = raw.get("scores")
+    if not isinstance(raw_scores, dict):
+        raise ValueError("红队审稿缺少五维打分 scores")
+    scores = {}
+    for key, label in REDTEAM_DIMENSIONS:
+        value = raw_scores.get(key)
+        if type(value) is not int or not 1 <= value <= 10:
+            raise ValueError(f"红队审稿维度「{label}」打分须为 1 到 10 的整数")
+        scores[key] = value
+    issues = raw.get("fatal_issues")
+    if (
+        not isinstance(issues, list)
+        or not 1 <= len(issues) <= 3
+        or any(not isinstance(item, str) or not item.strip() or len(item.strip()) > 240 for item in issues)
+    ):
+        raise ValueError("红队审稿须给出 1 到 3 条精简的致命问题说明")
+    summary = raw.get("summary")
+    if not isinstance(summary, str) or not summary.strip() or len(summary.strip()) > 300:
+        raise ValueError("红队审稿须给出一句话精修总结")
+    return {
+        "version": "2.0",
+        "scores": scores,
+        "fatal_issues": [item.strip() for item in issues],
+        "summary": summary.strip(),
+        "note": "五维红队自审仅作内容结构与表达参考，不预测流量或转化。",
+    }
+
+
+def _rewrite_setup(output, p):
     fields = {*editing.FIELDS, *editing.REWRITE_LISTS, "tags"}
     if "script" in output:
         fields.add("script")
@@ -1280,44 +1315,140 @@ def rewrite(output, instruction, version, p, demo=False, assets=()):
             "pinned": (layout.get("pinned") or {}).get("text", ""),
         }
     context = {key: output[key] for key in ("goal", "audience", "value", "direction", "role", "angle") if key in output}
+    properties = {key: {"type": "string", "maxLength": limit} for key, limit in editing.FIELDS.items()}
+    if "script" in draft:
+        properties["script"] = {"type": "string", "maxLength": 30000}
+    for key, (count, length) in {**editing.REWRITE_LISTS, "tags": (20, 60)}.items():
+        properties[key] = {"type": "array", "maxItems": count, "items": {"type": "string", "maxLength": length}}
+    if p == "xhs":
+        properties["titles"].update(minItems=3, maxItems=3)
+    if "comments" in draft:
+        properties["comments"] = {
+            "type": "object",
+            "additionalProperties": False,
+            "properties": {key: {"type": "string", "maxLength": 4000} for key in draft["comments"]},
+        }
+    return fields, draft, context, properties
+
+
+def _merge_rewrite_output(output, draft, fields, reply, p, assets):
+    if not isinstance(reply, dict):
+        raise ValueError("请返回本次修改的文案字段")
+    changes = {key: value for key, value in reply.items() if key in fields and value != draft.get(key)}
+    if "comments" in draft and ("comments" in reply or "comment_layout" in reply):
+        comments = rewrite_comments(reply, draft["comments"])
+        if comments != draft["comments"]:
+            changes["comments"] = comments
+    if not changes:
+        raise ValueError("文案未发生修改，请按指令修改可编辑字段")
+    updated = editing.edited_data(output, changes, p, assets, rewrite=True)
+    if updated == output:
+        raise ValueError("文案未发生修改，请按指令修改可编辑字段")
+    return updated
+
+
+def rewrite(output, instruction, version, p, demo=False, assets=()):
+    """Apply bounded writing and production-copy edits to the stored draft."""
+    if demo:
+        note = f"（演示重写 · 指令「{instruction[:24]}」：接入真实模型后才会按指令改写）"
+        changes = {"body": note + "\n" + output.get("body", "")}
+        return editing.edited_data({**output, "demo": True}, changes, p, assets), "demo"
+
+    fields, draft, context, properties = _rewrite_setup(output, p)
     rewritten = None
 
     def merge(result):
         nonlocal rewritten
         reply = result.get("output") if isinstance(result, dict) else None
-        if not isinstance(reply, dict):
-            raise ValueError("请返回本次修改的文案字段")
-        changes = {key: value for key, value in reply.items() if key in fields and value != draft.get(key)}
-        if "comments" in draft and ("comments" in reply or "comment_layout" in reply):
-            comments = rewrite_comments(reply, draft["comments"])
-            if comments != draft["comments"]:
-                changes["comments"] = comments
-        if not changes:
-            raise ValueError("文案未发生修改，请按指令修改可编辑字段")
-        updated = editing.edited_data(output, changes, p, assets, rewrite=True)
-        if updated == output:
-            raise ValueError("文案未发生修改，请按指令修改可编辑字段")
-        rewritten = updated
+        rewritten = _merge_rewrite_output(output, draft, fields, reply, p, assets)
 
     instructions = (version + "\n本次仅返回 output 中实际修改的文案或拍摄制作字段，字段形状见 draft。"
                     "保留其他原稿内容。仅使用 assets 中可核对的业务事实，资料不足时省略对应表述。"
                     "保持原目标和写作方向，不在公开文案使用占位符。")
-    properties = {key: {"type":"string", "maxLength":limit} for key, limit in editing.FIELDS.items()}
-    if "script" in draft:
-        properties["script"] = {"type":"string", "maxLength":30000}
-    for key, (count, length) in {**editing.REWRITE_LISTS, "tags":(20, 60)}.items():
-        properties[key] = {"type":"array", "maxItems":count, "items":{"type":"string", "maxLength":length}}
-    if p == "xhs":
-        properties["titles"].update(minItems=3, maxItems=3)
-    if "comments" in draft:
-        properties["comments"] = {"type":"object", "additionalProperties":False,
-                                  "properties":{key:{"type":"string", "maxLength":4000} for key in draft["comments"]}}
     schema = {"type":"object", "required":["output"], "properties":{"output":{
         "type":"object", "minProperties":1, "additionalProperties":False, "properties":properties,
     }}}
     result, model = model_json(
         {"draft": draft, "context": context, "instruction": instruction, "assets": list(assets)},
         schema, instructions, "rewrite", merge,
+    )
+    if rewritten is None:
+        merge(result)
+    return rewritten, model
+
+
+def redteam_rewrite(output, instruction, version, p, demo=False, assets=()):
+    """Stage 4 five-dimension red-team audit and forced rewrite into a 2.0 draft."""
+    if demo:
+        focus = f" · 侧重「{instruction[:20]}」" if instruction else ""
+        note = f"（演示红队爆款精修 2.0{focus}：接入真实模型后执行五维红队打分与推翻重构）"
+        changes = {"body": note + "\n" + output.get("body", "")}
+        updated = editing.edited_data({**output, "demo": True}, changes, p, assets)
+        updated["redteam_review"] = {
+            "version": "2.0",
+            "demo": True,
+            "scores": {"hook": 6, "emotion": 6, "meme": 5, "sharpness": 7, "fit": 7},
+            "fatal_issues": [
+                "开头钩子不够锋利，缺少具体场景冲突或反常识对比（演示示例）",
+                "缺少 1 秒可记住的超级模因或低门槛评论站队口子（演示示例）",
+                "产品与核心痛点的因果绑定偏弱，建议强化去 Logo 不可替代性（演示示例）",
+            ],
+            "summary": "演示模式未调用模型；切换真实服务后将对低于 8 分的段落执行推翻级重构。",
+            "note": "演示红队审稿模板，仅展示结构，不预测流量或转化。",
+        }
+        return updated, "demo"
+
+    fields, draft, context, properties = _rewrite_setup(output, p)
+    rewritten = None
+
+    def merge(result):
+        nonlocal rewritten
+        if not isinstance(result, dict):
+            raise ValueError("红队精修返回格式无效")
+        review = _clean_redteam_review(result.get("review"))
+        updated = _merge_rewrite_output(output, draft, fields, result.get("output"), p, assets)
+        rewritten = {**updated, "redteam_review": review}
+
+    instructions = (
+        version
+        + "\n返回 JSON 须同时包含 review（原稿五维自审与改掉的 1-3 个最致命问题）和 output（重构后的 2.0 终稿可编辑字段，字段形状见 draft）。"
+        "仅使用 assets 中可核对的业务事实，资料不足时省略对应表述，严禁在公开文案使用占位符。"
+        "保持原目标和写作方向；自审分数仅作表达自检，不预测流量或转化。"
+    )
+    score_schema = {
+        "type": "object",
+        "required": [k for k, _ in REDTEAM_DIMENSIONS],
+        "additionalProperties": False,
+        "properties": {k: {"type": "integer", "minimum": 1, "maximum": 10} for k, _ in REDTEAM_DIMENSIONS},
+    }
+    schema = {
+        "type": "object",
+        "required": ["review", "output"],
+        "properties": {
+            "review": {
+                "type": "object",
+                "required": ["scores", "fatal_issues", "summary"],
+                "additionalProperties": False,
+                "properties": {
+                    "scores": score_schema,
+                    "fatal_issues": {"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "string", "maxLength": 240}},
+                    "summary": {"type": "string", "maxLength": 300},
+                },
+            },
+            "output": {
+                "type": "object",
+                "minProperties": 1,
+                "additionalProperties": False,
+                "properties": properties,
+            },
+        },
+    }
+    result, model = model_json(
+        {"draft": draft, "context": context, "instruction": instruction or "", "assets": list(assets)},
+        schema,
+        instructions,
+        "rewrite",
+        merge,
     )
     if rewritten is None:
         merge(result)

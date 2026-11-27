@@ -1136,9 +1136,18 @@ class Handler(BaseHTTPRequestHandler):
         match = re.fullmatch(r"/api/creations/([a-f0-9]+)/rewrite", path)
         if match and method == "POST":
             ident = match.group(1)
+            mode = data.get("mode") or "targeted"
+            if mode not in ("targeted", "redteam"):
+                raise Error("不支持的重写模式")
             instruction = data.get("instruction")
-            if not isinstance(instruction, str) or not 2 <= len(instruction.strip()) <= 500:
-                raise Error("请用 2 到 500 字写清这次要改什么")
+            if mode == "targeted":
+                if not isinstance(instruction, str) or not 2 <= len(instruction.strip()) <= 500:
+                    raise Error("请用 2 到 500 字写清这次要改什么")
+                clean_instruction = instruction.strip()
+            else:
+                if instruction is not None and (not isinstance(instruction, str) or len(instruction.strip()) > 500):
+                    raise Error("补充侧重最多 500 字")
+                clean_instruction = (instruction or "").strip()
             if type(data.get("revision")) is not int or data["revision"] < 0:
                 raise Error("缺少有效版本号，请重新打开稿件")
             with db() as c:
@@ -1165,6 +1174,14 @@ class Handler(BaseHTTPRequestHandler):
                 ).fetchone()[0]
                 if current != data["revision"]:
                     raise Error("稿件已在其他页面更新，请重新打开最新版本", 409)
+            rewrite_payload = {
+                "creation_id": ident,
+                "revision": data["revision"],
+                "instruction": clean_instruction,
+                "platform": row["platform"],
+            }
+            if mode == "redteam":
+                rewrite_payload["mode"] = "redteam"
             return self.send(
                 {
                     "task_ids": [
@@ -1172,12 +1189,7 @@ class Handler(BaseHTTPRequestHandler):
                             u["id"],
                             project_id,
                             "rewrite",
-                            {
-                                "creation_id": ident,
-                                "revision": data["revision"],
-                                "instruction": instruction.strip(),
-                                "platform": row["platform"],
-                            },
+                            rewrite_payload,
                         )
                     ]
                 },
@@ -2010,6 +2022,18 @@ class Handler(BaseHTTPRequestHandler):
                     )
                 elif skill["name"].endswith("analysis"):
                     adapters.analyze(content, skill["prompt"])
+                elif skill["name"].endswith("redteam"):
+                    skill_platform = skill["name"].split("_")[0]
+                    sample_draft = adapters.demo_outputs(skill_platform, "验证结构", 1)[0]
+                    adapters.redteam_rewrite(
+                        sample_draft, "", skill["prompt"], skill_platform, demo=setting("mode") == "demo"
+                    )
+                elif skill["name"].endswith("rewrite"):
+                    skill_platform = skill["name"].split("_")[0]
+                    sample_draft = adapters.demo_outputs(skill_platform, "验证结构", 1)[0]
+                    adapters.rewrite(
+                        sample_draft, "精简开头", skill["prompt"], skill_platform, demo=setting("mode") == "demo"
+                    )
                 else:
                     adapters.create(content, [], "验证结构", skill["prompt"], 1)
             with db() as c:

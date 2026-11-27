@@ -410,5 +410,22 @@ async function test(name,code) {
     assert.equal(S.entry,'single');assert.equal(S.entryText,url);assert.equal(S.transcript,'');
     assert.deepEqual(visits,['discover']);assert.equal(payments,0);
   `);
+  await test('redteam review renders escaped scores and issues without entering public copy',`
+    const review={version:'2.0',scores:{hook:6,emotion:8,meme:5,sharpness:9,fit:8},fatal_issues:['开头偏平<script>'],summary:'已重构<img src=x>',note:'仅作自审',edited_after:true};
+    const html=redteamReviewBox(review,true);
+    assert.ok(html.includes('红队爆款精修') && html.includes('redteam-score low') && html.includes('6/10') && html.includes('此后有新修改'));
+    assert.equal(html.includes('<script>'),false);assert.equal(html.includes('<img src=x>'),false);
+    assert.equal(CreationTools.publicCopy({title:'标题',body:'正文',tags:[],redteam_review:review}),'标题\\n\\n正文');
+    S.workspace={sources:[{id:'s',platform:'xhs'}],assets:[],images:[],briefs:[]};
+    const card=draftCard({id:'c',source_id:'s',created_at:'2026-11-27',data:{title:'标题',body:'正文',tags:[],redteam_review:review}});
+    assert.ok(card.includes('红队爆款精修'));
+    S.editSession={id:'c',revision:1,readonly:false,dirty:false};
+    document.querySelector=()=>({value:''});
+    let sent;api=async(path,opts)=>{sent={path,body:JSON.parse(opts.body)};return {task_ids:['t']};};
+    poll=async()=>{};
+    await actions['redteam-draft']();
+    assert.equal(sent.path,'/api/creations/c/rewrite');
+    assert.equal(sent.body.mode,'redteam');assert.equal(sent.body.revision,1);assert.equal(sent.body.instruction,'');
+  `);
   console.log('Frontend review regressions passed.');
 })().catch(error=>{console.error(error);process.exitCode=1;});

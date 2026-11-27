@@ -265,10 +265,51 @@ class MethodologyHintsTests(unittest.TestCase):
         with fixture.D.db() as c:
             rows = c.execute("SELECT prompt FROM skill_versions WHERE name='xhs_creation' AND status='Published'").fetchall()
             douyin = c.execute("SELECT prompt FROM skill_versions WHERE name='douyin_creation' AND status='Published'").fetchall()
+            xhs_orig = c.execute("SELECT prompt FROM skill_versions WHERE name='xhs_original' AND status='Published'").fetchall()
+            analysis = c.execute("SELECT prompt FROM skill_versions WHERE name='xhs_analysis' AND status='Published'").fetchall()
+            overseas_live = c.execute("SELECT prompt FROM skill_versions WHERE name='overseas_original' AND status='Published'").fetchall()
         self.assertTrue(any("Daolook 方法论 v1" in r["prompt"] for r in rows))
+        self.assertTrue(any("hiccai-baokuan" in r["prompt"] for r in rows))
         self.assertTrue(any("强反差" in r["prompt"] for r in douyin))
+        self.assertTrue(any("5 秒一钩子" in r["prompt"] for r in douyin))
+        self.assertTrue(any("超级模因" in r["prompt"] for r in xhs_orig))
+        self.assertTrue(any("超级模因" in r["prompt"] for r in analysis))
+        self.assertTrue(any("去 Logo 不可替代测试" in r["prompt"] for r in overseas_live))
         self.assertIn("钩子要素", adapters.creation_instruction("xhs"))
         self.assertIn("创意算子", adapters.creation_instruction("douyin"))
+        self.assertIn("去 Logo 测试", adapters.creation_instruction("xhs"))
+
+    def test_baokuan_ai_cliche_and_carrier_pitfall_hints(self):
+        ai_draft = {
+            **self.output,
+            "title": "45 元冷萃怎么选",
+            "cta": "点击链接下单",
+            "body": "在这个快节奏的时代，12 克冷萃重新定义你的咖啡体验，小店链接下单。",
+            "comment_layout": {"pinned": {"text": "小店链接下单"}, "atmosphere": [], "knowledge": []},
+        }
+        hints = quality.methodology_hints(ai_draft, "xhs")
+        self.assertTrue(any("AI 套话" in h for h in hints), hints)
+
+        hard_diversion = {
+            **self.output,
+            "title": "45 元冷萃怎么选",
+            "cta": "点击链接下单",
+            "body": "12 克一包 45 元，加微信领资料，小店链接下单。",
+            "comment_layout": {"pinned": {"text": "小店链接下单"}, "atmosphere": [], "knowledge": []},
+        }
+        hints = quality.methodology_hints(hard_diversion, "xhs")
+        self.assertTrue(any("硬导流" in h for h in hints), hints)
+
+        douyin_bad = {
+            "goal": "leads",
+            "title": "挂耳咖啡怎么选",
+            "hook": "哈喽大家好，今天给大家分享一款挂耳",
+            "body": "第 3 天实测，12 克一包，想喝的评论区问我，点赞关注下期再见。",
+            "cta": "想喝的评论区问我",
+        }
+        dy_hints = quality.methodology_hints(douyin_bad, "douyin")
+        self.assertTrue(any("寒暄" in h for h in dy_hints), dy_hints)
+        self.assertTrue(any("提前收尾" in h for h in dy_hints), dy_hints)
 
 
 if __name__ == "__main__":

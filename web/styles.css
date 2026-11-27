@@ -1352,6 +1352,29 @@ tr:last-child td {
   display: grid;
   gap: 4px;
 }
+.redteam-box {
+  margin: 10px 0;
+}
+.redteam-scores {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.redteam-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--cream-2, #f4f1ea);
+  color: var(--ink-2);
+  font-size: 12px;
+}
+.redteam-score.low {
+  background: #fdece6;
+  color: #8f2d14;
+}
 .overlay {
   position: fixed;
   inset: 0;

@@ -53,7 +53,7 @@ class RewriteTests(unittest.TestCase):
     def test_skills_and_default_rule(self):
         with D.db() as c:
             names = {r[0] for r in c.execute("SELECT name FROM skill_versions WHERE status='Published'")}
-        self.assertTrue({"xhs_rewrite", "douyin_rewrite"} <= names)
+        self.assertTrue({"xhs_rewrite", "douyin_rewrite", "xhs_redteam", "douyin_redteam"} <= names)
         self.assertEqual(jobs.task_cost("rewrite", {}), (3, 3))
 
     def test_demo_rewrite_appends_revision_and_charges(self):
@@ -297,6 +297,94 @@ class RewriteTests(unittest.TestCase):
         saved = next(v["data"] for v in self.ws()["creations"] if v["id"] == cid)
         self.assertEqual(saved["evidence"], draft["evidence"])
         self.assertTrue(any("文字依据" in issue for issue in saved["quality"]["issues"]))
+
+    def test_demo_redteam_rewrite_allows_empty_instruction_and_records_review(self):
+        cid = self.make_draft()
+        before = self.credits()
+        self.assertEqual(self.post(f"/api/creations/{cid}/rewrite", {"revision": 0, "mode": "bad"})[0], 400)
+        self.assertEqual(self.post(f"/api/creations/{cid}/rewrite", {"revision": 0, "mode": "redteam", "instruction": "x" * 501})[0], 400)
+        status, r = self.post(f"/api/creations/{cid}/rewrite", {"revision": 0, "mode": "redteam"})
+        self.assertEqual(status, 202, r)
+        jobs.run(r["task_ids"][0])
+        self.assertEqual(self.credits(), before - 3)
+        creation = next(x for x in self.ws()["creations"] if x["id"] == cid)
+        self.assertEqual(creation["revision"], 1)
+        self.assertIn("演示红队爆款精修 2.0", creation["data"]["body"])
+        review = creation["data"].get("redteam_review")
+        self.assertIsInstance(review, dict)
+        self.assertEqual(set(review["scores"]), {"hook", "emotion", "meme", "sharpness", "fit"})
+        self.assertNotIn("score", creation["data"]["quality"])
+        history = self.c.req(f"/api/creations/{cid}/revisions?project_id={self.p}")[1]
+        self.assertIn("红队爆款精修 · 2.0 终稿", [h["reason"] for h in history])
+
+    def test_live_redteam_rewrite_validates_review_preserves_context_and_marks_later_edits(self):
+        user = app.new_user("redteam@rewrite.test", "test-password-123")
+        self.c.req("/api/auth/login", "POST", {"email": "redteam@rewrite.test", "password": "test-password-123"})
+        self.p = self.c.req("/api/bootstrap")[1]["projects"][0]["id"]
+        from server import access
+        admin = app.new_user("admin2@rewrite.test", "test-admin-password", "admin")
+        with D.db() as c:
+            c.execute("BEGIN IMMEDIATE")
+            access.approve(c, user, admin, "test_admin", preserve_balance=True)
+        cid = self.make_draft(platform="douyin", goal="sales", temporary="冷萃挂耳每包12克，售价199元，仅限到店。")
+        with D.db() as c:
+            original = json.loads(c.execute("SELECT data FROM creation_outputs WHERE id=?", (cid,)).fetchone()[0])
+            original.update(demo=False, evidence=[{"asset_id": "temporary", "quote": "冷萃挂耳每包12克"}])
+            c.execute("UPDATE creation_outputs SET data=? WHERE id=?", (D.dumps(original), cid))
+            c.execute("UPDATE settings SET value='\"live\"' WHERE key='mode'")
+        seen_system = []
+
+        def provider_response(url, key, payload, timeout, billing=None):
+            seen_system.append(payload["messages"][0]["content"])
+            result = {
+                "review": {
+                    "scores": {"hook": 5, "emotion": 6, "meme": 5, "sharpness": 7, "fit": 6},
+                    "fatal_issues": ["开头偏平，缺前 3 秒可见冲突", "缺少 1 秒记住的视觉锚点"],
+                    "summary": "已推翻重写前 3 秒与口播节奏，保留真实 12 克与 199 元到店信息。",
+                },
+                "output": {
+                    "title": "12克冷萃先别盲买，到店先看这一行",
+                    "hook": "【0-3秒：把挂耳包摔在秤上特写12克】别再花冤枉钱买淡如水的挂耳！",
+                    "body": "冷萃挂耳每包12克，售价99元，仅限到店。" + original["cta"],
+                },
+            }
+            return {"choices": [{"message": {"content": json.dumps(result)}}]}
+
+        route = [("test", {"base_url": "https://example.invalid", "api_key": "test"}, "model")]
+        with patch.object(adapters, "candidates", return_value=route), patch.object(adapters, "request_json", side_effect=provider_response):
+            status, r = self.post(f"/api/creations/{cid}/rewrite", {"revision": 0, "mode": "redteam", "instruction": "开头更锋利"})
+            self.assertEqual(status, 202, r)
+            jobs.run(r["task_ids"][0])
+
+        self.assertTrue(any("五维 10 分制硬核红队审稿" in s for s in seen_system))
+        creation = next(x for x in self.ws()["creations"] if x["id"] == cid)
+        data = creation["data"]
+        self.assertEqual(data["goal"], "sales")
+        self.assertEqual(data["evidence"], original["evidence"])
+        self.assertEqual(data["redteam_review"]["scores"]["hook"], 5)
+        self.assertEqual(len(data["redteam_review"]["fatal_issues"]), 2)
+        self.assertNotIn("edited_after", data["redteam_review"])
+        # Price mismatch (99元 vs 199元) is still caught by Daolook claim_checks
+        self.assertTrue(any(c["kind"] == "price" and "99" in c["value"] and c["status"] == "review" for c in data["quality"]["claim_checks"]))
+        # Subsequent manual edit flags the previous red-team review as edited_after
+        status, edited = self.post(f"/api/creations/{cid}/edit", {"revision": 1, "changes": {"title": "手动微调标题"}})
+        self.assertEqual(status, 200, edited)
+        self.assertTrue(edited["data"]["redteam_review"]["edited_after"])
+
+    def test_redteam_review_validation_rejects_bad_shapes(self):
+        draft = {**adapters.demo_outputs("xhs", "冷萃", 1)[0], "demo": False}
+        valid_out = {"title": "12克冷萃怎么筛？"}
+        bad_reviews = [
+            None,
+            {"scores": {"hook": True, "emotion": 7, "meme": 7, "sharpness": 7, "fit": 7}, "fatal_issues": ["x"], "summary": "ok"},
+            {"scores": {"hook": 11, "emotion": 7, "meme": 7, "sharpness": 7, "fit": 7}, "fatal_issues": ["x"], "summary": "ok"},
+            {"scores": {"hook": 6, "emotion": 7, "meme": 7, "sharpness": 7, "fit": 7}, "fatal_issues": [], "summary": "ok"},
+            {"scores": {"hook": 6, "emotion": 7, "meme": 7, "sharpness": 7, "fit": 7}, "fatal_issues": ["x"], "summary": " "},
+        ]
+        for bad in bad_reviews:
+            with self.subTest(bad=bad), patch.object(adapters, "model_json", return_value=({"review": bad, "output": valid_out}, "test")):
+                with self.assertRaises(ValueError):
+                    adapters.redteam_rewrite(draft, "", "", "xhs")
 
 
 if __name__ == "__main__":

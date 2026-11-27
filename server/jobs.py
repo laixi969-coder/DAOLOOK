@@ -384,7 +384,11 @@ def _run(ident):
         name = (
             "asset_facts"
             if kind == "facts"
-            else p + "_" + {"analyze": "analysis", "create": "creation", "original": "original", "rewrite": "rewrite"}[kind]
+            else (
+                p + "_redteam"
+                if kind == "rewrite" and payload.get("mode") == "redteam"
+                else p + "_" + {"analyze": "analysis", "create": "creation", "original": "original", "rewrite": "rewrite"}[kind]
+            )
         )
         with db() as c:
             version = c.execute(
@@ -625,9 +629,14 @@ def _run(ident):
             draft = rewrite_original(c, row)
             assets = draft_sources.for_creation(c, row["id"], t["project_id"])
         original = (row["data"], row["created_at"])
-        output, model = adapters.rewrite(
-            draft, payload["instruction"], prompt, p, demo, assets
-        )
+        if payload.get("mode") == "redteam":
+            output, model = adapters.redteam_rewrite(
+                draft, payload.get("instruction", ""), prompt, p, demo, assets
+            )
+        else:
+            output, model = adapters.rewrite(
+                draft, payload["instruction"], prompt, p, demo, assets
+            )
     else:
         if not state(ident, "GENERATING"):
             return
@@ -741,9 +750,10 @@ def _run(ident):
                 "INSERT OR IGNORE INTO creation_revisions VALUES (?,?,?,?,?)",
                 (target, 0, original[0], "初始稿", original[1]),
             )
+            revision_reason = "红队爆款精修 · 2.0 终稿" if payload.get("mode") == "redteam" else "AI 定向重写"
             c.execute(
                 "INSERT INTO creation_revisions VALUES (?,?,?,?,?)",
-                (target, payload["revision"] + 1, dumps(output), "AI 定向重写", now()),
+                (target, payload["revision"] + 1, dumps(output), revision_reason, now()),
             )
             c.execute("UPDATE creation_outputs SET data=? WHERE id=?", (dumps(output), target))
             result["revision"] = payload["revision"] + 1

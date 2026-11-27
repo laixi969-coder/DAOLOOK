@@ -86,11 +86,20 @@ _PURCHASE = re.compile(r"下单|购买|到店|链接|店铺|小店|团购|淘宝
 _ASK = re.compile(r"问|留言|私信|评论|聊聊|说|告诉")
 _ASK_SALES = re.compile(r"私信|留言|咨询|问我|提问")
 _REACH = re.compile(r"收藏|关注|转发|问|评论|留言")
+# hiccai-baokuan 全局反 AI 味黑名单与载体避坑（确定性提示，不阻塞、不预测流量）。
+_AI_CLICHE = re.compile(
+    r"在这个快节奏的时代|快节奏的时代|总而言之|综上所述|不仅仅[^，。！？\n]{0,16}更|让我们一起|赋能|抓手|闭环|是一场关于[^，。！？\n]{0,16}的旅程|破局而生|重新定义"
+)
+_DOUYIN_GREETING = re.compile(
+    r"^\s*(?:【[^】]*】|\([^)]*\)|（[^）]*）|\s)*(?:哈喽大家好|嗨大家好|大家好|今天[我来]?想?(?:跟|和)大家聊聊|今天给大家(?:分享|科普|介绍))"
+)
+_DOUYIN_OUTRO = re.compile(r"点赞关注下期再见|本期视频就到这里|感谢大家的?观看|下期再见|记得一键三连")
+_XHS_HARD_DIVERSION = re.compile(r"加(?:我)?微信|加\s*(?:VX|V信|vx|wx)|私信领(?:取)?资料|点击下方链接", re.I)
 VISIBLE_COPY = re.compile(r"字幕|口播|台词|旁白|配音|文案|标语|题字|价签|价格牌|屏显|标价|写上|写着|印着")
 
 
 def methodology_hints(output, p):
-    """方法论自检（内容效果升级·创意/流量/转化三层）。提示性，不阻塞发布。"""
+    """方法论自检（内容效果升级·创意/流量/转化三层 + hiccai-baokuan 去 AI 味与载体避坑）。提示性，不阻塞发布。"""
     hints = []
     goal_value = output.get("goal") if output.get("goal") in GOALS else "leads"
     cta = output.get("cta", "")
@@ -123,6 +132,18 @@ def methodology_hints(output, p):
     # 创意层：具体细节
     if body.strip() and not _SPECIFIC.search(body[:400]):
         hints.append("开头缺具体细节（数字、时间、分量或场景），容易显得空泛")
+    # 表达层（hiccai-baokuan）：AI 套话黑名单
+    cliche_match = _AI_CLICHE.search("\n".join([output.get("title", ""), output.get("hook", ""), body]))
+    if cliche_match:
+        hints.append(f"检测到 AI 套话「{cliche_match.group(0)}」，建议改写为具体场景、数字或大白话")
+    # 载体避坑：抖音前 3 秒寒暄 / 提前说再见；小红书正文硬导流风险
+    if p == "douyin":
+        if _DOUYIN_GREETING.search(output.get("hook", "")) or _DOUYIN_GREETING.search(body[:80]):
+            hints.append("抖音前 3 秒忌用寒暄开场，建议第 1 秒直接给画面冲突、反常识结论或具体场景")
+        if _DOUYIN_OUTRO.search(body[-160:]):
+            hints.append("结尾出现提前收尾套话，容易拉低完播，建议改用反问、反转或首尾闭环")
+    elif p == "xhs" and _XHS_HARD_DIVERSION.search(body):
+        hints.append("正文含易被限流的硬导流表述（如加微信/私信领资料），建议改用评论区软互动或合规入口")
     return hints[:3]
 
 

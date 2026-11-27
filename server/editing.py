@@ -123,6 +123,8 @@ def edited_data(original, changes, platform, assets=None, *, rewrite=False):
             layout.setdefault("pinned", {})["text"] = comments["pinned"].strip()
     if output == original:
         return original
+    if isinstance(output.get("redteam_review"), dict):
+        output["redteam_review"] = {**output["redteam_review"], "edited_after": True}
     return questions.mark_edited(recheck(output, platform, assets), original)
 
 

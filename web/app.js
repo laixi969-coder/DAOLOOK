@@ -540,6 +540,27 @@ function creationSelection(items) {
     return draftCard(c, c === pick?.main ? pick.reasons : null, pick?.alternatives.includes(c));
   }).join("")}</div>`;
 }
+const REDTEAM_LABELS = [
+  ["hook", "钩子拦截力"],
+  ["emotion", "时代情绪"],
+  ["meme", "模因二创"],
+  ["sharpness", "去 AI 味"],
+  ["fit", "载体契合"],
+];
+function redteamReviewBox(review, open = false) {
+  if (!review || !review.scores) return "";
+  const pills = REDTEAM_LABELS.filter(([k]) => typeof review.scores[k] === "number")
+    .map(([k, label]) => {
+      const score = review.scores[k];
+      return `<span class="redteam-score${score < 8 ? " low" : ""}">${label} <strong>${score}/10</strong></span>`;
+    })
+    .join("");
+  const issues = Array.isArray(review.fatal_issues) && review.fatal_issues.length
+    ? `<ul>${review.fatal_issues.map((item) => `<li>${esc(item)}</li>`).join("")}</ul>`
+    : "";
+  const note = [review.edited_after ? "此后有新修改，仅供参考。" : "", review.note || ""].filter(Boolean).join(" ");
+  return `<details class="transcript-box redteam-box"${open ? " open" : ""}><summary>红队爆款精修 · 2.0 终稿${review.demo ? " · 演示" : ""}</summary><div class="redteam-scores">${pills}</div>${issues}${review.summary ? `<p>${esc(review.summary)}</p>` : ""}${note ? `<p class="hint">${esc(note)}</p>` : ""}</details>`;
+}
 function draftCard(c, reasons = null, alternative = false) {
   const d = c.data;
   if (d.overseas) return overseasCard(c);
@@ -551,7 +572,7 @@ function draftCard(c, reasons = null, alternative = false) {
     ? `<section class="draft-output-section"><h4>${label}</h4><ul>${values.map(value => `<li>${esc(value)}</li>`).join("")}</ul></section>` : "";
   const textBlock = (label, value) => typeof value === "string" && value.trim()
     ? `<section class="draft-output-section"><h4>${label}</h4><p>${esc(value)}</p></section>` : "";
-  const supplementary = `<div class="draft-output-grid">${textBlock("创意", d.concept || d.angle)}${lineList("画面描述", d.storyboard)}${textBlock("脚本", d.script || d.hook)}${textBlock("中文翻译", d.translation_zh)}${lineList("标题备选", d.titles)}</div>${d.quality?.hints?.length ? `<details class="methodology-hints"><summary>方法论自检 · ${d.quality.hints.length} 条建议</summary><ul>${d.quality.hints.map(h => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}`;
+  const supplementary = `<div class="draft-output-grid">${textBlock("创意", d.concept || d.angle)}${lineList("画面描述", d.storyboard)}${textBlock("脚本", d.script || d.hook)}${textBlock("中文翻译", d.translation_zh)}${lineList("标题备选", d.titles)}</div>${d.quality?.hints?.length ? `<details class="methodology-hints"><summary>方法论自检 · ${d.quality.hints.length} 条建议</summary><ul>${d.quality.hints.map(h => `<li>${esc(h)}</li>`).join("")}</ul></details>` : ""}${redteamReviewBox(d.redteam_review, false)}`;
   const issues = d.quality?.issues || [];
   const check = issues.length ? `<details class="transcript-box"><summary>发布前需核对 · ${issues.length} 项</summary><ul>${issues.map(s => `<li>${esc(s)}</li>`).join("")}</ul>${button("补充资料重新创作","improve-draft","secondary small","edit",`data-id="${c.id}"`)}</details>` : "";
   const materials = lineList("配图建议", d.image_suggestions) + lineList("拍摄清单", d.shooting_list) + commentLayout(d.comment_layout);
@@ -702,7 +723,7 @@ async function openDraftEditor(id) {
   const comments = values.comments;
   const source = [...(S.workspace.sources || []), ...(S.workspace.briefs || [])].find(s => s.id === c.source_id);
   const rewritable = !readonly && source && ["xhs", "douyin"].includes(source.platform);
-  modal("编辑与发布准备", `${local ? `<div class="notice">已找回本标签页未保存的修改。${local.revision !== (c.revision || 0) ? "服务器已有更新；请先复制备份，再打开最新稿。" : ""}</div>` : ""}${readonly ? '<div class="notice">已发布或已记录效果的稿件保留原文，可复制与查看历史。</div>' : ""}<div class="draft-editor-layout"><form id="draft-editor"><div id="editor-feedback"></div><fieldset ${readonly ? "disabled" : ""}>${input("title", "标题", 0, 300)}${input("body", "正文", 12, 30000)}${editorFactChecks(c.data.quality)}<label class="field"><span>话题（用空格分隔）</span><input id="edit-tags" data-edit-field="tags" maxlength="1220" value="${esc((values.tags || []).join(" "))}"></label><details class="editor-extra"><summary>更多编辑选项</summary>${input("cover_text", "封面文字", 2, 300)}${input("hook", "开头 / 口播钩子", 3, 2000)}${input("cta", "正文中的下一步行动", 2, 2000)}${comments ? Object.entries({atmosphere:"互动提问",knowledge:"补充说明",pinned:"置顶评论"}).map(([k,label])=>`<label class="field"><span>${label}</span><textarea id="edit-comment-${k}" data-edit-field="comment-${k}" rows="3" maxlength="4000">${esc(comments[k])}</textarea></label>`).join("") : ""}<label class="field"><span>本次手动编辑用时（分钟，可选）</span><input id="edit-minutes" type="number" min="0" max="1440" step="any"></label></details></fieldset>${rewritable ? `<details class="editor-rewrite"><summary>AI 定向重写 · ${S.boot.rules.rewrite ?? 3} 积分/次</summary><label class="field"><span>这次要改什么</span><textarea id="rewrite-instruction" rows="2" maxlength="500" placeholder="比如：开头换成加班场景；第 2 段加价格锚点；置顶评论补一个价格问题"></textarea></label><div class="actions">${button("按指令重写这一条", "rewrite-draft", "secondary small", "spark")}</div><p class="hint">只改这一条并保存为新版本，可随时恢复；不引入资料之外的新事实。发起前请先保存手动修改。</p></details>` : ""}<p class="hint" id="editor-save-status" aria-live="polite"></p><div class="editor-actions">${!readonly ? '<button class="btn primary" type="submit">保存修改</button>' : ""}<button class="btn secondary" type="button" data-action="copy-editor">复制当前正文</button><button class="text-btn" type="button" data-action="download-editor">下载正文 TXT</button></div><button class="text-btn editor-reload" type="button" data-action="latest-draft" ${local ? "" : "hidden"}>放弃本地修改，打开最新稿</button></form><aside class="draft-preview"><div class="preview-label"><span>正文预览</span><small id="editor-length"></small></div><div id="draft-live-preview"></div><p class="hint">预览用于检查内容与阅读顺序，实际排版以发布平台为准。${image ? "已保存封面不会随改稿自动更新。" : ""}</p>${image ? coverCard(image) : button("制作封面", "editor-cover", "secondary small", "image")}<details class="editor-history"><summary>已保存的历史版本</summary><p class="hint">恢复会新增一个版本。请先保存当前修改。</p><div id="editor-history-list">正在读取…</div></details></aside></div>`, true);
+  modal("编辑与发布准备", `${local ? `<div class="notice">已找回本标签页未保存的修改。${local.revision !== (c.revision || 0) ? "服务器已有更新；请先复制备份，再打开最新稿。" : ""}</div>` : ""}${readonly ? '<div class="notice">已发布或已记录效果的稿件保留原文，可复制与查看历史。</div>' : ""}<div class="draft-editor-layout"><form id="draft-editor"><div id="editor-feedback"></div><fieldset ${readonly ? "disabled" : ""}>${input("title", "标题", 0, 300)}${input("body", "正文", 12, 30000)}${editorFactChecks(c.data.quality)}${redteamReviewBox(c.data.redteam_review, true)}<label class="field"><span>话题（用空格分隔）</span><input id="edit-tags" data-edit-field="tags" maxlength="1220" value="${esc((values.tags || []).join(" "))}"></label><details class="editor-extra"><summary>更多编辑选项</summary>${input("cover_text", "封面文字", 2, 300)}${input("hook", "开头 / 口播钩子", 3, 2000)}${input("cta", "正文中的下一步行动", 2, 2000)}${comments ? Object.entries({atmosphere:"互动提问",knowledge:"补充说明",pinned:"置顶评论"}).map(([k,label])=>`<label class="field"><span>${label}</span><textarea id="edit-comment-${k}" data-edit-field="comment-${k}" rows="3" maxlength="4000">${esc(comments[k])}</textarea></label>`).join("") : ""}<label class="field"><span>本次手动编辑用时（分钟，可选）</span><input id="edit-minutes" type="number" min="0" max="1440" step="any"></label></details></fieldset>${rewritable ? `<details class="editor-rewrite"><summary>AI 重写与红队精修 · ${S.boot.rules.rewrite ?? 3} 积分/次</summary><label class="field"><span>修改指令或精修侧重</span><textarea id="rewrite-instruction" rows="2" maxlength="500" placeholder="按指令重写必填；红队爆款精修可留空，或写如：开头更锋利、强化对比场景"></textarea></label><div class="actions">${button("红队爆款精修（2.0）", "redteam-draft", "primary small", "spark")}${button("按指令重写", "rewrite-draft", "secondary small", "edit")}${infoTip("红队爆款精修说明", "按五维 10 分制审稿，任意项低于 8 分整段推翻重构为 2.0 终稿并列出改掉的致命问题。消耗与单条重写相同积分，不引入资料之外的新事实，可随时恢复旧版。")}</div></details>` : ""}<p class="hint" id="editor-save-status" aria-live="polite"></p><div class="editor-actions">${!readonly ? '<button class="btn primary" type="submit">保存修改</button>' : ""}<button class="btn secondary" type="button" data-action="copy-editor">复制当前正文</button><button class="text-btn" type="button" data-action="download-editor">下载正文 TXT</button></div><button class="text-btn editor-reload" type="button" data-action="latest-draft" ${local ? "" : "hidden"}>放弃本地修改，打开最新稿</button></form><aside class="draft-preview"><div class="preview-label"><span>正文预览</span><small id="editor-length"></small></div><div id="draft-live-preview"></div><p class="hint">预览用于检查内容与阅读顺序，实际排版以发布平台为准。${image ? "已保存封面不会随改稿自动更新。" : ""}</p>${image ? coverCard(image) : button("制作封面", "editor-cover", "secondary small", "image")}<details class="editor-history"><summary>已保存的历史版本</summary><p class="hint">恢复会新增一个版本。请先保存当前修改。</p><div id="editor-history-list">正在读取…</div></details></aside></div>`, true);
   $(".dialog").classList.add("draft-editor-dialog");
   const session = {id, key, project: S.project, storageKey, revision: local?.revision ?? c.revision ?? 0, readonly, imageURL: image?.data.url || "", savedFeedback: "", baseline: CreationTools.fingerprint(CreationTools.editable(c.data)), dirty: false};
   S.editSession = session;
@@ -1217,7 +1238,7 @@ function field(label, id, value = "", type = "text") {
 function skillModal(name = "xhs_analysis", prompt = "", title = "创建 Skill 草稿") {
   modal(
     title,
-    `<p class="subtext">保存会生成新的 Draft 版本，不会改动当前生效版本。结构测试通过后发布，发布即替换生效版本。</p><form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation", "xhs_original", "douyin_original", "tiktok_original", "instagram_original", "youtube_original", "overseas_original"].map((n) => `<option ${n === name ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="12" required placeholder="输入平台拆解或创作规则…">${esc(prompt)}</textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
+    `<p class="subtext">保存会生成新的 Draft 版本，不会改动当前生效版本。结构测试通过后发布，发布即替换生效版本。</p><form id="skill-form"><label class="field"><span>任务类型</span><select id="skill-name">${["xhs_analysis", "douyin_analysis", "xhs_creation", "douyin_creation", "xhs_original", "douyin_original", "xhs_rewrite", "douyin_rewrite", "xhs_redteam", "douyin_redteam", "tiktok_original", "instagram_original", "youtube_original", "overseas_original"].map((n) => `<option ${n === name ? "selected" : ""}>${n}</option>`).join("")}</select></label><label class="field"><span>Skill / Prompt</span><textarea id="skill-prompt" rows="12" required placeholder="输入平台拆解或创作规则…">${esc(prompt)}</textarea></label><button class="btn primary full" type="submit">保存草稿</button></form>`,
     true,
   );
 }
@@ -1692,6 +1713,29 @@ const actions = {
       await refresh();
       await openDraftEditor(session.id);
       toast("重写完成，已保存为新版本");
+    });
+  },
+  "redteam-draft": async () => {
+    const session = S.editSession;
+    if (!session || session.readonly) return;
+    if (session.dirty) {
+      toast("请先保存当前手动修改，再发起红队爆款精修");
+      return;
+    }
+    const instruction = ($("#rewrite-instruction")?.value || "").trim();
+    if (instruction.length > 500) {
+      toast("补充侧重最多 500 字");
+      return;
+    }
+    const key = workspaceKey();
+    const r = await post(`/api/creations/${session.id}/rewrite`, body({ revision: session.revision, mode: "redteam", instruction }));
+    if (key !== workspaceKey()) return;
+    toast("正在进行五维红队审稿与 2.0 重构…");
+    await poll(r.task_ids, async () => {
+      if (workspaceKey() !== key) return;
+      await refresh();
+      await openDraftEditor(session.id);
+      toast("红队精修完成，已保存 2.0 终稿");
     });
   },
   "restore-draft": el => saveDraftEdit(Number(el.dataset.revision)),
